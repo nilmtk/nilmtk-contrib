@@ -115,6 +115,9 @@ class API():
 		for name,clf in classifiers:
 			gt_overall,pred_overall[name]=self.predict(clf,self.test_mains,self.test_submeters, self.sample_period,'Europe/London')
 
+		self.gt_overall = gt_overall
+		self.pred_overall = pred_overall
+
 		rmse = {}
 		
 		for clf_name,clf in classifiers:
@@ -131,13 +134,6 @@ class API():
 	        rms_error[appliance] = np.sqrt(mean_squared_error(gt[appliance], pred[appliance]))
 	    return pd.Series(rms_error)
 
-	def store_test_mains(self,dataset,building):
-
-		tempdf=pd.DataFrame()
-		d=self.test_datasets_dict
-		print("Loading building ... ",building)
-		test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-		self.test_mains=(next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)))
 
 	def predict(self, clf, test_elec, test_submeters, sample_period, timezone):
         
