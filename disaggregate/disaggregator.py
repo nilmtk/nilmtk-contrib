@@ -27,15 +27,12 @@ class Disaggregator(object):
          train_appliance_i: pd.DataFrame with the same pd.DatetimeIndex as index as train_main and the same 1 or more power columns as train_main
          """
          raise NotImplementedError()
+    
+
     def disaggregate_chunk(self, mains):
-        """Passes each chunk from mains generator to disaggregate_chunk() and
-        passes the output to _write_disaggregated_chunk_to_datastore()
-        Will have a default implementation in super class.  Can be
-        overridden for more simple in-memory disaggregation, or more
-        complex out-of-core disaggregation.
+        """Passes each chunk from mains generator to disaggregate_chunk()
         Parameters
         ----------
-        mains : nilmtk.ElecMeter (single-phase) or
-            nilmtk.MeterGroup (multi-phase)
+        mains : pd.DataFrame()
         """
         raise NotImplementedError()
