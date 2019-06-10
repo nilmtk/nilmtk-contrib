@@ -58,7 +58,7 @@ class API():
 					print("Loading building ... ",building)
 					train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
 					self.train_mains=self.train_mains.append(next(train.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)))		
-		# print("Mains ", self.train_mains)				
+		
 
 		# store train submeters reading
 		train_buildings=pd.DataFrame()
@@ -74,13 +74,12 @@ class API():
 					# store data for submeters
 					train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
 					train_df=train_df.append(next(train.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
-					#train_df=train_df.append(tempdf)
-					#print(train_df.head())
+					
 
 					# store data for mains
 					
 			self.train_submeters.append((appliance,train_df))	
-		#print("train submeters ",self.train_submeters)
+		
 
 		
 		d=self.test_datasets_dict
@@ -90,17 +89,14 @@ class API():
 			print("Loading data for ",dataset, " dataset")
 			test=DataSet(d[dataset]['path'])
 			for building in d[dataset]['buildings']:
-				print("Loading building ... ",building)
 				test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
 				self.test_mains=(next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)))		
 				self.test_submeters=[]
 				for appliance in self.appliances:
 					test_df=next((test.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
-				self.test_submeters.append((appliance,test_df))
-				print("Predict for building ",building,"....")
+					self.test_submeters.append((appliance,test_df))
+
 				self.call_partial_fit()
-		
-		#print("test submeters ",self.test_submeters)	
 				
 	def call_partial_fit(self):
 		
@@ -112,27 +108,15 @@ class API():
 		for i in self.methods:
 			if i in method_dict:
 				clf=method_dict[i]
-				# print("self.train_mains" , self.train_mains)
-				# print("self.train_submeters" , self.train_submeters)
 				clf.partial_fit(self.train_mains,self.train_submeters)
 				classifiers.append((i,clf))
-		#print(classifiers)
 
 		
 		for name,clf in classifiers:
 			gt_overall,pred_overall[name]=self.predict(clf,self.test_mains,self.test_submeters, self.sample_period,'Europe/London')
-			# print(gt_overall.head())
-			# print(pred_overall[name].head())
-
-		# print("GT overall in func ",gt_overall)
-		# print("PRED overall in func ",pred_overall)
-		self.gt_overall = gt_overall
-		self.pred_overall = pred_overall
 
 		rmse = {}
 		
-		# print("gt overall ", gt_overall," ")
-		# print("pred overall ", pred_overall," ")
 		for clf_name,clf in classifiers:
 			rmse[clf_name] = self.compute_rmse(gt_overall, pred_overall[clf_name])
 		rmse = pd.DataFrame(rmse)
@@ -173,9 +157,6 @@ class API():
 		endrow=[]
 		chunk_size=40000
 		rowcount=len(test_elec)
-		#print("In pred test_elec",test_elec)
-		#print("In pred test_submeters",test_submeters)
-		#print(test_elec)
 		if rowcount<=chunk_size:
 			strow.append(0)
 			endrow.append(rowcount)
@@ -187,22 +168,18 @@ class API():
 		if(rowcount-currind > 100):
 			strow.append(currind)
 			endrow.append(currind+chunk_size)
+		
 		# "ac_type" varies according to the dataset used. 
 		# Make sure to use the correct ac_type before using the default parameters in this code.   
-		#print("strow ",strow);
-		#print("endrow ",endrow);
 		
 		for i in range(0,len(strow)):
 
 			chunk=test_elec.iloc[strow[i]:endrow[i]]
 			chunk_drop_na=chunk.dropna()
-			#print("Chunk drop na ",chunk_drop_na)
 			if len(chunk_drop_na.columns) > 1:
 				tempdf=pd.DataFrame()
 				tempdf = clf.disaggregate_chunk(chunk_drop_na['power'][ac])
 				pred[i]=tempdf
-				# print("Pred[i] ......... ", tempdf.head())
-				#print("For type ",ac," Pred[i] ......... ", pred[i].head())
 			else:
 				pred[i] = clf.disaggregate_chunk(chunk_drop_na)
 			gt[i]={}
@@ -232,8 +209,4 @@ class API():
 		appliance_labels = [m for m in gt_overall.columns.values]
 		gt_overall.columns = appliance_labels
 		pred_overall.columns = appliance_labels
-		#gt_overall1[ac]=gt_overall
-		#pred_overall1[ac]=pred_overall
-		#print("GT -overall1 ", gt_overall)
-		#print("pred -overall1 ", pred_overall1)
 		return gt_overall, pred_overall
