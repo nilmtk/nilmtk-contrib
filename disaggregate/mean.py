@@ -10,12 +10,34 @@ from nilmtk.utils import find_nearest
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 
+# Fix the seed for repeatability of experiments
 SEED = 42
 np.random.seed(SEED)
 
 
 class Mean(Disaggregator):
-    
+    """1 dimensional baseline Mean NILM algorithm.
+
+    Attributes
+    ----------
+    model : list of dicts
+       Each dict has these keys:
+           states : list of ints (the power (Watts) used in different states)
+           training_metadata : ElecMeter or MeterGroup object used for training
+               this set of states.  We need this information because we
+               need the appliance type (and perhaps some other metadata)
+               for each model.
+
+    state_combinations : 2D array
+        Each column is an appliance.
+        Each row is a possible combination of power demand values e.g.
+            [[40],
+             [100],
+             [50],
+             [60], ...]
+
+    MIN_CHUNK_LENGTH : int
+    """
 
     def __init__(self):
         self.model = []
@@ -24,10 +46,10 @@ class Mean(Disaggregator):
         self.MODEL_NAME = 'Mean'
 
 
-
+    
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
         
-        print("...............Function in partial_fit mean  .............")
+        print("...............Function in partial_fit mean  .............\n\n")
         
         num_on_states=None
         if len(train_appliances)>12:
@@ -35,47 +57,46 @@ class Mean(Disaggregator):
         else:
             max_num_clusters=3
         appliance_in_model=[d['training_metadata'] for d in self.model]
+
         for appliance,readings in train_appliances:
+ 
             if appliance in appliance_in_model:
                 raise RuntimeError(
                 "Appliance {} is already in model!"
                 "  Can't train twice on the same meter!",appliance)
 
-            
             states=readings.mean(skipna=True)
             states = np.round(states).astype(np.int32)
             self.model.append({
                     'states': states,
                     'training_metadata': appliance})
-            
-
 
     def _set_state_combinations_if_necessary(self):
         """Get centroids"""
         # If we import sklearn at the top of the file then auto doc fails.
         if (self.state_combinations is None or
                 self.state_combinations.shape[1] != len(self.model)):
+
             from sklearn.utils.extmath import cartesian
-            centroids = [model['states'] for model in self.model]
-            self.state_combinations = cartesian(centroids)
+            mean = [model['states'] for model in self.model]    
+            self.state_combinations = cartesian(mean)
 
     def disaggregate_chunk(self, mains):
-
+        
         if len(mains) < self.MIN_CHUNK_LENGTH:
             raise RuntimeError("Chunk is too short.")
 
-        
+        # sklearn produces lots of DepreciationWarnings with PyTables
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        
+
         self._set_state_combinations_if_necessary()
 
 
-
         state_combinations = self.state_combinations
-        summed_power_of_each_combination = np.sum(state_combinations, axis=1)
 
+        summed_power_of_each_combination = np.sum(state_combinations, axis=1)
 
         # Start disaggregation
         indices_of_state_combinations, residual_power = find_nearest(
@@ -91,4 +112,3 @@ class Mean(Disaggregator):
             appliance_powers_dict[self.model[i]['training_metadata']] = column
         appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
         return appliance_powers
-
