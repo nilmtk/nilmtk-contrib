@@ -1,0 +1,103 @@
+instance: 1   # this is the first building in the dataset
+original_name: academic
+elec_meters:
+  1: &total_building
+     site_meter: true
+     device_model: EM6400
+  2: &total_lifts
+     submeter_of: 0
+     device_model: EM6400
+  3: &first_floor_total
+     submeter_of: 0 
+     device_model: EM6400
+     name: First floor total
+  4: &second_floor_total
+     submeter_of: 0
+     device_model: EM6400
+     name: Second floor total
+  5: &third_floor_total
+     submeter_of: 0
+     device_model: EM6400
+     name: Third floor total
+  6: &fourth_floor_total
+     submeter_of: 0
+     device_model: EM6400
+     name: Fourth floor total
+  7: &fifth_floor_total
+     submeter_of: 0
+     device_model: EM6400
+     name: Fifth floor total
+  8: &AHU_ground
+     submeter_of: 0
+     device_model: EM6400
+  9: &AHU_first
+     submeter_of: 3
+     device_model: EM6400
+  10: &AHU_second
+     submeter_of: 4
+     device_model: EM6400
+  11: &AHU_fifth
+     submeter_of: 7
+     device_model: EM6400
+  12: &Lights
+     submeter_of: 5
+     device_model: EM6400
+  13: &Power_sockets_A
+      submeter_of: 5
+      device_model: EM6400
+  14: &UPS_sockets
+      submeter_of: 5
+      device_model: EM6400
+
+
+appliances:
+- original_name: lift
+  type: elevator
+  #floor: 0
+  instance: 1
+  meters: [2]
+
+- original_name: AHU
+  type: AHU
+  instance: 1
+  #floor: 1
+  meters: [8]
+
+- original_name: AHU
+  type: AHU
+  instance: 2
+  #floor: 1
+  meters: [9]
+
+- original_name: AHU
+  type: AHU
+  instance: 3
+  #floor: 1
+  meters: [10]
+
+- original_name: AHU
+  type: AHU
+  instance: 4
+  #floor: 1
+  meters: [11]
+
+- original_name: Lights
+  type: light
+  instance: 1
+  #floor: 1
+  meters: [12]
+
+- original_name: Power Sockets
+  type: sockets
+  instance: 1
+  #floor: 1
+  meters: [13]
+
+- original_name: UPS Sockets
+  type: sockets
+  instance: 2
+  #floor: 1
+  meters: [14]
+
+
+

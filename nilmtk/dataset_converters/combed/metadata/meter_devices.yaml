@@ -1,0 +1,21 @@
+EM6400:
+  model: EM6400
+  manufacturer: Schneider Electric
+  manufacturer_url: http://www.schneider-electric.com/
+  description: Multifunction meter for feeders
+  sample_period: 30 # the interval between samples. In seconds.
+  max_sample_period: 300
+  measurements:
+  - physical_quantity: power   # power, voltage, energy, current?
+    type: active   # active (real power), reactive or apparent?
+    upper_limit: 1000000
+    lower_limit: 0
+  - physical_quantity: energy   # power, voltage, energy, current?
+    type: active   # active (real power), reactive or apparent?
+    upper_limit: 500000000000
+    lower_limit: 0
+  - physical_quantity: current
+    type:
+    upper_limit: 1000
+    lower_limit: 0
+

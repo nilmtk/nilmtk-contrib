@@ -1,0 +1,43 @@
+smart_meter:
+  model:  Smart Meter
+  model_url: http://www.landisgyr.com/webfoo/wp-content/uploads/2012/12/Landis+Gyr-E750-Brochure-English.pdf
+  description: >
+    1 Hz aggregate consumption data. Each measurement contains data 
+    on current, voltage, and phase shift for each of the three phases 
+    in the household.
+  sample_period: 1
+  max_sample_period: 1
+  measurements:
+  - physical_quantity: power
+    type: active
+    upper_limit: 100000
+    lower_limit: 0
+  - physical_quantity: current
+    upper_limit: 20
+    lower_limit: 0
+  - physical_quantity: voltage
+    upper_limit: 400
+    lower_limit: 0
+  - physical_quantity: phase_angle
+    upper_limit: 360
+    lower_limit: 0
+  - physical_quantity: power
+    type: reactive
+    upper_limit: 100000
+    lower_limit: -100000
+  wireless: false
+
+plug:
+  model: Plug
+  description: >
+    1 Hz plug-level data measured from selected appliances.
+  sample_period: 1
+  max_sample_period: 1
+  measurements:
+  - physical_quantity: power
+    type: active
+    upper_limit: 10000
+    lower_limit: 0
+  wireless: true
+  wireless_configuration:
+    protocol: ZigBee

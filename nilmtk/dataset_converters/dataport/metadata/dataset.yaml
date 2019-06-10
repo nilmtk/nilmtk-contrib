@@ -1,0 +1,21 @@
+name: Dataport
+long_name: Dataport Database
+creators:
+- Grant Fisher
+publication_date: 2015
+institution: Pecan Street Inc
+contact: gfisher@pecanstreet.org
+description: Over 100,000,000,000 (100 Billion) records of energy, water, gas, and additional data
+subject: Disaggregated power, water, and other data from residential, commercial, and light industrial buildings.
+number_of_buildings: 1500 #as of 2015-05 in energy. Additional with water
+timezone: US/Central 
+geo_location: #of Pecan Street. Data is from over 50 states
+  locality: Austin   # village, town, city or state
+  country: US   # standard two-letter country code defined by ISO 3166-1 alpha-2
+  latitude: 30.292308 # Pecan Street lab's coorindates
+  longitude: -97.699671
+related_documents:
+- https://dataport.pecanstreet.org/
+- https://dataport.pecanstreet.org/data/interactive?metadata  #must be logged in to view
+- https://dataport.pecanstreet.org/data/database?tabledata   #must be logged in to view
+schema: https://github.com/nilmtk/nilm_metadata/tree/v0.2

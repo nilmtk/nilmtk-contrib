@@ -1,0 +1,81 @@
+instance: 3
+original_name: house_3
+
+# smart_meter_data:
+#   days: 138
+#   #coverage: 98.89
+#   period_start: 26.07.12
+#   period_end: 31.01.13
+
+elec_meters:
+  1: &smart_meter
+    site_meter: true
+    device_model: smart_meter
+  2: *smart_meter
+  3: *smart_meter
+  4: &plug_phase2
+    submeter_of: 2
+    device_model: plug
+  5: *plug_phase2
+  6: *plug_phase2
+  7: &plug_phase1
+    submeter_of: 1
+    device_model: plug
+  8: *plug_phase2
+  9: *plug_phase2
+  10: *plug_phase2
+
+appliances:
+- original_name: Tablet
+  type: laptop computer
+  #days_covered: 104
+  instance: 1
+  #coverage: 94.5
+  meters: [4] #Plug number
+
+- original_name: Freezer
+  type: freezer
+  #days_covered: 104
+  instance: 1
+  #coverage: 90.71
+  meters: [5] #Plug number
+
+- original_name: Coffee machine
+  type: coffee maker
+  #days_covered: 67
+  instance: 1
+  #coverage: 70.79
+  meters: [6] #Plug number
+
+- original_name: PC
+  type: computer
+  #days_covered: 42
+  instance: 1
+  #coverage: 64.0
+  meters: [7] #Plug number
+
+- original_name: Fridge
+  type: fridge
+  #days_covered: 47
+  instance: 1
+  #coverage: 56.0
+  meters: [8] #Plug number
+
+- original_name: Kettle
+  type: kettle
+  #days_covered: 42
+  instance: 1
+  #coverage: 67.82
+  meters: [9] #Plug number
+
+- original_name: Entertainment
+  type: HTPC
+  #days_covered: 48
+  instance: 1
+  #coverage: 67.65
+  meters: [10] #Plug number
+  
+time_frame:
+  start: 2012-07-26
+  end: 2013-01-31
+  
