@@ -4,4 +4,4 @@ from .fhmm_exact import FHMM
 from .hart_85 import Hart85
 from .maximum_likelihood_estimation import MLE
 from .mean import Mean
-
+from .zero import Zero
