@@ -206,8 +206,8 @@ class API():
 		common_index_utc = gt_index_utc.intersection(pred_index_utc)
 
 		common_index_local = common_index_utc.tz_convert(timezone)
-		gt_overall = gt_overall.ix[common_index_local]
-		pred_overall = pred_overall.ix[common_index_local]
+		gt_overall = gt_overall.loc[common_index_local]
+		pred_overall = pred_overall.loc[common_index_local]
 		appliance_labels = [m for m in gt_overall.columns.values]
 		gt_overall.columns = appliance_labels
 		pred_overall.columns = appliance_labels
