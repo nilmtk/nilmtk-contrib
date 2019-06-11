@@ -61,7 +61,8 @@ class Mean(Disaggregator):
 
         appliance_powers_dict = {}
         for i, model in enumerate(self.model):
-
+            print("Estimating power demand for '{}'"
+                  .format(model['training_metadata']))
             # a list of predicted power values for ith appliance            
             predicted_power = [self.model[i]['mean'] for j in range(0, test_mains.shape[0])]
             column = pd.Series(predicted_power, index=test_mains.index, name=i)
