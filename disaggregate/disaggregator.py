@@ -29,7 +29,7 @@ class Disaggregator(object):
          raise NotImplementedError()
     
 
-    def disaggregate_chunk(self, mains):
+    def disaggregate_chunk(self, test_mains):
         """Passes each chunk from mains generator to disaggregate_chunk()
         Parameters
         ----------
