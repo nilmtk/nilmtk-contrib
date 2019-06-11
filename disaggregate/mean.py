@@ -33,10 +33,18 @@ class Mean(Disaggregator):
         self.MODEL_NAME = 'Mean'
 
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
+        '''
+            train_main :- pd.DataFrame It will contain the mains reading.
+            train_appliances :- list of tuples [('appliance1',df1),('appliance2',df2),...]
 
+        '''
         print("...............Mean partial_fit running...............")
 
         for appliance_name, power in train_appliances:
+
+            # there will be only mean state for all appliances. 
+            # the algorithm will always predict mean power
+
             mean = np.nanmean(power)
             mean = np.round(mean).astype(np.int32)
 
@@ -53,6 +61,8 @@ class Mean(Disaggregator):
 
         appliance_powers_dict = {}
         for i, model in enumerate(self.model):
+
+            # a list of predicted power values for ith appliance            
             predicted_power = [self.model[i]['mean'] for j in range(0, test_mains.shape[0])]
             column = pd.Series(predicted_power, index=test_mains.index, name=i)
             appliance_powers_dict[self.model[i]['training_metadata']] = column
