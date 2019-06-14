@@ -1,7 +1,7 @@
 from .dataset import DataSet
 from .metergroup import MeterGroup
 import pandas as pd
-from nilmtk.disaggregate import CombinatorialOptimisation, Mean, FHMM, Zero
+from nilmtk.disaggregate import CombinatorialOptimisation, Mean, FHMM, Zero, DAE
 from nilmtk.disaggregate import Disaggregator
 from six import iteritems
 from sklearn.metrics import mean_squared_error
@@ -29,7 +29,6 @@ class API():
 	def experiment(self,d):
 		self.initialise(d)
 		self.store_datasets()
-		# self.call_partial_fit()
 
 
 	def initialise(self,d):
@@ -102,7 +101,7 @@ class API():
 		
 		pred_overall={}
 		classifiers=[]
-		method_dict={'CO':CombinatorialOptimisation(),'Mean':Mean(), 'FHMM': FHMM(), 'Zero': Zero()}
+		method_dict={'CO':CombinatorialOptimisation(),'Mean':Mean(), 'FHMM': FHMM(), 'Zero': Zero(), 'DAE': DAE()}
 		
 		# training models
 		for i in self.methods:
