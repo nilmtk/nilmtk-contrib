@@ -6,13 +6,9 @@ import numpy as np
 
 from nilmtk.disaggregate import Disaggregator
 
-# Fix the seed for repeatability of experiments
-SEED = 42
-np.random.seed(SEED)
-
 
 class Mean(Disaggregator):
-    """1 dimensional baseline Mean NILM algorithm.
+    """1 dimensional baseline Mean algorithm.
 
     Attributes
     ----------
