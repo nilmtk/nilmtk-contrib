@@ -1,9 +1,9 @@
-from .dataset import DataSet
-from .metergroup import MeterGroup
+from nilmtk.dataset import DataSet
+from nilmtk.metergroup import MeterGroup
 import pandas as pd
 from sklearn import preprocessing
-from nilmtk.disaggregate import CombinatorialOptimisation, Mean, FHMM, Zero
-from nilmtk.disaggregate import Disaggregator
+from .disaggregate import CombinatorialOptimisation, Mean, FHMM, Zero
+from .disaggregate import Disaggregator
 from six import iteritems
 from sklearn.metrics import mean_squared_error
 import numpy as np
@@ -18,7 +18,8 @@ class PreprocessAPI():
 		self.chunk_size = 1000
 		self.train_store = 'preprocessed-train.h5'
 		self.test_store = 'preprocessed-test.h5'
-		self.preprocessing_function = ['normalise']
+		self.test_ground_truth_store = 'ground-truth-test.h5'
+		self.preprocessing_function = ['normalise','mean_scaling']
 		self.train_datasets_dict={}
 		self.test_datasets_dict={}
 		self.train_submeters=[]
@@ -31,7 +32,7 @@ class PreprocessAPI():
 	
 	def experiment(self,d):
 		self.initialise(d)
-		self.store_datasets()
+		self.load_datasets()
 
 	def initialise(self,d):
 	
@@ -47,82 +48,212 @@ class PreprocessAPI():
 		self.train_store=d['train_store']
 		self.test_store=d['test_store']
 		self.preprocessing_function=d['preprocessing_function']
+		self.sequence_length = 100
+		self.max_val = 1500
+		# Taking a default Max value
+		self.max_powers = [self.max_val] * len(self.appliances)
+		self.window_lengths = [self.sequence_length] * len(self.appliances)
 
-	def store_datasets(self):
+		if 'sequence_length' in d:
+			self.sequence_length = d['sequence_length']
+
+		if 'max_val' in d:
+			self.max_val = d['max_val']
+		
+		if 'max_powers' in d:
+			self.max_powers = d['max_powers']
+
+		if 'window_lengths' in d:
+			self.window_lengths = d['window_lengths']
+
+		if 'means' in d:
+			self.means = d['means']
+
+		if 'stds' in d:
+			self.stds = d['std']
+
+		if 'mean_mains' in d:
+			self.mean_mains = d['mean_mains']
+
+		if 'std_mains' in d:
+			self.std_mains = d['std_mains']
+
+
+	def load_datasets(self):
 
 		d=self.train_datasets_dict
 
-		print("............... Loading Data for training ...................")
+		print("............... Loading Data for preprocessing ...................")
 		# store the train_main readings for all buildings
+		
+		print("............... Loading Train_Mains for preprocessing ...................")
+
 		for dataset in d:
 			print("Loading data for ",dataset, " dataset")
-			train=DataSet(d[dataset]['path'])
+			
 			for building in d[dataset]['buildings']:
+					train=DataSet(d[dataset]['path'])
 					print("Loading building ... ",building)
 					train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-					
-					self.train_mains=self.train_mains.append(next(train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)))		
-		
+					mains_iterator = train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
+					print (self.appliances)
+					appliance_iterators = [train.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+					for chunk_num,chunk in enumerate (train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
+						#Dummry loop for executing on outer level. Just for looping till end of a chunk
+						train_df = next(mains_iterator)
+						train_df = train_df.dropna(axis=0)
+						appliance_readings = []
+						ix = train_df.index
+						for i in appliance_iterators:
+							appliance_df = next(i)
+							appliance_df = appliance_df.dropna(axis=0)
+							appliance_readings.append(appliance_df)
+							ix = ix.intersection(appliance_df.index)
+
+						train_df = train_df.loc[ix]	# Choosing the common timestamps
+
+
+						for i in range(len(appliance_readings)):
+							appliance_readings[i] = appliance_readings[i].loc[ix] # Choosing the Common timestamps
+
+						train_appliances = []
+
+						for cnt,i in enumerate(appliance_readings):
+							train_appliances.append((self.appliances[cnt],i))
+
+						train_df, train_appliances = self.preprocess_HDF5(train_df, train_appliances,method='train')
+
+						self.store_preprocessed_data('train', train_df, train_appliances, dataset, building, chunk_num)
+
+
+		print("...............Finished Loading Train mains and Appliances for preprocessing ...................")
 
 		# store train submeters reading
-		train_buildings=pd.DataFrame()
-		for appliance in self.appliances:
-			train_df=pd.DataFrame()
-			print("For appliance .. ",appliance)
-			for dataset in d:
-				print("Loading data for ",dataset, " dataset")
-				train=DataSet(d[dataset]['path'])
-				for building in d[dataset]['buildings']:
-					print("Loading building ... ",building)
-					
-					# store data for submeters
-					train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-					train_df=train_df.append(next(train.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
-					
-
-					# store data for mains
-					
-			self.train_submeters.append((appliance,train_df))	
-		
-
-		sequence_length = 100
-
-		max_val = 5000
-
 
 		d=self.test_datasets_dict
 
 		# store the test_main readings for all buildings
+
 		for dataset in d:
 			print("Loading data for ",dataset, " dataset")
-			test=DataSet(d[dataset]['path'])
 			for building in d[dataset]['buildings']:
+				test=DataSet(d[dataset]['path'])
 				test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-				self.test_mains=(next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)))		
-				self.test_submeters=[]
-				for appliance in self.appliances:
-					test_df=next((test.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
-					self.test_submeters.append((appliance,test_df))
+				mains_iterator = test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
+				#print (self.appliances)
+				appliance_iterators = [test.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+				for chunk_num,chunk in enumerate (test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
 
-		for appliance, df in self.test_submeters:
-				self.preprocess_HDF5(df)
-		self.store_preprocessed_data()
+					test_df = next(mains_iterator)
+					test_df = test_df.dropna(axis=0)
+					appliance_readings = []
 
-	def preprocess_HDF5(self, df):
-		print(df.head())
+					ix = test_df.index
+					for i in appliance_iterators:
+						appliance_df = next(i)
+						appliance_df = appliance_df.dropna(axis=0)
+						appliance_readings.append(appliance_df)
+						ix = ix.intersection(appliance_df.index)
+
+					test_df = test_df.loc[ix]	# Choosing the common timestamps
+
+
+					for i in range(len(appliance_readings)):
+						appliance_readings[i] = appliance_readings[i].loc[ix] # Choosing the Common timestamps
+
+					test_appliances = []
+
+					for cnt,i in enumerate(appliance_readings):
+						test_appliances.append((self.appliances[cnt],i))
+
+					test_df= self.preprocess_HDF5(test_df, submeters=None,method='test')
+
+					print (test_df.shape, test_appliances[0][1].shape)
+
+					self.store_preprocessed_data('test', test_df, test_appliances, dataset, building, chunk_num)
+
+
+
+
+
+			
+	def preprocess_HDF5(self, mains, submeters=None,method='train'):
+
 		for function_name in self.preprocessing_function:
-			if function_name == 'normalise':
-				df_new = self.normalise(df)
-				print(df_new)
+			
+			if function_name =='seq2point':
+				if method == 'train':
+					aggregate_list = []
+					appliance_list = []
 
-	def normalise(self, df):
+					for app_index, (app_name,app_df) in enumerate(submeters):
+						n = self.window_lengths[app_index]
+						mean_appliance = self.means[app_index]
+						std_appliance  = self.stds[app_index]
+						units_to_pad = self.window_lengths[app_index]//2
+
+						new_mains = mains.values.flatten()
+						new_app_readings = app_df.values.reshape((-1,1))
+						new_mains = np.pad(new_mains, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
+						#new_app_readings = np.pad(new_app_readings, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))												
+
+						# This is for choosing windows
+
+						new_mains = np.array([ new_mains[i:i+n] for i in range(len(new_mains)-n+1) ])
+						new_mains = (new_mains - self.mean_mains)/self.std_mains
+						new_app_readings = (new_app_readings - mean_appliance)/std_appliance
+						new_mains = pd.DataFrame(new_mains)
+						new_app_readings = pd.DataFrame(new_app_readings)
+						aggregate_list.append(new_mains)
+						appliances_list((app_name, new_app_readings ))
 
 
-		float_array = df.values.astype(float)
-		min_max_scaler = preprocessing.MinMaxScaler()
-		scaled_array = min_max_scaler.fit_transform(float_array)
-		df_normalized = pd.DataFrame(scaled_array)
-		return df_normalized
+						#new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
+
+
+
+						#print (new_mains.shape, new_app_readings.shape, app_name)
+
+
+
+
+
+			if function_name == 'neural-nilm':
+				sequence_length  = self.sequence_length
+				max_val = self.max_val
+				if method=='train':
+					print ("Training processing")
+					
+					mains = self.neural_nilm_preprocess_input(self.neural_nilm_choose_windows(mains.values, sequence_length),sequence_length,max_val)
+					mains = mains.reshape((-1,sequence_length))
+					mains_df = pd.DataFrame(mains)
+
+					tuples_of_appliances = []
+					for (appliance_name,df) in submeters:
+						data = self.neural_nilm_preprocess_output(self.neural_nilm_choose_windows(df.values,sequence_length),sequence_length,max_val)
+						data = data.reshape((-1,sequence_length))
+						appliance_df  = pd.DataFrame(data)
+						tuples_of_appliances.append((appliance_name, appliance_df))
+
+					return mains_df, tuples_of_appliances
+
+				if method=='test':
+
+					mains = self.neural_nilm_preprocess_input(self.neural_nilm_choose_windows(mains.values, sequence_length),sequence_length,max_val)
+					mains = mains.reshape((-1,sequence_length))
+					mains_df = pd.DataFrame(mains)
+					return mains_df
+
+					#df_new = self.mean_scaling(train_mains)
+
+	# def normalise(self, df):
+
+
+	# 	float_array = df.values.astype(float)
+	# 	min_max_scaler = preprocessing.MinMaxScaler()
+	# 	scaled_array = min_max_scaler.fit_transform(float_array)
+	# 	df_normalized = pd.DataFrame(scaled_array)
+	# 	return df_normalized
 
 
 	def neural_nilm_choose_windows(self, data, sequence_length):
@@ -138,69 +269,39 @@ class PreprocessAPI():
 
 		mean_sequence = np.mean(windowed_x,axis=1).reshape((-1,1))
 		windowed_x = windowed_x - mean_sequence # Mean centering each sequence
-		return (windowed_x/max_value_of_reading).reshape((-1,sequence_length,1))
+		return (windowed_x/max_value_of_reading).reshape((-1,sequence_length))
 
 
 	def neural_nilm_preprocess_output(self,windowed_y,sequence_length, max_value_of_reading):
 
 		#self.appliance_wise_max[appliance_name] = self.default_max_reading
-		return (windowed_y/max_value_of_reading).reshape((-1,sequence_length,1))
+		return (windowed_y/max_value_of_reading).reshape((-1,sequence_length))
 
 
-	def store_preprocessed_data(self):
-		# store train_mains chunk wise 
+	def store_preprocessed_data(self, mode, mains_df, appliances_list, dataset_name, building_name, chunk_num):
 
-		sequence_length	 = 100
+		print ("Storing data for dataset %s building %s chunk_num %s" %(dataset_name,building_name,chunk_num))
 
-		max_val = 1500
-		store=pd.HDFStore('train-pre.h5',"w")
-		d=self.train_datasets_dict
-		for dataset in d:
-			
-			print("Loading data for ",dataset, " dataset")
-			
-			train=DataSet(d[dataset]['path'])
-			for building in d[dataset]['buildings']:
-				key='/train'
-				key=key+"/"+dataset
-				key=key+"/"+str(building)+"/mains/"
-				print("Loading building ... ",building)
-				train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-				for i,chunk in enumerate(train.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period,chunksize=self.chunk_size)):
-					chunk_ = self.neural_nilm_preprocess_input(self.neural_nilm_choose_windows(chunk.values, sequence_length),sequence_length,max_val)
-					
-					print (chunk.shape)
-					print (chunk_.shape)
+		common_key = "/"+ str(dataset_name)+"/"+str(building_name)+"/"+str(chunk_num)+"/"
 
-					chunk_ =  pd.DataFrame(chunk_.flatten())
 
-					store[(key+"chunk"+str(i+1))]=chunk_
-					
+		if mode=='train':
+			store = pd.HDFStore(self.train_store,"a")
+			store.put(common_key+"mains", mains_df)
 
-		# store train_appliances chunk wise
-		
-		for appliance in self.appliances:
-			
-			train_df=pd.DataFrame()
-			print("For appliance .. ",appliance)
-			for dataset in d:
-				key='/train'
-				print("Loading data for ",dataset, " dataset")
-				train=DataSet(d[dataset]['path'])
-				for building in d[dataset]['buildings']:
-					print("Loading building ... ",building)
-					
-					train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
-					for i,chunk in enumerate(train.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period,chunksize=self.chunk_size)):
-						chunk_ = self.neural_nilm_preprocess_output(self.neural_nilm_choose_windows(chunk.values,sequence_length),sequence_length,max_val)
-						print (chunk.shape)
-						print (chunk_.shape)
+			for app_name, app_df in appliances_list:
+				store.put(common_key+app_name, app_df)
+			store.close()
 
-						chunk_ =  pd.DataFrame(chunk_.flatten())
-						key='/train'+'/'+dataset+'/'+str(building)+'/'+appliance+'/chunk'+str(i+1)
-						store[key]=chunk
-				
+		else:
 
-		print(store.keys())
-		store.close()		
-		
+			# Store the Processed Aggregate
+			store = pd.HDFStore(self.test_store,"a")
+			store.put(common_key+"mains", mains_df)
+			store.close()		
+			store = pd.HDFStore(self.test_ground_truth_store,'a')
+
+			for app_name, app_df in appliances_list:
+				store.put(common_key+app_name, app_df)
+			store.close()		
+
