@@ -3,180 +3,113 @@ from warnings import warn
 
 from nilmtk.disaggregate import Disaggregator
 from keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import OrderedDict 
 
 from keras.optimizers import SGD
 from keras.models import Sequential
 import matplotlib.pyplot as  plt
+from sklearn.model_selection import train_test_split
+from keras.callbacks import ModelCheckpoint
 
 
 class DAE(Disaggregator):
     
-    def __init__(self, sequence_length=300, learning_rate=1e-3, n_epochs = 100):
-        
-        self.learning_rate = learning_rate
-        self.sequence_length = sequence_length
-        self.n_epochs = n_epochs
+    def __init__(self, d):
+
+        self.learning_rate = 1e-3
+        self.sequence_length = 300
+        self.n_epochs = 100
         self.trained = False
         self.models = OrderedDict()
-        self.std_of_random_sample = None
-        self.appliance_wise_max = OrderedDict()
-        self.default_max_reading = 10000
+        self.max_value = 6000
+
+        if 'learning_rate' in d: 
+        	self.learning_rate = d['learning_rate']
+        if 'sequence_length' in d: 
+        	self.sequence_length = d['sequence_length']
+        if 'n_epochs' in d: 
+        	self.n_epochs = d['n_epochs']
+        if 'max_val' in d:
+            self.max_val = d['max_val']
         
-    def partial_fit(self, train_main, train_appliances, do_preprocessing = True, chunk_id=None, **load_kwargs):
-
-
-        train_main = train_main.fillna(0)
-
-        print (train_main.shape)
-
-        new_train_appliances = []
-
-        for index, (appliance_name, power) in enumerate(train_appliances):
-
-            print (power.shape)
-
-            new_train_appliances.append((appliance_name,power.fillna(0)))
-
-        train_appliances = new_train_appliances + []
-
+        
+    def partial_fit(self, train_main, train_appliances, **load_kwargs):
         
         print("...............DAE partial_fit running...............")
 
-        if do_preprocessing:
+        train_main = train_main.values.reshape((-1,self.sequence_length,1))
+        
+        new_train_appliances  = []
+        
+        for app_name, app_df in train_appliances:
             
-            #print (type(train_main))
+            new_train_appliances.append((app_name, app_df.values.reshape((-1,self.sequence_length,1))))
             
-            #print (train_main.shape)
-            
-            
-            train_main = self.preprocess_input(self.choose_windows(train_main.values))
-            
-            #print (train_main.shape)
-            
-            new_train_appliances = []
-            
-            for index, (appliance_name, power) in enumerate(train_appliances):
-                
-                # Modifying the power
-                #print (power.shape)
-                
-                preprocessed_power = self.preprocess_output(self.choose_windows(power.values), appliance_name)
-                    
-                new_train_appliances.append((appliance_name,preprocessed_power))
-            
-            train_appliances = new_train_appliances
-            
-        # If the data is already preprocessed
+        train_appliances = new_train_appliances
         
         for appliance_name, power in train_appliances:
             
             if appliance_name not in self.models:
-                print ("New training for ",appliance_name)
+                print ("First model training for ",appliance_name)
                 self.models[appliance_name] = self.return_network()
             
             else:
-                
-                print ("Retrained model for ",appliance_name)
+
+                print ("Started Retraining model for ",appliance_name)
                 
             model = self.models[appliance_name]
             #print (train_main.shape)
             #print (power.shape)
             
-            print (np.max(train_main))
-            print (np.max(power))
             
-            model.fit(train_main, power, epochs = self.n_epochs)
+            #print (np.max(train_main),np.max(power),np.min(train_main),np.min(power),np.isnan(train_main).any(),np.isnan(power).any())
+            
+            if len(train_main>10):
+                # Do validation when you have sufficient samples
 
-            
-            
+                filepath = 'temp-weights.h5'
+                
+                checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
+                train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15)
+                model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint])
 
-    def disaggregate_chunk(self, test_main, do_preprocessing=True):
-        
-        original_test_main = test_main.copy()
-        
-        if do_preprocessing:
+                model.load_weights(filepath)
+            else:
+
+                model.fit(train_main, power, epochs = self.n_epochs)
             
-            test_main = self.preprocess_input(self.choose_windows(test_main.values))
+            
+   
+
+    def disaggregate_chunk(self, test_main):
         
-        disaggregated_power_dict = {}
+        
+        test_main = test_main.values
+        
+        test_main = test_main.reshape((-1,self.sequence_length,1))
+        
+        disggregation_dict = {}
         
         for appliance in self.models:
             
             prediction = self.models[appliance].predict(test_main)
             
-            prediction = prediction * self.appliance_wise_max[appliance]
+            prediction = prediction * self.max_value
             
-            valid_predictions = prediction.flatten()[:original_test_main.size]
+            valid_predictions = prediction.flatten()
             
             valid_predictions = np.where(valid_predictions>0,valid_predictions,0)
             
-            df = pd.Series(valid_predictions,index=original_test_main.index)
+            df = pd.Series(valid_predictions)
 
-            disaggregated_power_dict[appliance] = df
-            #tuples_of_predictions.append((appliance, df))
-
-        
-        return pd.DataFrame(disaggregated_power_dict,dtype='float32')
-        
-
+            disggregation_dict[appliance] = df
             
- 
-    def choose_windows(self, data):
+        return pd.DataFrame(disggregation_dict,dtype='float32')
+        
 
-        excess_entries =  self.sequence_length - (data.size % self.sequence_length)
-        
-        lst = np.array([0] * excess_entries)
-        # print("lst...")
-        # print(lst)
-        # print(len(lst))
-        # print (data.shape)
-        arr = np.concatenate((data.flatten(), lst),axis=0)
-        # print("arr...")
-        # print(arr)
-        # print(len(arr))
-        return arr.reshape((-1,self.sequence_length))
-
-        
-    def preprocess_input(self,windowed_x):
-        
-        mean_sequence = np.mean(windowed_x,axis=1).reshape((-1,1))
-        
-        windowed_x = windowed_x - mean_sequence # Mean centering each sequence
-        
-#         if self.std_of_random_sample==None:
-
-#             std_of_random_sample = 0
-
-#             while std_of_random_sample==0:
-
-#                 random_index = np.random.randint(0,len(windowed_x))
-                
-#                 std_of_random_sample = np.std(windowed_x[random_index])
-            
-            
-#             self.std_of_random_sample = std_of_random_sample
-        
-        
-        self.std_of_random_sample = self.default_max_reading
-
-        print ( self.std_of_random_sample)
-        
-        return (windowed_x/self.std_of_random_sample).reshape((-1,self.sequence_length,1))
-    
-        
-        
-    def preprocess_output(self, windowed_y, appliance_name):
-        
-        if appliance_name not in self.appliance_wise_max:
-            
-            self.appliance_wise_max[appliance_name] = self.default_max_reading
-        
-        return (windowed_y/self.appliance_wise_max[appliance_name]).reshape((-1,self.sequence_length,1))
-        
     def return_network(self):
         
         model = Sequential()
