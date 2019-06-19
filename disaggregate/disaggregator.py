@@ -21,10 +21,10 @@ class Disaggregator(object):
         Used by self._save_metadata_for_disaggregation.
     """
 
-    def partial_fit(train_main, train_appliances, **load_kwargs):
+    def partial_fit(self, train_mains, train_appliances, **load_kwargs):
          """
-         train_main: pd.DataFrame with pd.DatetimeIndex as index and 1 or more power columns
-         train_appliance_i: pd.DataFrame with the same pd.DatetimeIndex as index as train_main and the same 1 or more power columns as train_main
+         train_main: list of pd.DataFrames with pd.DatetimeIndex as index and 1 or more power columns
+         train_appliances: list of (appliance_name,list of pd.DataFrames) with the same pd.DatetimeIndex as index as train_main and the same 1 or more power columns as train_main
          """
          raise NotImplementedError()
     
@@ -33,6 +33,21 @@ class Disaggregator(object):
         """Passes each chunk from mains generator to disaggregate_chunk()
         Parameters
         ----------
-        mains : pd.DataFrame()
+        test_mains : list of pd.DataFrames
         """
         raise NotImplementedError()
+
+    
+    def call_preprocessing(self, train_mains, train_appliances):
+        """Calls the preprocessing functions of this algorithm and returns the preprocessed data in the same format
+        Parameters
+        ----------
+        train_main: list of pd.DataFrames with pd.DatetimeIndex as index and 1 or more power columns
+        train_appliances: list of (appliance_name,list of pd.DataFrames) with the same pd.DatetimeIndex as index as train_main and the same 1 or more power columns as train_main
+        """
+        # return train_main, train_appliances
+
+
+
+
+
