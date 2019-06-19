@@ -40,13 +40,23 @@ class CombinatorialOptimisation(Disaggregator):
     MIN_CHUNK_LENGTH : int
     """
 
-    def __init__(self):
+    def __init__(self, d):
         self.model = []
         self.state_combinations = None
         self.MIN_CHUNK_LENGTH = 100
         self.MODEL_NAME = 'CO'
 
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
+
+        train_main = pd.concat(train_main, axis=0)
+        train_app_tmp = []
+
+        for app_name, df_list in train_appliances:
+            df_list = pd.concat(df_list, axis=0)
+            train_app_tmp.append((app_name,df_list))
+
+        train_appliances = train_app_tmp
+
 
         print("...............CO partial_fit running.............")
         num_on_states=None
@@ -59,14 +69,16 @@ class CombinatorialOptimisation(Disaggregator):
         for appliance,readings in train_appliances:
             #print(appliance," ",readings)  
             if appliance in appliance_in_model:
-                raise RuntimeError(
-                "Appliance {} is already in model!"
-                "  Can't train twice on the same meter!",appliance)
+            #     raise RuntimeError(
+            #     "Appliance {} is already in model!"
+            #     "  Can't train twice on the same meter!",appliance)
+                print("Trained on " + appliance + " before.")
             
-            states = cluster(readings, max_num_clusters, num_on_states)    
-            self.model.append({
-                    'states': states,
-                    'appliance_name': appliance})
+            else:
+                states = cluster(readings, max_num_clusters, num_on_states)    
+                self.model.append({
+                        'states': states,
+                        'appliance_name': appliance})
 
     def _set_state_combinations_if_necessary(self):
         """Get centroids"""
@@ -99,8 +111,8 @@ class CombinatorialOptimisation(Disaggregator):
                 " can be instantiated by running `train`.")'''
 
         print("...............CO disaggregate_chunk running.............")
-        if len(mains) < self.MIN_CHUNK_LENGTH:
-            raise RuntimeError("Chunk is too short.")
+        # if len(mains) < self.MIN_CHUNK_LENGTH:
+        #     raise RuntimeError("Chunk is too short.")
 
         # sklearn produces lots of DepreciationWarnings with PyTables
         import warnings

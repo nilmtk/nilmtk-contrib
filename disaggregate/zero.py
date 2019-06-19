@@ -9,7 +9,7 @@ from nilmtk.datastore import HDFDataStore
 
 class Zero(Disaggregator):
 
-	def __init__(self):
+	def __init__(self, d):
 		self.model=[]
 		self.MIN_CHUNK_LENGTH = 100
 		self.MODEL_NAME = 'Zero'
@@ -21,6 +21,14 @@ class Zero(Disaggregator):
 			train_appliances :- [('appliance1',df1),('appliance2',df2),...]
 
 		'''
+		train_main = pd.concat(train_main, axis=0)
+		train_app_tmp = []
+
+		for app_name, df_list in train_appliances:
+			df_list = pd.concat(df_list, axis=0)
+			train_app_tmp.append((app_name,df_list))
+
+		train_appliances = train_app_tmp
 
 		print("...............Zero partial_fit running...............")
 		for appliance,readings in train_appliances:
