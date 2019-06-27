@@ -46,7 +46,7 @@ class CombinatorialOptimisation(Disaggregator):
         self.MIN_CHUNK_LENGTH = 100
         self.MODEL_NAME = 'CO'
 
-    def partial_fit(self, train_main, train_appliances, **load_kwargs):
+    def partial_fit(self, train_main, train_appliances, do_preprocessing = True, **load_kwargs):
 
         train_main = pd.concat(train_main, axis=0)
         train_app_tmp = []
@@ -111,8 +111,6 @@ class CombinatorialOptimisation(Disaggregator):
                 " can be instantiated by running `train`.")'''
 
         print("...............CO disaggregate_chunk running.............")
-        # if len(mains) < self.MIN_CHUNK_LENGTH:
-        #     raise RuntimeError("Chunk is too short.")
 
         # sklearn produces lots of DepreciationWarnings with PyTables
         import warnings
@@ -144,16 +142,25 @@ class CombinatorialOptimisation(Disaggregator):
         # value is the total power demand for each combination of states.
 
         # Start disaggregation
-        indices_of_state_combinations, residual_power = find_nearest(
-            summed_power_of_each_combination, mains.values)
-
-        appliance_powers_dict = {}
-        for i, model in enumerate(self.model):
-            print("Estimating power demand for '{}'"
-                  .format(model['appliance_name']))
-            predicted_power = state_combinations[
-                indices_of_state_combinations, i].flatten()
-            column = pd.Series(predicted_power, index=mains.index, name=i)
-            appliance_powers_dict[self.model[i]['appliance_name']] = column
-        appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
-        return appliance_powers
+        
+        
+        test_prediction_list = []
+        
+        for test_df in mains:
+            
+            appliance_powers_dict = {}
+            indices_of_state_combinations, residual_power = find_nearest(
+            summed_power_of_each_combination, test_df.values)
+            
+            for i, model in enumerate(self.model):
+                print("Estimating power demand for '{}'"
+                      .format(model['appliance_name']))
+                predicted_power = state_combinations[
+                    indices_of_state_combinations, i].flatten()
+                column = pd.Series(predicted_power, index=test_df.index, name=i)
+                appliance_powers_dict[self.model[i]['appliance_name']] = column
+            
+            appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
+            test_prediction_list.append(appliance_powers)
+        
+        return test_prediction_list

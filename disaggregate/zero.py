@@ -43,17 +43,27 @@ class Zero(Disaggregator):
 
 	def disaggregate_chunk(self,test_mains):
 		print("...............Zero disaggregate_chunk running...............")
-		if len(test_mains) < self.MIN_CHUNK_LENGTH:
-			raise RuntimeError("Chunk is too short")
+		
+		test_predictions_list = []
 
-		appliance_powers_dict={}
-		for i,model in enumerate(self.model):
-			print("Estimating power demand for '{}'"
-                  .format(model['training_metadata']))
-			# a list of predicted power values for ith appliance
-			predicted_power=[self.model[i]['states'] for j in range(0,test_mains.shape[0])]
-			column=pd.Series(predicted_power,index=test_mains.index,name=i)
-			appliance_powers_dict[self.model[i]['training_metadata']]=column
+		for test_df in test_mains:
 
-		appliance_powers=pd.DataFrame(appliance_powers_dict,dtype='float32')
-		return appliance_powers
+			#if len(test_df) < self.MIN_CHUNK_LENGTH:
+				#raise RuntimeError("Chunk is too short.")
+				#print("...Chunk is too short")
+			
+			appliance_powers_dict = {}
+			for i, model in enumerate(self.model):
+				print("Estimating power demand for '{}'"
+					.format(model['training_metadata']))
+				# a list of predicted power values for ith appliance            
+				predicted_power = [self.model[i]['states'] for j in range(0, test_df.shape[0])]
+				column = pd.Series(predicted_power, index=test_df.index, name=i)
+				appliance_powers_dict[self.model[i]['training_metadata']] = column
+
+			appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
+
+			test_predictions_list.append(appliance_powers)
+
+
+		return test_predictions_list

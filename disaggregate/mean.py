@@ -35,27 +35,45 @@ class Mean(Disaggregator):
 
         '''
         train_main = pd.concat(train_main, axis=0)
+        train_main=train_main.dropna()
         train_app_tmp = []
 
         for app_name, df_list in train_appliances:
             df_list = pd.concat(df_list, axis=0)
+            df_list = df_list.dropna()
             train_app_tmp.append((app_name,df_list))
 
         train_appliances = train_app_tmp
 
         print("...............Mean partial_fit running...............")
-
+        appliance_in_model=[d['training_metadata'] for d in self.model]
         for appliance_name, power in train_appliances:
 
             # there will be only mean state for all appliances. 
             # the algorithm will always predict mean power
+            if appliance_name in appliance_in_model:
+                i=0
+                for d in self.model:
+                    if d['training_metadata'] == appliance_name:
+                        print("retraining for ",appliance_name)
+                        newsum = power.sum() + d['mean']*d['no_of_elements']
+                        
+                        newn = d['no_of_elements']+len(power)
+                        mean = np.round(newsum/newn).astype(np.int32)
+                        self.model[i]['mean']=mean
+                        self.model[i]['no_of_elements']=newn
+                        print("length of df ",len(power))
+                        print("Self.model........", self.model[i])
+                    i += 1
 
-            mean = np.nanmean(power)
-            mean = np.round(mean).astype(np.int32)
-
-            self.model.append({
-                    'mean': mean,
-                    'training_metadata': appliance_name})
+            else:
+                mean = np.nanmean(power)
+                mean = np.round(mean).astype(np.int32)
+                
+                self.model.append({
+                        'mean': mean,
+                        'no_of_elements': len(power),
+                        'training_metadata': appliance_name})
 
     def disaggregate_chunk(self, test_mains):
 
@@ -65,16 +83,16 @@ class Mean(Disaggregator):
 
         for test_df in test_mains:
 
-            if len(test_mains) < self.MIN_CHUNK_LENGTH:
-                raise RuntimeError("Chunk is too short.")
+            #if len(test_df) < self.MIN_CHUNK_LENGTH:
+                #raise RuntimeError("Chunk is too short.")
 
             appliance_powers_dict = {}
             for i, model in enumerate(self.model):
                 print("Estimating power demand for '{}'"
                       .format(model['training_metadata']))
                 # a list of predicted power values for ith appliance            
-                predicted_power = [self.model[i]['mean'] for j in range(0, test_mains.shape[0])]
-                column = pd.Series(predicted_power, index=test_mains.index, name=i)
+                predicted_power = [self.model[i]['mean'] for j in range(0, test_df.shape[0])]
+                column = pd.Series(predicted_power, index=test_df.index, name=i)
                 appliance_powers_dict[self.model[i]['training_metadata']] = column
 
             appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
