@@ -8,10 +8,11 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
+
+
 class API():
 
 	def __init__(self,d):
-
 		self.chunk_size=40000
 		self.power = {}
 		self.sample_period = 1
@@ -260,7 +261,7 @@ class API():
 
 
 					if self.artificial_aggregate:
-						print ("Creating an Artificial Aggregate")
+						print ("Creating an Artificial Aggregate......")
 						
 
 						test_df = pd.DataFrame(np.zeros(appliance_readings[0].shape),index = appliance_readings[0].index,columns=appliance_readings[0].columns)
@@ -414,8 +415,8 @@ class API():
 		print (self)
 		method_dict={'CO':CombinatorialOptimisation(self.method_dict['CO']),
 					'FHMM':FHMM(self.method_dict['FHMM']),
-					'DAE':DAE(self.method_dict['DAE']),
 					'Hart85':Hart85(self.method_dict['Hart85']),
+					'DAE':DAE(self.method_dict['DAE']),
 					'Mean':Mean(self.method_dict['Mean']),
 					'Zero':Zero(self.method_dict['Zero']),
 					'WindowGRU':WindowGRU(self.method_dict['WindowGRU']),
@@ -479,7 +480,7 @@ class API():
 					rmse = pd.DataFrame(rmse)
 					self.rmse = rmse
 					print("............ " ,metrics," ..............")
-					print(rmse)	
+					print(rmse.round(1))	
 
 				if metrics=='mae':
 					mae={}
@@ -488,7 +489,7 @@ class API():
 					mae = pd.DataFrame(mae)
 					self.mae = mae
 					print("............ " ,metrics," ..............")
-					print(mae)  
+					print(mae.round(1))  
 
 				if metrics == 'rel_error':
 					rel_error={}
