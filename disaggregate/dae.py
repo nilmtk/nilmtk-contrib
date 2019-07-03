@@ -26,8 +26,8 @@ class DAE(Disaggregator):
         self.trained = False
         self.models = OrderedDict()
         self.mains_mean = 1000
-        self.mains_std = 6000
-
+        self.mains_std = 1800
+        self.batch_size = 512
 
         if 'sequence_length' in d: 
             self.sequence_length = d['sequence_length']
@@ -49,6 +49,9 @@ class DAE(Disaggregator):
         
         print("...............DAE partial_fit running...............")
 
+        print (train_main[0].shape)
+        print (train_appliances[0][1][0].shape)
+        print ("OK")
         #print (train_main[0])
 
         if do_preprocessing:
@@ -93,8 +96,15 @@ class DAE(Disaggregator):
                 train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15)
 
                 
-                model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True)
+                model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)
                 model.load_weights(filepath)
+
+                pred = model.predict(v_x)
+#                 for i in range(10):
+#                         plt.plot(v_y[i].flatten(),label='Truth')
+#                         plt.plot(pred[i].flatten(),label='Pred')
+#                         plt.legend()
+#                         plt.show()
                 # v_pred = model.predict(v_x)
 
                 # for i in range(len(v_x)):
@@ -158,7 +168,13 @@ class DAE(Disaggregator):
                 #prediction = self.appliance_params[appliance]['mean'] + prediction * self.appliance_params[appliance]['std']
                 # print (self.mains_std)
                 # print (np.mean(prediction))
-                prediction = prediction * self.mains_std
+
+                app_mean = self.appliance_params[appliance]['mean']
+                app_std = self.appliance_params[appliance]['std']
+
+
+                prediction = app_mean + (prediction * app_std)
+
                 # print (np.mean(prediction))
                
                 valid_predictions = prediction.flatten()
@@ -235,7 +251,7 @@ class DAE(Disaggregator):
             print ("Training processing")
             print (mains[0].shape,submeters[0][1][0].shape)
             mains = pd.concat(mains,axis=1)
-            mains = self.neural_nilm_preprocess_input(mains.values,sequence_length,self.mains_mean,self.mains_std,False)
+            mains = self.neural_nilm_preprocess_input(mains.values,sequence_length,self.mains_mean,self.mains_std,True)
             print ("Means is ")
             print (np.mean(mains))
             print (mains.shape,np.max(mains))
@@ -254,7 +270,7 @@ class DAE(Disaggregator):
                 df = pd.concat(df,axis=1)
 
                 #data = self.neural_nilm_preprocess_output(df.values, sequence_length,app_mean,app_std,False)
-                data = self.neural_nilm_preprocess_output(df.values, sequence_length,self.mains_mean,self.mains_std,False)
+                data = self.neural_nilm_preprocess_output(df.values, sequence_length,app_mean,app_std,True)
                 
                 appliance_df_list  = [pd.DataFrame(window) for window in data]
 
@@ -294,12 +310,12 @@ class DAE(Disaggregator):
         else:
             windowed_x = arr.reshape((-1,sequence_length))
 
-        #windowed_x = windowed_x - mean
+        windowed_x = windowed_x - mean
         #mean_sequence # Mean centering each sequence
-        print ("Just flat")
-        plt.plot(windowed_x.flatten()[:1000])
-        plt.ylim(0,2000)
-        plt.show()
+        # print ("Just flat")
+        # plt.plot(windowed_x.flatten()[:1000])
+        # plt.ylim(0,2000)
+        # plt.show()
         return (windowed_x/std).reshape((-1,sequence_length))
 
 
@@ -318,10 +334,10 @@ class DAE(Disaggregator):
         
 
         #self.appliance_wise_max[appliance_name] = self.default_max_reading
-        windowed_y = windowed_y# - mean
-        plt.plot(windowed_y.flatten()[:1000])
-        plt.ylim(0,2000)
-        plt.show()
+        windowed_y = windowed_y - mean
+        # plt.plot(windowed_y.flatten()[:1000])
+        # plt.ylim(0,2000)
+        # plt.show()
         return (windowed_y/std).reshape((-1,sequence_length))
         #return (windowed_y/max_value_of_reading).reshape((-1,sequence_length))
 
