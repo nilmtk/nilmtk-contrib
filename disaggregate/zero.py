@@ -48,10 +48,6 @@ class Zero(Disaggregator):
 
 		for test_df in test_mains:
 
-			#if len(test_df) < self.MIN_CHUNK_LENGTH:
-				#raise RuntimeError("Chunk is too short.")
-				#print("...Chunk is too short")
-			
 			appliance_powers_dict = {}
 			for i, model in enumerate(self.model):
 				print("Estimating power demand for '{}'"

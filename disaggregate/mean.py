@@ -35,12 +35,10 @@ class Mean(Disaggregator):
 
         '''
         train_main = pd.concat(train_main, axis=0)
-        train_main=train_main.dropna()
         train_app_tmp = []
 
         for app_name, df_list in train_appliances:
             df_list = pd.concat(df_list, axis=0)
-            df_list = df_list.dropna()
             train_app_tmp.append((app_name,df_list))
 
         train_appliances = train_app_tmp
@@ -57,7 +55,6 @@ class Mean(Disaggregator):
                     if d['training_metadata'] == appliance_name:
                         print("retraining for ",appliance_name)
                         newsum = power.sum() + d['mean']*d['no_of_elements']
-                        
                         newn = d['no_of_elements']+len(power)
                         mean = np.round(newsum/newn).astype(np.int32)
                         self.model[i]['mean']=mean
@@ -82,9 +79,6 @@ class Mean(Disaggregator):
         test_predictions_list = []
 
         for test_df in test_mains:
-
-            #if len(test_df) < self.MIN_CHUNK_LENGTH:
-                #raise RuntimeError("Chunk is too short.")
 
             appliance_powers_dict = {}
             for i, model in enumerate(self.model):

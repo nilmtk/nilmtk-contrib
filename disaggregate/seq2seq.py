@@ -15,7 +15,8 @@ from sklearn.model_selection import train_test_split
 from keras.callbacks import ModelCheckpoint
 import keras.backend as K
 
-class Seq2Point(Disaggregator):
+
+class Seq2Seq(Disaggregator):
 	
 	def __init__(self, d):
 
@@ -27,6 +28,8 @@ class Seq2Point(Disaggregator):
 		#self.max_value = 6000
 		self.mains_mean = 1000
 		self.mains_std = 1800
+		self.batch_size = 512
+
 		self.appliance_std = None
 
 		if 'sequence_length' in d: 
@@ -36,9 +39,6 @@ class Seq2Point(Disaggregator):
 
 		if 'n_epochs' in d: 
 			self.n_epochs = d['n_epochs']
-
-		if 'max_val' in d:
-			self.max_val = d['max_val']
 
 		if 'mains_mean' in d:
 			self.mains_mean = d['mains_mean']
@@ -68,7 +68,7 @@ class Seq2Point(Disaggregator):
 		new_train_appliances  = []
 		
 		for app_name, app_df in train_appliances:
-			app_df = np.array([i.values for i in app_df]).reshape((-1,1))
+			app_df = np.array([i.values for i in app_df]).reshape((-1,self.sequence_length))
 			new_train_appliances.append((app_name, app_df))
 			
 		train_appliances = new_train_appliances
@@ -96,18 +96,23 @@ class Seq2Point(Disaggregator):
 					# Do validation when you have sufficient samples
 					filepath = 'temp-weights.h5'
 					#print (train_main.shape,power.shape)
-					#self.appliance_std = self.appliance_params[appliance_name]['std']
+					
 					checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
 					train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15)
 					#train_x = train_x[:1000]
 					#train_y = train_y[:1000]
-					model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint], batch_size=1024)
+					model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint], batch_size=self.batch_size)
 					model.load_weights(filepath)
 
 					# plt.plot(v_y.flatten()[:self.sequence_length]*self.max_val,color='r')
 					# plt.plot(np.max(model.predict(v_x).flatten()[:self.sequence_length]*self.max_val,0),color='b')
 					# plt.plot(v_x[self.sequence_length//2 - 1]*self.max_val,color='g')
-					plt.show()
+					pred = model.predict(v_x)
+# 					for i in range(10):
+# 						plt.plot(v_y[i].flatten(),label='Truth')
+# 						plt.plot(pred[i].flatten(),label='Pred')
+# 						plt.legend()
+# 						plt.show()
 
 				#else:
 					#model.fit(train_main, power, epochs = self.n_epochs)
@@ -116,40 +121,108 @@ class Seq2Point(Disaggregator):
 
 	def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
 		
+		
+		# t_ = pd.concat(test_main_list,axis=1)
+		# print (type(test_main_list))
+		# print ("Testing")
+		# print (test_main_list[0].shape)
+		# print (t_.shape)
+		
 		if do_preprocessing:
 			
 			test_main_list = self.call_preprocessing(test_main_list,submeters=None,method='test')
-
+		
+		# print (test_main_list[0].shape)
+		# test_main_list = pd.concat(test_main_list,axis=1)
+		# print (test_main_list.shape)
+		# test_main = test_main_list.values.reshape((-1,self.sequence_length,1))
+		
+		# plt.figure()
+		# plt.plot(range(self.sequence_length),test_main[0].flatten())
+		# plt.plot(range(1,self.sequence_length+1),test_main[1].flatten())
+		# plt.show()
+		print ("New testing")
+		#print (test_main_list[0].shape)
+		#print (pd.concat(test_main_list,axis=1).shape)
+		#print (pd.concat(test_main_list,axis=0).shape)
+		#test_main_list = np.array([i.values for i in test_main_list])
+		disggregation_dict = {}
 		test_predictions = []
 
-		for test_main in test_main_list:
+		#print (test_main_list.shape)
+		print ("Length")
+		print (len(test_main_list))
+		test_main_array = np.array([window.values.flatten() for window in test_main_list])
+		test_main_array = test_main_array.reshape((-1,self.sequence_length,1))
+		print ("Max input")
+		print (np.max(test_main_array),np.min(test_main_array))
+		for appliance in self.models:
 
-			test_main = test_main.values
-			
-			test_main = test_main.reshape((-1,self.sequence_length,1))
-			
-			disggregation_dict = {}
-			
-			for appliance in self.models:
-				
-				prediction = self.models[appliance].predict(test_main)
-				
-				prediction = self.appliance_params[appliance]['mean'] + prediction * self.appliance_params[appliance]['std']
-				
-				valid_predictions = prediction.flatten()
-				
-				valid_predictions = np.where(valid_predictions>0,valid_predictions,0)
-				
-				df = pd.Series(valid_predictions)
+			prediction = []
 
-				disggregation_dict[appliance] = df
-			
-			results = pd.DataFrame(disggregation_dict,dtype='float32')
+			model = self.models[appliance]
 
-			test_predictions.append(results)
+			#for data in test_main_list:
+
+			#	prediction.append(model.predict(data.values.reshape((-1,self.sequence_length,1))),batch_size=self.batch_size)
+
+			prediction = model.predict(test_main_array,self.batch_size)
+			
+			l = self.sequence_length
+
+			
+
+			n = len(prediction) + l - 1
+			val_arr = np.zeros((n))
+			counts_arr = np.zeros((n))
+			o = len(val_arr)
+			for i in range(len(prediction)):
+				val_arr[i:i+l]+=prediction[i].flatten()
+				counts_arr[i:i+l]+=1
+				
+			for i in range(len(val_arr)):
+				val_arr[i] = val_arr[i]/counts_arr[i]
+
+			prediction = self.appliance_params[appliance]['mean'] + (val_arr * self.appliance_params[appliance]['std'])
+			
+			valid_predictions = prediction.flatten()
+			
+			valid_predictions = np.where(valid_predictions>0,valid_predictions,0)
+			
+			df = pd.Series(valid_predictions)
+
+			disggregation_dict[appliance] = df
+		
+		results = pd.DataFrame(disggregation_dict,dtype='float32')
+			# plt.figure()
+			# plt.plot(t_.values.flatten(),label='truth')
+			# plt.plot(valid_predictions,label='prediction')
+			# plt.title(appliance)
+			# plt.legend()
+			
+			# plt.figure()
+			# plt.plot(val_arr.flatten()[:1000])
+			# print (test_main.shape)
+			# print (valid_predictions.shape)
+			# n = len(test_main) + l - 1
+			# val_arr = np.zeros((n))
+			# counts_arr = np.zeros((n))
+			# o = len(val_arr)
+			# for i in range(len(test_main)):
+			# 	val_arr[i:i+l]+=test_main[i].flatten()
+			# 	counts_arr[i:i+l]+=1
+				
+			# for i in range(len(val_arr)):
+			# 	val_arr[i] = val_arr[i]/counts_arr[i]
+				
+				
+			# plt.plot(val_arr.flatten()[:1000],label='input')
+			# plt.legend()
+		# plt.show()
+		test_predictions.append(results)
 
 		#print (test_predictions[-1])
-
+   
 		return test_predictions
 
 
@@ -157,8 +230,8 @@ class Seq2Point(Disaggregator):
 		
 		model = Sequential()
 		# 1D Conv
-		model.add(Conv1D(30, 10, activation="relu", input_shape=(self.sequence_length, 1), strides=1))
-		model.add(Conv1D(30, 8, activation='relu',strides = 1))
+		model.add(Conv1D(30, 10, activation="relu", input_shape=(self.sequence_length, 1), strides=2))
+		model.add(Conv1D(30, 8, activation='relu',strides = 2))
 		model.add(Conv1D(40, 6, activation='relu',strides = 1))
 		model.add(Conv1D(50, 5, activation='relu',strides = 1))
 		model.add(Dropout(.2))
@@ -167,7 +240,7 @@ class Seq2Point(Disaggregator):
 		model.add(Flatten())
 		model.add(Dense(1024,activation='relu'))
 		model.add(Dropout(.2))
-		model.add(Dense(1))
+		model.add(Dense(self.sequence_length))
 		#optimizer = SGD(lr=self.learning_rate)
 		model.compile(loss='mse', optimizer='adam')#,metrics=[self.mse])
 
@@ -183,7 +256,7 @@ class Seq2Point(Disaggregator):
 			new_mains = mains.values.flatten()
 			n =  self.sequence_length
 			units_to_pad = n//2
-			new_mains = np.pad(new_mains, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
+			#new_mains = np.pad(new_mains, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
 			new_mains = np.array([ new_mains[i:i+n] for i in range(len(new_mains)-n+1) ])
 			new_mains = (new_mains - self.mains_mean)/self.mains_std
 			mains_df_list = [pd.DataFrame(window) for window in new_mains]
@@ -198,9 +271,9 @@ class Seq2Point(Disaggregator):
 				app_df = pd.concat(app_df,axis=1)
 				#mean_appliance = self.means[app_index]
 				#std_appliance  = self.stds[app_index]
-				
-				new_app_readings = app_df.values.reshape((-1,1))
-				
+				new_app_readings = app_df.values.flatten()
+				#new_app_readings = np.pad(app_df.values.flatten(), (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
+				new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
 				
 				#new_app_readings = np.pad(new_app_readings, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))												
 
@@ -222,14 +295,18 @@ class Seq2Point(Disaggregator):
 			return mains_df_list,appliance_list
 
 		else:
+
 			mains = pd.concat(mains,axis=1)
 
 			new_mains = mains.values.flatten()
 			n =  self.sequence_length
 			units_to_pad = n//2
-			new_mains = np.pad(new_mains, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
+			#new_mains = np.pad(new_mains, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
 			new_mains = np.array([ new_mains[i:i+n] for i in range(len(new_mains)-n+1) ])
 			new_mains = (new_mains - self.mains_mean)/self.mains_std
+			new_mains = new_mains.reshape((-1,self.sequence_length,1))
+			print (" test New mains shape")
+			print (new_mains.shape)
 			mains_df_list = [pd.DataFrame(window) for window in new_mains]
 
 			return mains_df_list
