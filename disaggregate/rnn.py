@@ -4,6 +4,8 @@ from warnings import warn, filterwarnings
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 
+import os
+import pickle
 import random
 import sys
 import pandas as pd
@@ -52,7 +54,6 @@ class RNN(Disaggregator):
             
         mainchunk = [np.array(x) for x in train_main]
         mainchunk = np.array(mainchunk)     
-        
         for app_name, app_df in train_appliances:
             
             if app_name not in self.models:
@@ -69,17 +70,22 @@ class RNN(Disaggregator):
             meterchunk = meterchunk[0]
             filepath = 'temp-weights.h5'                
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
-            #print("mainchunk ",mainchunk.shape[0],mainchunk.shape[1],mainchunk.shape[2],mainchunk)
-            #print("meterchunk ",meterchunk.shape[0],meterchunk)
             train_x,v_x,train_y,v_y = train_test_split(mainchunk,meterchunk,test_size=.15)
             model.fit(train_x, train_y, validation_data = [v_x,v_y], epochs = self.n_epochs, batch_size = self.batch_size, callbacks=[checkpoint], shuffle=True)
             model.load_weights(filepath)
+            if not os.path.exists('rnn'):
+                os.mkdir('rnn')
+            #model.save('rnn'+'/'+app_name+'.h5')
+            pickle_out = open("rnn/"+app_name+".pickle","wb")
+            pickle.dump(model, pickle_out)
+            pickle_out.close()
 
 
     
-    def disaggregate_chunk(self, test_main_list, do_preprocessing = True):
+    def disaggregate_chunk(self, test_main_list, model = None, do_preprocessing = True):
 
-        #print('test_main_list ',type(test_main_list),test_main_list)
+        if model != None:
+            self.models = model
         if do_preprocessing:
             test_main_list = self.call_preprocessing(test_main_list,submeters=None,method='test')
         
@@ -88,20 +94,18 @@ class RNN(Disaggregator):
         test_predictions = []
         disggregation_dict = {}
         for appliance in self.models:
-            
+
             prediction = self.models[appliance].predict(test_mains)
             prediction = np.reshape(prediction,len(prediction))
             valid_predictions=prediction.flatten()
             valid_predictions = np.where(valid_predictions>0,valid_predictions,0)
             valid_predictions = self._denormalize(valid_predictions, self.max_val)
-            print("valid predictions in disaggregate :",valid_predictions)
             df = pd.Series(valid_predictions)
             disggregation_dict[appliance] = df
-            #print("test_predictions ",disggregation_dict[appliance])       
+            
         
         results = pd.DataFrame(disggregation_dict,dtype='float32')
         test_predictions.append(results)            
-        print("test predictions ",test_predictions, len(test_predictions))
         return test_predictions 
 
 
@@ -136,9 +140,6 @@ class RNN(Disaggregator):
             mains = pd.concat(mains,axis=0)
 
             # add padding values 
-            #padding = [0 for i in range(0,self.sequence_length-1)]
-            #paddf = pd.DataFrame({mains.columns.values[0]:padding})
-            #mains=mains.append(paddf)
 
             mainsarray=self.preprocess_test_mains(mains)
             mains_df_list = [pd.DataFrame(window) for window in mainsarray]
@@ -149,8 +150,6 @@ class RNN(Disaggregator):
 
         mains = self._normalize(mains,self.max_val)
         mainsarray=np.array(mains)
-        #indexer = np.arange(self.sequence_length)[None, :] + np.arange(len(mainsarray)-self.sequence_length+1)[:, None]
-        #mainsarray=mainsarray[indexer]
         return mainsarray
 
         
@@ -164,8 +163,6 @@ class RNN(Disaggregator):
 
         mains = self._normalize(mains,self.max_val)
         mainsarray=np.array(mains)
-        #indexer = np.arange(self.sequence_length)[None, :] + np.arange(len(mainsarray)-self.sequence_length+1)[:, None]
-        #mainsarray=mainsarray[indexer]
         return mainsarray
 
 
@@ -173,12 +170,10 @@ class RNN(Disaggregator):
     def _normalize(self, chunk, mmax):
         
         '''Normalizes timeseries
-
         Parameters
         ----------
         chunk : the timeseries to normalize
         max : max value of the powerseries
-
         Returns: Normalized timeseries
         '''
         
@@ -188,12 +183,10 @@ class RNN(Disaggregator):
     def _denormalize(self, chunk, mmax):
         '''Deormalizes timeseries
         Note: This is not entirely correct
-
         Parameters
         ----------
         chunk : the timeseries to denormalize
         max : max value used for normalization
-
         Returns: Denormalized timeseries
         '''
         tchunk = chunk * mmax
@@ -216,6 +209,5 @@ class RNN(Disaggregator):
         model.add(Dense(1, activation='linear'))
 
         model.compile(loss='mse', optimizer='adam',metrics=['mse'])
-        #plot_model(model, to_file='model.png', show_shapes=True)
 
         return model

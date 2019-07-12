@@ -9,8 +9,9 @@ import sys
 import pandas as pd
 import numpy as np
 import h5py
+import os
+import pickle
 
-from keras.models import load_model
 from keras.models import Sequential
 from keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
 from keras.utils import plot_model
@@ -74,11 +75,20 @@ class WindowGRU(Disaggregator):
             train_x,v_x,train_y,v_y = train_test_split(mainchunk,meterchunk,test_size=.15)
             model.fit(train_x, train_y, validation_data = [v_x,v_y], epochs = self.epochs, callbacks=[checkpoint], shuffle=True,batch_size=self.batch_size)
             model.load_weights(filepath)
-
+            
+            if not os.path.exists('onlineGRU'):
+                os.mkdir('onlineGRU')
+            
+            pickle_out = open("onlineGRU/"+app_name+".pickle","wb")
+            pickle.dump(model, pickle_out)
+            pickle_out.close()
 
     
-    def disaggregate_chunk(self, test_main_list, do_preprocessing = True):
+    def disaggregate_chunk(self, test_main_list, model = None, do_preprocessing = True):
 
+        if model != None:
+            self.models = model
+                
         if do_preprocessing:
             test_main_list = self.call_preprocessing(test_main_list,submeters=None,method='test')
         
