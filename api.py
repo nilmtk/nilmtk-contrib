@@ -73,8 +73,8 @@ class API():
 
     def initialise(self, d):
 
-        for elems in d['params']['power']:
-            self.power = d['params']['power']
+        for elems in d['power']:
+            self.power = d['power']
         self.sample_period = d['sample_rate']
         for elems in d['appliances']:
             self.appliances.append(elems)
