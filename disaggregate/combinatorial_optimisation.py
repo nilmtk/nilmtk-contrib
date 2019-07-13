@@ -46,39 +46,43 @@ class CombinatorialOptimisation(Disaggregator):
         self.MIN_CHUNK_LENGTH = 100
         self.MODEL_NAME = 'CO'
 
-    def partial_fit(self, train_main, train_appliances, do_preprocessing = True, **load_kwargs):
+    def partial_fit(
+            self,
+            train_main,
+            train_appliances,
+            do_preprocessing=True,
+            **load_kwargs):
 
         train_main = pd.concat(train_main, axis=0)
         train_app_tmp = []
 
         for app_name, df_list in train_appliances:
             df_list = pd.concat(df_list, axis=0)
-            train_app_tmp.append((app_name,df_list))
+            train_app_tmp.append((app_name, df_list))
 
         train_appliances = train_app_tmp
 
-
         print("...............CO partial_fit running.............")
-        num_on_states=None
-        if len(train_appliances)>12:
-            max_num_clusters=2
+        num_on_states = None
+        if len(train_appliances) > 12:
+            max_num_clusters = 2
         else:
-            max_num_clusters=3
-        appliance_in_model=[d['appliance_name'] for d in self.model]
+            max_num_clusters = 3
+        appliance_in_model = [d['appliance_name'] for d in self.model]
 
-        for appliance,readings in train_appliances:
-            #print(appliance," ",readings)  
+        for appliance, readings in train_appliances:
+            #print(appliance," ",readings)
             if appliance in appliance_in_model:
-            #     raise RuntimeError(
-            #     "Appliance {} is already in model!"
-            #     "  Can't train twice on the same meter!",appliance)
+                #     raise RuntimeError(
+                #     "Appliance {} is already in model!"
+                #     "  Can't train twice on the same meter!",appliance)
                 print("Trained on " + appliance + " before.")
-            
+
             else:
-                states = cluster(readings, max_num_clusters, num_on_states)    
+                states = cluster(readings, max_num_clusters, num_on_states)
                 self.model.append({
-                        'states': states,
-                        'appliance_name': appliance})
+                    'states': states,
+                    'appliance_name': appliance})
 
     def _set_state_combinations_if_necessary(self):
         """Get centroids"""
@@ -142,25 +146,26 @@ class CombinatorialOptimisation(Disaggregator):
         # value is the total power demand for each combination of states.
 
         # Start disaggregation
-        
-        
+
         test_prediction_list = []
-        
+
         for test_df in mains:
-            
+
             appliance_powers_dict = {}
             indices_of_state_combinations, residual_power = find_nearest(
-            summed_power_of_each_combination, test_df.values)
-            
+                summed_power_of_each_combination, test_df.values)
+
             for i, model in enumerate(self.model):
                 print("Estimating power demand for '{}'"
                       .format(model['appliance_name']))
                 predicted_power = state_combinations[
                     indices_of_state_combinations, i].flatten()
-                column = pd.Series(predicted_power, index=test_df.index, name=i)
+                column = pd.Series(
+                    predicted_power, index=test_df.index, name=i)
                 appliance_powers_dict[self.model[i]['appliance_name']] = column
-            
-            appliance_powers = pd.DataFrame(appliance_powers_dict, dtype='float32')
+
+            appliance_powers = pd.DataFrame(
+                appliance_powers_dict, dtype='float32')
             test_prediction_list.append(appliance_powers)
-        
+
         return test_prediction_list
