@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+import numpy as np
 from collections import OrderedDict, deque
 import pandas as pd
 
@@ -9,7 +10,6 @@ from nilmtk.disaggregate import Disaggregator
 
 # Fix the seed for repeatability of experiments
 SEED = 42
-import numpy as np
 
 np.random.seed(SEED)
 
@@ -94,35 +94,35 @@ class PairBuffer(object):
     def pair_transitions(self):
         """
         Hart 85, P 33.
-        When searching the working buffer for pairs, the order in which 
-        entries are examined is very important. If an Appliance has 
-        on and off several times in succession, there can be many 
+        When searching the working buffer for pairs, the order in which
+        entries are examined is very important. If an Appliance has
+        on and off several times in succession, there can be many
         pairings between entries in the buffer. The algorithm must not
-        allow an 0N transition to match an OFF which occurred at the end 
-        of a different cycle, so that only ON/OFF pairs which truly belong 
-        together are paired up. Otherwise the energy consumption of the 
-        appliance will be greatly overestimated. The most straightforward 
-        search procedures can make errors of this nature when faced with 
+        allow an 0N transition to match an OFF which occurred at the end
+        of a different cycle, so that only ON/OFF pairs which truly belong
+        together are paired up. Otherwise the energy consumption of the
+        appliance will be greatly overestimated. The most straightforward
+        search procedures can make errors of this nature when faced with
         types of transition sequences.
 
         Hart 85, P 32.
         For the two-state load monitor, a pair is defined as two entries
         which meet the following four conditions:
         (1) They are on the same leg, or are both 240 V,
-        (2) They are both unmarked, 
-        (3) The earlier has a positive real power component, and 
-        (4) When added together, they result in a vector in which the 
-        absolute value of the real power component is less than 35 
-        Watts (or 3.5% of the real power, if the transitions are 
-        over 1000 W) and the absolute value of the reactive power 
+        (2) They are both unmarked,
+        (3) The earlier has a positive real power component, and
+        (4) When added together, they result in a vector in which the
+        absolute value of the real power component is less than 35
+        Watts (or 3.5% of the real power, if the transitions are
+        over 1000 W) and the absolute value of the reactive power
         component is less than 35 VAR (or 3.5%).
 
-        ... the correct way to search the buffer is to start by checking 
-        elements which are close together in the buffer, and gradually 
-        increase the distance. First, adjacent  elements are checked for 
-        pairs which meet all four requirements above; if any are found 
-        they are processed and marked. Then elements two entries apart 
-        are checked, then three, and so on, until the first and last 
+        ... the correct way to search the buffer is to start by checking
+        elements which are close together in the buffer, and gradually
+        increase the distance. First, adjacent  elements are checked for
+        pairs which meet all four requirements above; if any are found
+        they are processed and marked. Then elements two entries apart
+        are checked, then three, and so on, until the first and last
         element are checked...
 
         """
@@ -132,14 +132,13 @@ class PairBuffer(object):
         if tlength < 2:
             return pairmatched
 
-            
         # Can we reduce the running time of this algorithm?
         # My gut feeling is no, because we can't re-order the list...
         # I wonder if we sort but then check the time... maybe. TO DO
         # (perhaps!).
 
         new_matched_pairs = []
-        
+
         # Start the element distance at 1, go up to current length of buffer
         for eDistance in range(1, tlength):
             idx = 0
@@ -162,12 +161,16 @@ class PairBuffer(object):
                             matchtols = [self._min_tol, self._min_tol]
                             for ix in range(1, self._num_measurements):
                                 matchtols[ix - 1] = (
-                                    self._min_tol 
-                                    if (max(np.fabs([val[ix], compval[ix]])) < self._large_transition) 
+                                    self._min_tol
+                                    if (max(np.fabs([val[ix], compval[ix]])) < self._large_transition)
                                     else (self._percent_tol * max(np.fabs([val[ix], compval[ix]])))
                                 )
                             if self._num_measurements == 3:
-                                condition = (np.fabs(vsum[0]) < matchtols[0]) and (np.fabs(vsum[1]) < matchtols[1])
+                                condition = (
+                                    np.fabs(
+                                        vsum[0]) < matchtols[0]) and (
+                                    np.fabs(
+                                        vsum[1]) < matchtols[1])
 
                             elif self._num_measurements == 2:
                                 condition = np.fabs(vsum[0]) < matchtols[0]
@@ -178,8 +181,10 @@ class PairBuffer(object):
                                 self.transition_list[compindex][self._num_measurements] = True
                                 pairmatched = True
 
-                                # Append the OFF transition to the ON. Add to the list.
-                                matchedpair = val[0:self._num_measurements] + compval[0:self._num_measurements]
+                                # Append the OFF transition to the ON. Add to
+                                # the list.
+                                matchedpair = val[0:self._num_measurements] + \
+                                    compval[0:self._num_measurements]
                                 new_matched_pairs.append(matchedpair)
 
                     # Iterate Index
@@ -187,13 +192,16 @@ class PairBuffer(object):
                 else:
                     break
 
-        # Process new pairs in a single operation (faster than growing the dataframe)
+        # Process new pairs in a single operation (faster than growing the
+        # dataframe)
         if pairmatched:
             if self.matched_pairs.empty:
-                self.matched_pairs = pd.DataFrame(new_matched_pairs, columns=self.pair_columns)
+                self.matched_pairs = pd.DataFrame(
+                    new_matched_pairs, columns=self.pair_columns)
             else:
-                self.matched_pairs = self.matched_pairs.append(pd.DataFrame(new_matched_pairs, columns=self.pair_columns)) 
-        
+                self.matched_pairs = self.matched_pairs.append(
+                    pd.DataFrame(new_matched_pairs, columns=self.pair_columns))
+
         return pairmatched
 
 
@@ -208,7 +216,7 @@ class Hart85(Disaggregator):
         Each value is a sorted list of power in different states.
     """
 
-    def __init__(self,d):
+    def __init__(self, d):
         self.model = {}
         self.MODEL_NAME = "Hart85"
 
@@ -245,12 +253,12 @@ class Hart85(Disaggregator):
         self.pair_df = self.pair(
             buffer_size, min_tolerance, percent_tolerance, large_transition)
         self.centroids = hart85_means_shift_cluster(self.pair_df, columns)
-        
+
         self.model = dict(
             columns=columns,
             state_threshold=state_threshold,
             noise_level=noise_level,
-            steady_states=self.steady_states, 
+            steady_states=self.steady_states,
             transients=self.transients,
             # pair_df=self.pair_df,
             centroids=self.centroids
