@@ -1,43 +1,33 @@
 from nilmtk.dataset import DataSet
 from nilmtk.metergroup import MeterGroup
 import pandas as pd
-from nilmtk.disaggregate import *
-from nilmtk.disaggregate import Disaggregator
+from disaggregate import *
+from disaggregate import Disaggregator
 from six import iteritems
 from sklearn.metrics import mean_squared_error, mean_absolute_error, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import OrderedDict
-import os
-import pickle
 import datetime
-
 
 class API():
 
-    def __init__(self, d):
+    """
+    The API ia designed for rapid experimentation with NILM Algorithms. 
 
-        self.chunk_size = 40000
+    """
+
+    def __init__(self,params):
+
+        """
+        Initializes the API with default parameters
+        """
         self.power = {}
         self.sample_period = 1
         self.appliances = []
         self.methods = {}
         self.chunk_size = None
-        self.method_dict = {
-            'CO': {},
-            'FHMM': {},
-            'Hart85': {},
-            'DAE': {},
-            'Mean': {},
-            'Zero': {},
-            'WindowGRU': {},
-            'Seq2Point': {},
-            'RNN': {},
-            'Seq2Seq': {}
-        }
         self.pre_trained = False
         self.metrics = []
-        self.pre_trained = None
         self.train_datasets_dict = {}
         self.test_datasets_dict = {}
         self.artificial_aggregate = False
@@ -47,591 +37,476 @@ class API():
         self.test_mains = pd.DataFrame()
         self.gt_overall = {}
         self.pred_overall = {}
-        self.classifiers = []
-        self.dictionary = {}
+        self.classifiers=[]
         self.DROP_ALL_NANS = True
-        self.FILL_ALL_NANS = False
         self.mae = pd.DataFrame()
         self.rmse = pd.DataFrame()
+        self.experiment(params)
 
-        self.experiment(d)
+    
+    def initialise(self,params):
 
-    def experiment(self, d):
+        """
+        Instantiates the API with the specified Parameters
+        """
+        for elems in params['params']['power']:
+            self.power = params['params']['power']
+        self.sample_period = params['sample_rate']
+        for elems in params['appliances']:
+            self.appliances.append(elems)
+        
+        self.pre_trained = ['pre_trained']
+        self.train_datasets_dict = params['train']['datasets']
+        self.test_datasets_dict = params['test']['datasets']
+        self.metrics = params['test']['metrics']
+        self.methods = params['methods']
+        self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
+        self.chunk_size = params.get('chunk_size',self.chunk_size)
 
-        self.dictionary = d
-        self.initialise(d)
-        if d['preprocessing']:
-            print('oo Training')
-            self.train_test_preprocessed_data()
+    def experiment(self,params):
+        """
+        Calls the Experiments with the specified parameters
+        """
+        self.params=params
+        self.initialise(params)
+        self.store_classifier_instances()
+        d=self.train_datasets_dict
 
-        elif d['chunk_size']:
-            print('oo Chunk Training')
-            self.load_datasets_chunks()
+        for model_name, clf in self.classifiers:
+            # If the model is a neural net, it has an attribute n_epochs, Ex: DAE, Seq2Point
+            print ("Started training for ",clf.MODEL_NAME)
+            if hasattr(clf,'n_epochs'):
+                epochs = clf.n_epochs
+            # If it doesn't have the attribute n_epochs, this is executed. Ex: Mean, Zero
+            else:
+                epochs = 1
+            # If the model has the filename specified for loading the pretrained model, then we don't need to load training data
+            if clf.load_model_path:
+                print (clf.MODEL_NAME," is loading the pretrained model")
+                continue
+
+            for q in range(epochs):
+                if clf.chunk_wise_training and self.chunk_size:
+                    # The classifier can call partial fit on different chunks and refine the model
+                    print ("Chunk training for ",clf.MODEL_NAME)
+                    self.train_chunk_wise(clf,d)                
+
+                else:
+                    print ("Joint training for ",clf.MODEL_NAME)
+                    self.train_jointly(clf,d)
+
+            print ("Finished training for ",clf.MODEL_NAME)
+
+        d=self.test_datasets_dict
+        if self.chunk_size:
+            print ("Chunk Wise Testing for all algorithms")
+            # It means that, predictions can also be done on chunks
+            self.test_chunk_wise(d)
 
         else:
-            self.load_datasets()
+            print ("Joint Testing for all algorithms")
+            self.test_jointly(d)
 
-    def initialise(self, d):
+        # if clf.chunk_wise_training:
+        #   # The classifier can call partial fit on different chunks and refine the model
+        #   self.test_chunk_wise()              
 
-        for elems in d['power']:
-            self.power = d['power']
-        self.sample_period = d['sample_rate']
-        for elems in d['appliances']:
-            self.appliances.append(elems)
-        self.pre_trained = d['pre_trained']
-        self.train_datasets_dict = d['train']['datasets']
-        self.test_datasets_dict = d['test']['datasets']
-        self.pre_trained = d['pre_trained']
-        self.methods = d['methods']
+        # else:
+        #   self.test_jointly()
 
-        if "artificial_aggregate" in d:
-            self.artificial_aggregate = d['artificial_aggregate']
-        if "chunk_size" in d:
-            self.chunk_size = d['chunk_size']
+            
+        # if params['chunk_size']:
+        #   # This is for training and Testing in Chunks
+        #   self.load_datasets_chunks()
+        # else:
+        #   # This is to load all the data from all buildings and use it for training and testing. This might not be possible to execute on computers with low specs
+        #   self.load_datasets()
+        
+    def train_chunk_wise(self,clf,d):
 
-        self.metrics = d['test']['metrics']
+        """
+        This function loads the data from buildings and datasets with the specified chunk size and trains on each of them. 
 
-    def train_test_preprocessed_data(self):
+        After the training process is over, it tests on the specified testing set whilst loading it in chunks.
 
-        # chunkwise training and testing from preprocessed file
-        # Training
-        self.store_classifier_instances()
-        d = self.dictionary
+        """
+        # First, we initialize all the models   
 
-        train_file = pd.HDFStore(d['preprocess_train_path'], "r")
-        keys = train_file.keys()
-
-        # Processed HDF5 keys will be of the following format
-        # /dataset_name/building_name/
-
-        tuples = [i.split('/')[1:] for i in keys]
-        datasets_list = list(set([i[0] for i in tuples]))
-
-        for dataset_name in datasets_list:
-            # Choose the buildings for the selected dataset
-            available_buildings_in_current_dataset = list(
-                set([i[1] for i in tuples if i[0] == dataset_name]))
-
-            for building_id in available_buildings_in_current_dataset:
-
-                available_chunks = list(
-                    set([i[2] for i in tuples if (i[0] == dataset_name) and i[1] == building_id]))
-
-                for chunk_id in available_chunks:
-                    mains_list = []
-                    total_num_windows = len([i for i in tuples if (
-                        i[0] == dataset_name and i[1] == building_id and i[2] == chunk_id and i[3] == 'mains')])
-                    for window_id in range(total_num_windows):
-                        mains_df = train_file['/%s/%s/%s/%s/%s' %
-                                              (dataset_name, building_id, chunk_id, 'mains', str(window_id))]
-                        mains_list.append(mains_df)
-
-                    list_of_appliances = []
-
-                    for app_name in self.appliances:
-                        list_of_readings_for_current_appliance = []
-                        for window_id in range(total_num_windows):
-                            appliance_df = train_file['/%s/%s/%s/%s/%s' % (
-                                dataset_name, building_id, chunk_id, app_name, str(window_id))]
-                            list_of_readings_for_current_appliance.append(
-                                appliance_df)
-
-                        list_of_appliances.append(
-                            (app_name, list_of_readings_for_current_appliance))
-
-                    self.train_mains = mains_list
-                    self.train_submeters = list_of_appliances
-                    print("Training on ", dataset_name, building_id, chunk_id)
-                    self.call_partial_fit()
-
-        train_file.close()
-
-    def load_datasets_chunks(self):
-
-        self.store_classifier_instances()
-        d = self.train_datasets_dict
-
-        print("............... Loading Data for preprocessing ...................")
-        # store the train_main readings for all buildings
-
-        print("............... Loading Train_Mains for preprocessing ...................")
-
+            
         for dataset in d:
-            print("Loading data for ", dataset, " dataset")
-
+            print("Loading data for ",dataset, " dataset")          
             for building in d[dataset]['buildings']:
-                train = DataSet(d[dataset]['path'])
-                print("Loading building ... ", building)
-                train.set_window(
-                    start=d[dataset]['buildings'][building]['start_time'],
-                    end=d[dataset]['buildings'][building]['end_time'])
-                mains_iterator = train.buildings[building].elec.mains().load(
-                    chunksize=self.chunk_size,
-                    physical_quantity='power',
-                    ac_type=self.power['mains'],
-                    sample_period=self.sample_period)
-                print(self.appliances)
-                appliance_iterators = [
-                    train.buildings[building].elec.select_using_appliances(
-                        type=app_name).load(
-                        chunksize=self.chunk_size,
-                        physical_quantity='power',
-                        ac_type=self.power['appliance'],
-                        sample_period=self.sample_period) for app_name in self.appliances]
-                for chunk_num, chunk in enumerate(train.buildings[building].elec.mains().load(
-                        chunksize=self.chunk_size, physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)):
-
-                        # Dummry loop for executing on outer level. Just for
-                        # looping till end of a chunk
-                    print("starting enumeration..........")
+                train=DataSet(d[dataset]['path'])
+                print("Loading building ... ",building)
+                train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
+                mains_iterator = train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
+                appliance_iterators = [train.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+                print(train.buildings[building].elec.mains())
+                for chunk_num,chunk in enumerate (train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
+                    #Dummry loop for executing on outer level. Just for looping till end of a chunk
+                    print("Starting enumeration..........")
                     train_df = next(mains_iterator)
                     appliance_readings = []
-
                     for i in appliance_iterators:
                         try:
                             appliance_df = next(i)
                         except StopIteration:
-                            pass
+                            appliance_df = pd.DataFrame()
                         appliance_readings.append(appliance_df)
 
                     if self.DROP_ALL_NANS:
-                        train_df, appliance_readings = self.dropnans(
-                            train_df, appliance_readings)
-
-                    if self.FILL_ALL_NANS:
-                        train_df, appliance_readings = self.fillnans(
-                            train_df, appliance_readings)
-
+                        train_df, appliance_readings = self.dropna(train_df, appliance_readings)
+                    
                     if self.artificial_aggregate:
-                        print("Creating an Artificial Aggregate")
-                        train_df = pd.DataFrame(
-                            np.zeros(
-                                appliance_readings[0].shape),
-                            index=appliance_readings[0].index,
-                            columns=appliance_readings[0].columns)
+                        print ("Creating an Artificial Aggregate")
+                        train_df = pd.DataFrame(np.zeros(appliance_readings[0].shape),index = appliance_readings[0].index,columns=appliance_readings[0].columns)
                         for app_reading in appliance_readings:
-                            train_df += app_reading
-
+                            train_df+=app_reading
                     train_appliances = []
 
-                    for cnt, i in enumerate(appliance_readings):
-                        train_appliances.append((self.appliances[cnt], [i]))
+                    for cnt,i in enumerate(appliance_readings):
+                        train_appliances.append((self.appliances[cnt],[i]))
 
                     self.train_mains = [train_df]
                     self.train_submeters = train_appliances
-                    self.call_partial_fit()
+                    clf.partial_fit(self.train_mains,self.train_submeters)
+                
 
-        print("...............Finished Loading Train mains and Appliances for preprocessing ...................")
+        print("...............Finished the Training Process ...................")
 
-        # store train submeters reading
-        d = self.test_datasets_dict
-        # store the test_main readings for all buildings
+    def test_chunk_wise(self,d):
+
+        print("...............Started  the Testing Process ...................")
 
         for dataset in d:
-            print("Loading data for ", dataset, " dataset")
+            print("Loading data for ",dataset, " dataset")
             for building in d[dataset]['buildings']:
-                test = DataSet(d[dataset]['path'])
-                test.set_window(
-                    start=d[dataset]['buildings'][building]['start_time'],
-                    end=d[dataset]['buildings'][building]['end_time'])
-                mains_iterator = test.buildings[building].elec.mains().load(
-                    chunksize=self.chunk_size,
-                    physical_quantity='power',
-                    ac_type=self.power['mains'],
-                    sample_period=self.sample_period)
-                appliance_iterators = [
-                    test.buildings[building].elec.select_using_appliances(
-                        type=app_name).load(
-                        chunksize=self.chunk_size,
-                        physical_quantity='power',
-                        ac_type=self.power['appliance'],
-                        sample_period=self.sample_period) for app_name in self.appliances]
-                for chunk_num, chunk in enumerate(test.buildings[building].elec.mains().load(
-                        chunksize=self.chunk_size, physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)):
-
+                test=DataSet(d[dataset]['path'])
+                test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
+                mains_iterator = test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
+                appliance_iterators = [test.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+                for chunk_num,chunk in enumerate (test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
                     test_df = next(mains_iterator)
                     appliance_readings = []
                     for i in appliance_iterators:
                         try:
                             appliance_df = next(i)
                         except StopIteration:
-                            pass
-                        appliance_readings.append(appliance_df)
-                    if self.DROP_ALL_NANS:
-                        test_df, appliance_readings = self.dropnans(
-                            test_df, appliance_readings)
+                            appliance_df = pd.DataFrame()
 
-                    if self.FILL_ALL_NANS:
-                        test_df, appliance_readings = self.fillnans(
-                            test_df, appliance_readings)
+                        appliance_readings.append(appliance_df)
+
+                    if self.DROP_ALL_NANS:
+                        test_df, appliance_readings = self.dropna(test_df, appliance_readings)
 
                     if self.artificial_aggregate:
-                        print("Creating an Artificial Aggregate")
-
-                        test_df = pd.DataFrame(
-                            np.zeros(
-                                appliance_readings[0].shape),
-                            index=appliance_readings[0].index,
-                            columns=appliance_readings[0].columns)
+                        print ("Creating an Artificial Aggregate")
+                        test_df = pd.DataFrame(np.zeros(appliance_readings[0].shape),index = appliance_readings[0].index,columns=appliance_readings[0].columns)
                         for app_reading in appliance_readings:
-                            test_df += app_reading
+                            test_df+=app_reading
 
                     test_appliances = []
 
-                    for cnt, i in enumerate(appliance_readings):
-                        test_appliances.append((self.appliances[cnt], [i]))
+                    for cnt,i in enumerate(appliance_readings):
+                        test_appliances.append((self.appliances[cnt],[i]))
 
-                    self.test_mains = test_df
+                    self.test_mains = [test_df]
                     self.test_submeters = test_appliances
-                    print(
-                        "Dataset %s Building %s chunk %s" %
-                        (dataset, building, chunk_num))
-
-                    self.test_mains = [self.test_mains]
+                    print("Results for Dataset {dataset} Building {building} Chunk {chunk_num}".format(dataset=dataset,building=building,chunk_num=chunk_num))
                     self.call_predict(self.classifiers)
 
-    def dropnans(self, mains_df, appliance_dfs):
 
-        print("Droppping NANS")
+    def train_jointly(self,clf,d):
+
+        # This function has a few issues, which should be addressed soon
+        print("............... Loading Data for training ...................")
+        # store the train_main readings for all buildings
+        self.train_mains = pd.DataFrame()
+        self.train_submeters = [pd.DataFrame() for i in range(len(self.appliances))]
+        for dataset in d:
+            print("Loading data for ",dataset, " dataset")
+            train=DataSet(d[dataset]['path'])
+            for building in d[dataset]['buildings']:
+                print("Loading building ... ",building)
+                train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
+                train_df = next(train.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
+                appliance_readings = []
+                
+                for appliance_name in self.appliances:
+                    appliance_df = next(train.buildings[building].elec.submeters().select_using_appliances(type=appliance_name).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period))
+                    appliance_readings.append(appliance_df)
+
+                if self.DROP_ALL_NANS:
+                    train_df, appliance_readings = self.dropna(train_df, appliance_readings)
+
+                self.train_mains=self.train_mains.append(train_df)
+                for i,appliance_name in enumerate(self.appliances):
+                    self.train_submeters[i] = self.train_submeters[i].append(appliance_readings[i])
+
+        appliance_readings = []
+        for i,appliance_name in enumerate(self.appliances):
+            appliance_readings.append((appliance_name, [self.train_submeters[i]]))
+
+        self.train_mains = [self.train_mains]
+        self.train_submeters = appliance_readings   
+        clf.partial_fit(self.train_mains,self.train_submeters)
+
+    def test_jointly(self,d):
+
+
+        # store the test_main readings for all buildings
+        for dataset in d:
+            print("Loading data for ",dataset, " dataset")
+            test=DataSet(d[dataset]['path'])
+            for building in d[dataset]['buildings']:
+                test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
+                test_mains=next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
+                appliance_readings=[]
+                for appliance in self.appliances:
+                    test_df=next((test.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
+                    appliance_readings.append(test_df)
+
+                if self.DROP_ALL_NANS:
+                    test_df, appliance_readings = self.dropna(test_df, appliance_readings)
+
+                self.test_mains = [test_df]
+                for i, appliance_name in enumerate(self.appliances):
+                    self.test_submeters.append((appliance_name,[appliance_readings[i]]))
+                
+                self.call_predict(self.classifiers)
+            
+
+    def dropna(self,mains_df, appliance_dfs):
+        """
+        Drops the missing values in the Mains reading and appliance readings and returns consistent data by copmuting the intersection
+        """
+        print ("Dropping missing values")
+
+        # The below steps are for making sure that data is consistent by doing intersection across appliances
         mains_df = mains_df.dropna()
-
         for i in range(len(appliance_dfs)):
             appliance_dfs[i] = appliance_dfs[i].dropna()
-
         ix = mains_df.index
-        for app_df in appliance_dfs:
+        for  app_df in appliance_dfs:
             ix = ix.intersection(app_df.index)
-
         mains_df = mains_df.loc[ix]
-
         new_appliances_list = []
         for app_df in appliance_dfs:
             new_appliances_list.append(app_df.loc[ix])
-
-        return mains_df, new_appliances_list
-
-    def fillnans(self, mains_df, appliance_dfs):
-
-        print("Filling NANS")
-
-        # First find indexes in main where it has nans
-
-        datelist = pd.date_range(mains_df.index[0].date(), datetime.timedelta(
-            days=1) + mains_df.index[-1].date(), freq='60S', tz='US/Eastern').tolist()[:-1]
-        mains_df = mains_df.reindex(index=datelist)
-        indexes = pd.isnull(mains_df)
-        mains_df = mains_df.fillna(0)
-
-        for i in range(len(appliance_dfs)):
-            appliance_dfs[i] = appliance_dfs[i].reindex(index=datelist)
-            appliance_dfs[i] = appliance_dfs[i].fillna(0)
-            appliance_dfs[i][indexes] = 0
-
-        new_appliances_list = []
-        for app_df in appliance_dfs:
-            new_appliances_list.append(app_df)
-
-        return mains_df, new_appliances_list
-
-    def load_datasets(self):
-
-        self.store_classifier_instances()
-        d = self.train_datasets_dict
-
-        print("............... Loading Data for preprocessing ...................")
-        # store the train_main readings for all buildings
-
-        print("............... Loading Train_Mains for preprocessing ...................")
-
-        for dataset in d:
-            print("Loading data for ", dataset, " dataset")
-
-            for building in d[dataset]['buildings']:
-                train = DataSet(d[dataset]['path'])
-                print("Loading building ... ", building)
-                train.set_window(
-                    start=d[dataset]['buildings'][building]['start_time'],
-                    end=d[dataset]['buildings'][building]['end_time'])
-                mains_iterator = train.buildings[building].elec.mains().load(
-                    physical_quantity='power',
-                    ac_type=self.power['mains'],
-                    sample_period=self.sample_period)
-                print(self.appliances)
-                appliance_iterators = [
-                    train.buildings[building].elec.select_using_appliances(
-                        type=app_name).load(
-                        physical_quantity='power',
-                        ac_type=self.power['appliance'],
-                        sample_period=self.sample_period) for app_name in self.appliances]
-                for chunk_num, chunk in enumerate(train.buildings[building].elec.mains().load(
-                        physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)):
-
-                        # Dummry loop for executing on outer level. Just for
-                        # looping till end of a chunk
-                    print("starting enumeration..........")
-                    train_df = next(mains_iterator)
-                    appliance_readings = []
-
-                    for i in appliance_iterators:
-                        try:
-                            appliance_df = next(i)
-                        except StopIteration:
-                            pass
-                        appliance_readings.append(appliance_df)
-
-                    if self.DROP_ALL_NANS:
-                        train_df, appliance_readings = self.dropnans(
-                            train_df, appliance_readings)
-
-                    if self.FILL_ALL_NANS:
-                        train_df, appliance_readings = self.fillnans(
-                            train_df, appliance_readings)
-
-                    if self.artificial_aggregate:
-                        print("Creating an Artificial Aggregate")
-                        train_df = pd.DataFrame(
-                            np.zeros(
-                                appliance_readings[0].shape),
-                            index=appliance_readings[0].index,
-                            columns=appliance_readings[0].columns)
-                        for app_reading in appliance_readings:
-                            train_df += app_reading
-
-                    train_appliances = []
-
-                    for cnt, i in enumerate(appliance_readings):
-                        train_appliances.append((self.appliances[cnt], [i]))
-
-                    self.train_mains = [train_df]
-                    self.train_submeters = train_appliances
-                    self.call_partial_fit()
-
-        print("...............Finished Loading Train mains and Appliances for preprocessing ...................")
-
-        # store train submeters reading
-        d = self.test_datasets_dict
-        # store the test_main readings for all buildings
-
-        for dataset in d:
-            print("Loading data for ", dataset, " dataset")
-            for building in d[dataset]['buildings']:
-                test = DataSet(d[dataset]['path'])
-                test.set_window(
-                    start=d[dataset]['buildings'][building]['start_time'],
-                    end=d[dataset]['buildings'][building]['end_time'])
-                mains_iterator = test.buildings[building].elec.mains().load(
-                    physical_quantity='power',
-                    ac_type=self.power['mains'],
-                    sample_period=self.sample_period)
-                appliance_iterators = [
-                    test.buildings[building].elec.select_using_appliances(
-                        type=app_name).load(
-                        physical_quantity='power',
-                        ac_type=self.power['appliance'],
-                        sample_period=self.sample_period) for app_name in self.appliances]
-                for chunk_num, chunk in enumerate(test.buildings[building].elec.mains().load(
-                        physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period)):
-
-                    test_df = next(mains_iterator)
-                    appliance_readings = []
-                    for i in appliance_iterators:
-                        try:
-                            appliance_df = next(i)
-                        except StopIteration:
-                            pass
-                        appliance_readings.append(appliance_df)
-                    if self.DROP_ALL_NANS:
-                        test_df, appliance_readings = self.dropnans(
-                            test_df, appliance_readings)
-
-                    if self.FILL_ALL_NANS:
-                        test_df, appliance_readings = self.fillnans(
-                            test_df, appliance_readings)
-
-                    if self.artificial_aggregate:
-                        print("Creating an Artificial Aggregate")
-
-                        test_df = pd.DataFrame(
-                            np.zeros(
-                                appliance_readings[0].shape),
-                            index=appliance_readings[0].index,
-                            columns=appliance_readings[0].columns)
-                        for app_reading in appliance_readings:
-                            test_df += app_reading
-
-                    test_appliances = []
-
-                    for cnt, i in enumerate(appliance_readings):
-                        test_appliances.append((self.appliances[cnt], [i]))
-
-                    self.test_mains = test_df
-                    self.test_submeters = test_appliances
-                    print(
-                        "Dataset %s Building %s chunk %s" %
-                        (dataset, building, chunk_num))
-
-                    self.test_mains = [self.test_mains]
-                    self.call_predict(self.classifiers)
-
+        return mains_df,new_appliances_list
+    
+    
     def store_classifier_instances(self):
 
-        method_dict = {}
-        for i in self.method_dict:
-            if i in self.methods:
-                self.method_dict[i].update(self.methods[i])
+        """
+        This function is reponsible for initializing the models with the specified model parameters
+        """
+        method_dict={}
+        for i in self.methods:
+            model_class = globals()[i]
+            method_dict[i] = model_class(self.methods[i])
 
-        print(self)
-        method_dict = {'CO': CombinatorialOptimisation(self.method_dict['CO']),
-                       'FHMM': FHMM(self.method_dict['FHMM']),
-                       'DAE': DAE(self.method_dict['DAE']),
-                       'Mean': Mean(self.method_dict['Mean']),
-                       'Zero': Zero(self.method_dict['Zero']),
-                       'WindowGRU': WindowGRU(self.method_dict['WindowGRU']),
-                       'Seq2Point': Seq2Point(self.method_dict['Seq2Point']),
-                       'RNN': RNN(self.method_dict['RNN']),
-                       'Seq2Seq': Seq2Seq(self.method_dict['Seq2Seq'])
-                       }
+        # method_dict={'CO':CombinatorialOptimisation(self.method_dict['CO']),
+        #             'FHMM':FHMM(self.method_dict['FHMM']),
+        #             'DAE':DAE(self.method_dict['DAE']),
+        #             'Mean':Mean(self.method_dict['Mean']),
+        #             'Zero':Zero(self.method_dict['Zero']),
+        #             'Seq2Seq':Seq2Seq(self.method_dict['Seq2Seq']),
+        #             'Seq2Point':Seq2Point(self.method_dict['Seq2Point']),
+        #             'DSC':DSC(self.method_dict['DSC']),
+        #              'AFHMM':AFHMM(self.method_dict['AFHMM']),
+        #              'AFHMM_SAC':AFHMM_SAC(self.method_dict['AFHMM_SAC']),              
+        #              'RNN':RNN(self.method_dict['RNN'])
+        #             }
 
         for name in self.methods:
-            if name in method_dict:
-                clf = method_dict[name]
-                self.classifiers.append((name, clf))
-
-    def call_predict(self, classifiers):
-
-        pred_overall = {}
-        gt_overall = {}
-        for name, clf in classifiers:
-            if self.pre_trained is not None:
-                if name in self.pre_trained:
-                    model = OrderedDict()
-                    model_path = self.pre_trained[name]
-                    files = [
-                        f for f in os.listdir(model_path) if os.path.isfile(
-                            os.path.join(
-                                model_path, f))]
-
-                    for appliances in files:
-                        pickle_in = open(model_path + '/' + appliances, "rb")
-                        model[appliances[:-7]] = pickle.load(pickle_in)
-
-                    gt_overall, pred_overall[name] = self.predict(
-                        clf, self.test_mains, self.test_submeters, self.sample_period, 'Europe/London', model=model)
-
+            if 1:
+                clf=method_dict[name]
+                self.classifiers.append((name,clf))
             else:
-                gt_overall, pred_overall[name] = self.predict(
-                    clf, self.test_mains, self.test_submeters, self.sample_period, 'Europe/London')
+                print ("\n\nThe method {model_name} specied does not exist. \n\n".format(model_name=i))
+    
+    def call_predict(self,classifiers):
 
-        self.gt_overall = gt_overall
+        """
+        This functions computers the predictions on the self.test_mains using all the trained models and then compares different learn't models using the metrics specified
+        """
+        
+        pred_overall={}
+        gt_overall={}
+        for name,clf in classifiers:
+            gt_overall,pred_overall[name]=self.predict(clf,self.test_mains,self.test_submeters, self.sample_period,'Europe/London')
 
-        self.pred_overall = pred_overall
+        self.gt_overall=gt_overall
+        self.pred_overall=pred_overall
+
+        if gt_overall.size==0:
+            print ("No samples found in ground truth")
+            return None
 
         for i in gt_overall.columns:
-            plt.figure(figsize=(20, 8))
-            plt.plot(gt_overall[i].values, label='truth')
+            plt.figure()
+            plt.plot(gt_overall[i],label='truth')
             for clf in pred_overall:
-                plt.plot(pred_overall[clf][i].values, label=clf)
+                plt.plot(pred_overall[clf][i],label=clf)
             plt.title(i)
             plt.legend()
-            plt.show()
 
-        # metrics
 
-        if gt_overall.size > 0:
 
-            for metrics in self.metrics:
+        for metric in self.metrics:
+            
+            if metric=='f1-score':
+                f1_score={}
+                
+                for clf_name,clf in classifiers:
+                    f1_score[clf_name] = self.compute_f1_score(gt_overall, pred_overall[clf_name])
+                f1_score = pd.DataFrame(f1_score)
+                print("............ " ,metric," ..............")
+                print(f1_score) 
+                
+            elif metric=='rmse':
+                rmse = {}
+                for clf_name,clf in classifiers:
+                    rmse[clf_name] = self.compute_rmse(gt_overall, pred_overall[clf_name])
+                rmse = pd.DataFrame(rmse)
+                self.rmse = rmse
+                print("............ " ,metric," ..............")
+                print(rmse) 
 
-                if metrics == 'f1-score':
-                    f1_score = {}
+            elif metric=='mae':
+                mae={}
+                for clf_name,clf in classifiers:
+                    mae[clf_name] = self.compute_mae(gt_overall, pred_overall[clf_name])
+                mae = pd.DataFrame(mae)
+                self.mae = mae
+                print("............ " ,metric," ..............")
+                print(mae)  
 
-                    for clf_name, clf in classifiers:
-                        f1_score[clf_name] = self.compute_f1_score(
-                            gt_overall, pred_overall[clf_name])
-                    f1_score = pd.DataFrame(f1_score)
-                    print("............ ", metrics, " ..............")
-                    print(f1_score)
-
-                if metrics == 'rmse':
-                    rmse = {}
-                    for clf_name, clf in classifiers:
-                        rmse[clf_name] = self.compute_rmse(
-                            gt_overall, pred_overall[clf_name])
-                    rmse = pd.DataFrame(rmse)
-                    self.rmse = rmse
-                    print("............ ", metrics, " ..............")
-                    print(rmse)
-
-                if metrics == 'mae':
-                    mae = {}
-                    for clf_name, clf in classifiers:
-                        mae[clf_name] = self.compute_mae(
-                            gt_overall, pred_overall[clf_name])
-                    mae = pd.DataFrame(mae)
-                    self.mae = mae
-                    print("............ ", metrics, " ..............")
-                    print(mae)
-
-                if metrics == 'rel_error':
-                    rel_error = {}
-                    for clf_name, clf in classifiers:
-                        rel_error[clf_name] = self.compute_rel_error(
-                            gt_overall, pred_overall[clf_name])
-                    rel_error = pd.DataFrame(rel_error)
-                    print("............ ", metrics, " ..............")
-                    print(rel_error)
-
-        else:
-            print("No samples found in this chunk!")
-
-    def call_partial_fit(self):
-
-        print("Called Partial fit")
-
-        # training models
-        for name, clf in self.classifiers:
-            if self.pre_trained is None:
-                clf.partial_fit(self.train_mains, self.train_submeters)
+            elif metric == 'rel_error':
+                rel_error={}
+                for clf_name,clf in classifiers:
+                    rel_error[clf_name] = self.compute_rel_error(gt_overall, pred_overall[clf_name])
+                rel_error = pd.DataFrame(rel_error)
+                print("............ " ,metric," ..............")
+                print(rel_error)            
             else:
-                print(" Using pre trained model ")
+                print ("The requested metric {metric} does not exist.".format(metric=metric))
+                    
+    def predict(self, clf, test_elec, test_submeters, sample_period, timezone):
+        
+        """
+        Generates predictions on the test dataset using the specified classifier.
+        """
+        
+        # "ac_type" varies according to the dataset used. 
+        # Make sure to use the correct ac_type before using the default parameters in this code.   
+        
+            
+        pred_list = clf.disaggregate_chunk(test_elec)
 
-    def predict(
-            self,
-            clf,
-            test_elec,
-            test_submeters,
-            sample_period,
-            timezone,
-            model=None):
+        # It might not have time stamps sometimes due to neural nets
+        # It has the readings for all the appliances
 
-        pred_list = clf.disaggregate_chunk(test_elec, model)
-        concat_pred_df = pd.concat(pred_list, axis=0)
+        concat_pred_df = pd.concat(pred_list,axis=0)
+
         gt = {}
-
-        for meter, data in test_submeters:
-            concatenated_df_app = pd.concat(data, axis=1)
-            index = concatenated_df_app.index
-            gt[meter] = pd.Series(
-                concatenated_df_app.values.flatten(), index=index)
+        for meter,data in test_submeters:
+                concatenated_df_app = pd.concat(data,axis=1)
+                index = concatenated_df_app.index
+                gt[meter] = pd.Series(concatenated_df_app.values.flatten(),index=index)
 
         gt_overall = pd.DataFrame(gt, dtype='float32')
+        
         pred = {}
 
         for app_name in concat_pred_df.columns:
-            app_series_values = concat_pred_df[app_name].values.flatten()
-            app_series_values = app_series_values[:len(gt_overall[app_name])]
-            pred[app_name] = pd.Series(
-                app_series_values, index=gt_overall.index)
 
-        pred_overall = pd.DataFrame(pred, dtype='float32')
+            app_series_values = concat_pred_df[app_name].values.flatten()
+
+            # Neural nets do extra padding sometimes, to fit, so get rid of extra predictions
+
+            app_series_values = app_series_values[:len(gt_overall[app_name])]
+
+            #print (len(gt_overall[app_name]),len(app_series_values))
+
+            pred[app_name] = pd.Series(app_series_values, index = gt_overall.index)
+
+        pred_overall = pd.DataFrame(pred,dtype='float32')
+
+
+        #gt[i] = pd.DataFrame({k:v.squeeze() for k,v in iteritems(gt[i]) if len(v)}, index=next(iter(gt[i].values())).index).dropna()
+
+        # If everything can fit in memory
+
+        #gt_overall = pd.concat(gt)
+        # gt_overall.index = gt_overall.index.droplevel()
+        # #pred_overall = pd.concat(pred)
+        # pred_overall.index = pred_overall.index.droplevel()
+
+        # Having the same order of columns
+        # gt_overall = gt_overall[pred_overall.columns]
+
+        # #Intersection of index
+        # gt_index_utc = gt_overall.index.tz_convert("UTC")
+        # pred_index_utc = pred_overall.index.tz_convert("UTC")
+        # common_index_utc = gt_index_utc.intersection(pred_index_utc)
+
+        # common_index_local = common_index_utc.tz_convert(timezone)
+        # gt_overall = gt_overall.loc[common_index_local]
+        # pred_overall = pred_overall.loc[common_index_local]
+        # appliance_labels = [m for m in gt_overall.columns.values]
+        # gt_overall.columns = appliance_labels
+        # pred_overall.columns = appliance_labels
         return gt_overall, pred_overall
 
-    def compute_rmse(self, gt, pred):
 
+    # metrics
+    def compute_mae(self,gt,pred):
+        """
+        Computes the Mean Absolute Error between Ground truth and Prediction
+        """
+
+        mae={}
+        for appliance in gt.columns:
+            mae[appliance]=mean_absolute_error(gt[appliance],pred[appliance])
+        return pd.Series(mae)
+
+
+    def compute_rmse(self,gt, pred):
+        """
+        Computes the Root Mean Squared Error between Ground truth and Prediction
+        """
         rms_error = {}
         for appliance in gt.columns:
-            rms_error[appliance] = np.sqrt(
-                mean_squared_error(
-                    gt[appliance], pred[appliance]))
+            rms_error[appliance] = np.sqrt(mean_squared_error(gt[appliance], pred[appliance]))
         #print (gt['sockets'])
-        # print (pred[])
+        #print (pred[])
         return pd.Series(rms_error)
+    
+    def compute_f1_score(self,gt, pred):
+        """
+        Computes the F1 Score between Ground truth and Prediction
+        """ 
+        f1 = {}
+        gttemp={}
+        predtemp={}
+        for appliance in gt.columns:
+            gttemp[appliance] = np.array(gt[appliance])
+            gttemp[appliance] = np.where(gttemp[appliance]<10,0,1)
+            predtemp[appliance] = np.array(pred[appliance])
+            predtemp[appliance] = np.where(predtemp[appliance]<10,0,1)
+            f1[appliance] = f1_score(gttemp[appliance], predtemp[appliance])
+        return pd.Series(f1)
+
+    def compute_rel_error(self,gt,pred):
+
+        """
+        Computes the Relative Error between Ground truth and Prediction
+        """
+        # THe metric is wrong
+        rel_error={}
+        for appliance in gt.columns:
+            rel_error[appliance] = np.mean(np.abs((gt[appliance] - pred[appliance])/(gt[appliance] + 1))) * 100
+        # The extra 1 is added for the case where gt is zero
+        return pd.Series(rel_error) 
