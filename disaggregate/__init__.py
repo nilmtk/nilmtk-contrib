@@ -1,5 +1,8 @@
 from .mean import Mean
+from .fhmm_exact import FHMM_EXACT
 from .disaggregator import Disaggregator
+from .combinatorial_optimisation import CO
+from .dae import DAE
 # From the file, import the algorithm class
 '''
 from .disaggregator import Disaggregator

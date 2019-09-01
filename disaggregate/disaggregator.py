@@ -50,3 +50,20 @@ class Disaggregator(object):
                     same 1 or more power columns as train_main
         """
         return train_mains, train_appliances
+
+    def save_model(self, folder_name):
+        """Passes each chunk from mains generator to disaggregate_chunk()
+        Parameters
+        ----------
+        test_mains : list of pd.DataFrames
+        """
+        raise NotImplementedError()
+
+    def load_model(self, folder_name):
+        """Passes each chunk from mains generator to disaggregate_chunk()
+        Parameters
+        ----------
+        test_mains : list of pd.DataFrames
+        """
+        raise NotImplementedError()
+

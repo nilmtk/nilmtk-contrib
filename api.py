@@ -230,6 +230,7 @@ class API():
                 print("Loading building ... ",building)
                 train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 train_df = next(train.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
+
                 appliance_readings = []
                 
                 for appliance_name in self.appliances:
@@ -266,10 +267,11 @@ class API():
                     test_df=next((test.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
                     appliance_readings.append(test_df)
 
+                
                 if self.DROP_ALL_NANS:
-                    test_df, appliance_readings = self.dropna(test_df, appliance_readings)
+                    test_mains, appliance_readings = self.dropna(test_mains, appliance_readings)
 
-                self.test_mains = [test_df]
+                self.test_mains = [test_mains]
                 for i, appliance_name in enumerate(self.appliances):
                     self.test_submeters.append((appliance_name,[appliance_readings[i]]))
                 
@@ -346,8 +348,11 @@ class API():
 
         for i in gt_overall.columns:
             plt.figure()
-            plt.plot(gt_overall[i],label='truth')
+            
+            plt.plot(self.test_mains[0],label='Mains reading')
+            plt.plot(gt_overall[i],label='Truth')
             for clf in pred_overall:
+                
                 plt.plot(pred_overall[clf][i],label=clf)
             plt.title(i)
             plt.legend()
