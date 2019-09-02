@@ -86,6 +86,7 @@ class API():
                 continue
 
             for q in range(epochs):
+                print (clf, clf.chunk_wise_training, self.chunk_size)
                 if clf.chunk_wise_training and self.chunk_size:
                     # The classifier can call partial fit on different chunks and refine the model
                     print ("Chunk training for ",clf.MODEL_NAME)
@@ -356,6 +357,7 @@ class API():
                 plt.plot(pred_overall[clf][i],label=clf)
             plt.title(i)
             plt.legend()
+            plt.show()
 
 
 
