@@ -2,12 +2,12 @@ from nilmtk.dataset import DataSet
 from nilmtk.metergroup import MeterGroup
 import pandas as pd
 from disaggregate import *
-from disaggregate import Disaggregator
 from six import iteritems
 from sklearn.metrics import mean_squared_error, mean_absolute_error, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
+from IPython.display import clear_output
 
 class API():
 
@@ -95,8 +95,10 @@ class API():
                 else:
                     print ("Joint training for ",clf.MODEL_NAME)
                     self.train_jointly(clf,d)
+            
 
             print ("Finished training for ",clf.MODEL_NAME)
+            clear_output()
 
         d=self.test_datasets_dict
         if self.chunk_size:
