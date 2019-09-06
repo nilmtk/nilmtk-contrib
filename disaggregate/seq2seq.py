@@ -20,35 +20,19 @@ import keras.backend as K
 
 class Seq2Seq(Disaggregator):
 
-    def __init__(self, d):
+    def __init__(self, params):
 
-        self.sequence_length = 99
-        self.n_epochs = 100
-        self.trained = False
+        self.MODEL_NAME = "Seq2Seq"
+        self.save_model_path = params.get('save-model-path',None)
+        self.load_model_path = params.get('pretrained-model-path',None)
+        self.chunk_wise_training = params.get('chunk_wise_training',False)
+        self.sequence_length = params.get('sequence_length',99)
+        self.n_epochs = params.get('n_epochs', 1)
         self.models = OrderedDict()
-        #self.max_value = 6000
-        self.mains_mean = 1000
-        self.mains_std = 1800
+        self.mains_mean = 1800
+        self.mains_std = 600
         self.batch_size = 512
-
-        self.appliance_std = None
-
-        if 'sequence_length' in d:
-            if d['sequence_length'] % 2 == 0:
-                raise ValueError("Sequence length should be a odd number!!!")
-            self.sequence_length = d['sequence_length']
-
-        if 'n_epochs' in d:
-            self.n_epochs = d['n_epochs']
-
-        if 'mains_mean' in d:
-            self.mains_mean = d['mains_mean']
-
-        if 'mains_std' in d:
-            self.mains_std = d['mains_std']
-
-        if 'appliance_params' in d:
-            self.appliance_params = d['appliance_params']
+        self.appliance_params = params.get('appliance_params',{})
 
     def partial_fit(
             self,
@@ -58,6 +42,10 @@ class Seq2Seq(Disaggregator):
             **load_kwargs):
 
         print("...............Seq2Seq partial_fit running...............")
+
+        if len(self.appliance_params) == 0:
+            self.set_appliance_params(train_appliances)
+
 
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -108,7 +96,7 @@ class Seq2Seq(Disaggregator):
                         validation_data=[
                             v_x,
                             v_y],
-                        epochs=self.n_epochs,
+                        epochs=1,
                         callbacks=[checkpoint],
                         batch_size=self.batch_size)
                     model.load_weights(filepath)
@@ -268,3 +256,11 @@ class Seq2Seq(Disaggregator):
             mains_df_list = [pd.DataFrame(window) for window in new_mains]
 
             return mains_df_list
+
+    def set_appliance_params(self,train_appliances):
+
+        for (app_name,df_list) in train_appliances:
+            l = np.array(df_list[0])
+            app_mean = np.mean(l)
+            app_std = np.std(l)
+            self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

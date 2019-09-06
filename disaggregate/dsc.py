@@ -19,7 +19,7 @@ class DSC(Disaggregator):
         self.MODEL_NAME = 'DSC'  # Add the name for the algorithm
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = params.get('chunk_wise_training', True)
+        self.chunk_wise_training = params.get('chunk_wise_training', False)
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
@@ -28,14 +28,13 @@ class DSC(Disaggregator):
         self.power = OrderedDict()
         self.shape = 60*2
         self.learning_rate = 1e-9
-        self.iterations = 100
+        self.iterations = 3000
         self.sparsity_coef = 20
         self.n_components = 10
         self.shape = params.get('shape',self.shape)
         self.learning_rate = params.get('learning_rate',self.learning_rate)
         self.iterations = params.get('iterations',self.iterations)
         self.n_components = params.get('n_components',self.n_components)
-
 
     def learn_dictionary(self, appliance_main, app_name):
 

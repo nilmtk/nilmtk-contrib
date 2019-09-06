@@ -30,7 +30,7 @@ class API():
         self.metrics = []
         self.train_datasets_dict = {}
         self.test_datasets_dict = {}
-        self.artificial_aggregate = False
+        #self.artificial_aggregate = False
         self.train_submeters = []
         self.train_mains = pd.DataFrame()
         self.test_submeters = []
@@ -49,8 +49,8 @@ class API():
         """
         Instantiates the API with the specified Parameters
         """
-        for elems in params['params']['power']:
-            self.power = params['params']['power']
+        for elems in params['power']:
+            self.power = params['power']
         self.sample_period = params['sample_rate']
         for elems in params['appliances']:
             self.appliances.append(elems)
@@ -60,7 +60,7 @@ class API():
         self.test_datasets_dict = params['test']['datasets']
         self.metrics = params['test']['metrics']
         self.methods = params['methods']
-        self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
+        #self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
         self.chunk_size = params.get('chunk_size',self.chunk_size)
 
     def experiment(self,params):
@@ -143,7 +143,7 @@ class API():
                 print("Loading building ... ",building)
                 train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 mains_iterator = train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
-                appliance_iterators = [train.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+                appliance_iterators = [train.buildings[building].elec[app_name].load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
                 print(train.buildings[building].elec.mains())
                 for chunk_num,chunk in enumerate (train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
                     #Dummry loop for executing on outer level. Just for looping till end of a chunk
@@ -187,7 +187,7 @@ class API():
                 test=DataSet(d[dataset]['path'])
                 test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 mains_iterator = test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
-                appliance_iterators = [test.buildings[building].elec.select_using_appliances(type=app_name).load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
+                appliance_iterators = [test.buildings[building].elec[app_name].load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
                 for chunk_num,chunk in enumerate (test.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
                     test_df = next(mains_iterator)
                     appliance_readings = []
@@ -233,16 +233,18 @@ class API():
                 print("Loading building ... ",building)
                 train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 train_df = next(train.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
-
+                train_df = train_df[[list(train_df.columns)[0]]]
                 appliance_readings = []
                 
                 for appliance_name in self.appliances:
-                    appliance_df = next(train.buildings[building].elec.submeters().select_using_appliances(type=appliance_name).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period))
+                    appliance_df = next(train.buildings[building].elec[appliance_name].load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period))
+                    appliance_df = appliance_df[[list(appliance_df.columns)[0]]]
                     appliance_readings.append(appliance_df)
 
                 if self.DROP_ALL_NANS:
                     train_df, appliance_readings = self.dropna(train_df, appliance_readings)
-
+                print ("Train Jointly")
+                print (train_df.shape, appliance_readings[0].shape, train_df.columns,appliance_readings[0].columns )
                 self.train_mains=self.train_mains.append(train_df)
                 for i,appliance_name in enumerate(self.appliances):
                     self.train_submeters[i] = self.train_submeters[i].append(appliance_readings[i])
@@ -266,8 +268,15 @@ class API():
                 test.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 test_mains=next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
                 appliance_readings=[]
+
+                #print (self.appliances  , self.power['appliance'],self.sample_period)
+                
+                #elec = test.buildings[building].elec
+                #df=next((elec.select_using_appliances(type='fridge').load(physical_quantity='power', ac_type=['apparent','active'], sample_period=60)))
+
+                #print (df.shape)
                 for appliance in self.appliances:
-                    test_df=next((test.buildings[building].elec.submeters().select_using_appliances(type=appliance).load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
+                    test_df=next((test.buildings[building].elec[appliance].load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
                     appliance_readings.append(test_df)
 
                 

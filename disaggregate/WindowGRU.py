@@ -35,7 +35,6 @@ class WindowGRU(Disaggregator):
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 1)
         self.models = OrderedDict()
-
         self.max_val = 1800
         self.batch_size = 512
         self.appliance_params = params.get('appliance_params',{})

@@ -29,7 +29,7 @@ class RNN(Disaggregator):
 
     def __init__(self, params):
 
-        self.MODEL_NAME = "WindowGRU"
+        self.MODEL_NAME = "RNN"
         self.save_model_path = params.get('save-model-path',None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
@@ -91,7 +91,7 @@ class RNN(Disaggregator):
                 validation_data=[
                     v_x,
                     v_y],
-                epochs=self.n_epochs,
+                epochs=1,
                 batch_size=self.batch_size,
                 callbacks=[checkpoint],
                 shuffle=True)

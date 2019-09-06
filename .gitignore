@@ -5,3 +5,5 @@ seq2point
 seq2seq
 rnn
 dae
+disaggregate/__pycache__
+*hdf5
