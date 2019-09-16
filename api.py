@@ -41,7 +41,9 @@ class API():
         self.DROP_ALL_NANS = True
         self.mae = pd.DataFrame()
         self.rmse = pd.DataFrame()
+        self.errors = []
         self.experiment(params)
+
 
     
     def initialise(self,params):
@@ -85,6 +87,8 @@ class API():
                 print (clf.MODEL_NAME," is loading the pretrained model")
                 continue
 
+            # Need to change
+            epochs = 1
             for q in range(epochs):
                 print (clf, clf.chunk_wise_training, self.chunk_size)
                 if clf.chunk_wise_training and self.chunk_size:
@@ -368,46 +372,39 @@ class API():
                 plt.plot(pred_overall[clf][i],label=clf)
             plt.title(i)
             plt.legend()
-            plt.show()
+            
 
 
 
         for metric in self.metrics:
-            
-            if metric=='f1-score':
-                f1_score={}
-                
-                for clf_name,clf in classifiers:
-                    f1_score[clf_name] = self.compute_f1_score(gt_overall, pred_overall[clf_name])
-                f1_score = pd.DataFrame(f1_score)
-                print("............ " ,metric," ..............")
-                print(f1_score) 
-                
-            elif metric=='rmse':
-                rmse = {}
-                for clf_name,clf in classifiers:
-                    rmse[clf_name] = self.compute_rmse(gt_overall, pred_overall[clf_name])
-                rmse = pd.DataFrame(rmse)
-                self.rmse = rmse
-                print("............ " ,metric," ..............")
-                print(rmse) 
+            computed_metric={}
+            if metric in ['f1-score','rmse','mae','rel_error']:
+                if metric=='f1-score':
+                                    
+                    for clf_name,clf in classifiers:
+                        computed_metric[clf_name] = self.compute_f1_score(gt_overall, pred_overall[clf_name])
 
-            elif metric=='mae':
-                mae={}
-                for clf_name,clf in classifiers:
-                    mae[clf_name] = self.compute_mae(gt_overall, pred_overall[clf_name])
-                mae = pd.DataFrame(mae)
-                self.mae = mae
-                print("............ " ,metric," ..............")
-                print(mae)  
+                elif metric=='rmse':
 
-            elif metric == 'rel_error':
-                rel_error={}
-                for clf_name,clf in classifiers:
-                    rel_error[clf_name] = self.compute_rel_error(gt_overall, pred_overall[clf_name])
-                rel_error = pd.DataFrame(rel_error)
+                    for clf_name,clf in classifiers:
+                        computed_metric[clf_name] = self.compute_rmse(gt_overall, pred_overall[clf_name])
+
+                elif metric=='mae':
+
+                    for clf_name,clf in classifiers:
+                        computed_metric[clf_name] = self.compute_mae(gt_overall, pred_overall[clf_name])
+                    
+
+                elif metric == 'rel_error':
+                    for clf_name,clf in classifiers:
+                        computed_metric[clf_name] = self.compute_rel_error(gt_overall, pred_overall[clf_name])
+
+                computed_metric = pd.DataFrame(computed_metric)
                 print("............ " ,metric," ..............")
-                print(rel_error)            
+                print(computed_metric) 
+                self.errors.append(computed_metric)
+                
+                
             else:
                 print ("The requested metric {metric} does not exist.".format(metric=metric))
                     

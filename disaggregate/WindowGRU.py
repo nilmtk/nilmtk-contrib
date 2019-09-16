@@ -33,7 +33,7 @@ class WindowGRU(Disaggregator):
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
-        self.n_epochs = params.get('n_epochs', 1)
+        self.n_epochs = params.get('n_epochs', 10)
         self.models = OrderedDict()
         self.max_val = 1800
         self.batch_size = 512
@@ -91,7 +91,7 @@ class WindowGRU(Disaggregator):
                 validation_data=[
                     v_x,
                     v_y],
-                epochs=1,
+                epochs=self.n_epochs,
                 callbacks=[checkpoint],
                 shuffle=True,
                 batch_size=self.batch_size)

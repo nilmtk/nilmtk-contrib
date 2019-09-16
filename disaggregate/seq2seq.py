@@ -27,7 +27,7 @@ class Seq2Seq(Disaggregator):
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
-        self.n_epochs = params.get('n_epochs', 1)
+        self.n_epochs = params.get('n_epochs', 10)
         self.models = OrderedDict()
         self.mains_mean = 1800
         self.mains_std = 600
@@ -96,7 +96,7 @@ class Seq2Seq(Disaggregator):
                         validation_data=[
                             v_x,
                             v_y],
-                        epochs=1,
+                        epochs=self.n_epochs,
                         callbacks=[checkpoint],
                         batch_size=self.batch_size)
                     model.load_weights(filepath)

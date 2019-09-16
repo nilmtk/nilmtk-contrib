@@ -15,42 +15,72 @@ import time
 from sklearn.metrics import mean_squared_error,mean_absolute_error
 import math
 class AFHMM(Disaggregator):
+    """1 dimensional baseline Mean algorithm.
+
+    Attributes
+    ----------
+    model : list of dicts
+       Each dict has these keys:
+           mean : list of mean values, one for each appliance (the mean power
+           (Watts)) training_metadata : The appliance type (and perhaps some
+           other metadata) for each model.
+
+    MIN_CHUNK_LENGTH : int
+
+    MODEL_NAME = string
+    """
 
     def __init__(self, params):
         self.model = []
-        
-        self.MODEL_NAME = 'AFHMM'  # Add the name for the algorithm
+        self.MIN_CHUNK_LENGTH = 100
+        self.MODEL_NAME = 'AFHMM'
+        self.default_num_states = 2
+        self.models = []
+        self.num_appliances = 0
+        self.appliances = []
+        self.time_period = 1440
+        self.signal_aggregates = OrderedDict()
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training', False)
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
-        self.default_num_states = 2
-        self.models = []
-        self.num_appliances = 0
-        self.time_period = 1440
-        self.appliances = []
+
 
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
-
+        
+        self.models = []
+        self.num_appliances = 0
+        self.appliances = []
+        '''
+            train_main :- pd.DataFrame It will contain the mains reading.
+            train_appliances :- list of tuples [('appliance1',df1),('appliance2',df2),...]
+        '''
         train_main = pd.concat(train_main, axis=0)
         train_app_tmp = []
 
         for app_name, df_list in train_appliances:
             df_list = pd.concat(df_list, axis=0)
             train_app_tmp.append((app_name,df_list))
+
         train_appliances = train_app_tmp
+
+
         learnt_model = OrderedDict()
+
         means_vector = []
+
         one_hot_states_vector = []
+
         pi_s_vector = []
+
         transmat_vector = []
 
         states_vector = []
 
         train_main = train_main.values.flatten().reshape((-1,1))
-
+        
         for appliance_name, power in train_appliances:
             #print (appliance_name)
             self.appliances.append(appliance_name)
@@ -87,13 +117,51 @@ class AFHMM(Disaggregator):
             transmat_vector.append(transmat.T)
             states_vector.append(states)
             self.num_appliances+=1
+            self.signal_aggregates[appliance_name] = (np.mean(X)*self.time_period).reshape((-1,))
 
         self.means_vector = means_vector
         self.pi_s_vector = pi_s_vector
         self.means_vector = means_vector
         self.transmat_vector = transmat_vector
-        print (means_vector)
+
+#         print(transmat_vector)
+#         print (means_vector)
+#         print (states_vector)
+#         print (pi_s_vector)
         print ("Finished Training")
+#         print (self.signal_aggregates)
+#        print (np.log(transmat))
+#        print(pi)
+#        print (np.log(pi))
+        #print (np.sum(transmat_vector[0],axis=1))
+        #print (np.sum(transmat_vector[0],axis=0))
+            #print (states.shape)
+            #print (one_hot_targets.shape)
+
+        # one_hot_states_vector = np.array(one_hot_states_vector)
+
+        # # print (transmat_vector[0])
+        # # print (np.sum(transmat_vector[0],axis=0))
+        # # print (np.sum(transmat_vector[0],axis=1))
+        # appliance_variable_matrix = []
+
+        # #print (len(states_vector))
+        # #variable_matrix = np.zeros((len(appliance_states),self.default_num_states,self.default_num_states))
+
+        # for appliance_states in states_vector:
+
+        #    variable_matrix = np.zeros((len(appliance_states),self.default_num_states,self.default_num_states))
+
+        #    for i in range(1,len(appliance_states)):
+        #        current_state =  appliance_states[i]
+        #        previous_state = appliance_states[i-1]
+        #        variable_matrix[i,current_state, previous_state] = 1
+        #    appliance_variable_matrix.append(variable_matrix)
+
+        # appliance_variable_matrix = np.array(appliance_variable_matrix)
+        # term_1_list = []
+
+        # term_2_list = []
 
     def disaggregate_chunk(self, test_mains_list):
 
@@ -105,33 +173,47 @@ class AFHMM(Disaggregator):
 
         test_mains_list = pd.concat(test_mains_list,axis=0)
         expression = 0
-        sigma = np.ones((len(test_mains_list)))   # The initial vector of Sigmas      
+           # The initial vector of Sigmas      
         
         test_mains_big = test_mains_list.values.flatten().reshape((-1,1))
         #print (len(test_mains))
         arr_of_results = []
+        
+        
+        
         for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
+            sigma = 100*np.ones((len(test_mains_list),1))
             test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
 
+
+            #initialization
+            
             for epoch in range(6):
+                #print ("Epoch ",epoch)
                 if epoch%2==1:
                     # The alernative Minimization
+
                     usage = np.zeros((len(test_mains)))
+
                     for appliance_id in range(self.num_appliances):
-                        s_v = s_[appliance_id]
-                        s_v = np.where(s_v>1,1,s_v)
-                        s_v = np.where(s_v<0,0,s_v)
-                        app_usage= np.sum(s_v@means_vector[appliance_id],axis=1)
+                        app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
+                        #print (app_usage.shape)
                         usage+=app_usage 
-                    sigma = test_mains.flatten() - usage.flatten()
+                    #print("Sigma: ",np.mean(sigma))
+                    sigma = (test_mains.flatten() - usage.flatten()).reshape((-1,1))
+                    sigma = np.where(sigma<1,1,sigma)
+                    #print("Sigma: ",np.mean(sigma))
 
                 if epoch%2==0:
+
                     constraints = []
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
                     delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
+
                     for appliance_id in range(self.num_appliances):
                         state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))
+                    
                         cvx_state_vectors.append(state_vector)
 
                         # Enforcing that their values are ranged
@@ -161,11 +243,14 @@ class AFHMM(Disaggregator):
                         # Constraint 6e
                         for t in range(0,len(test_mains)): # 6e
                             for i in range(self.default_num_states):
-                                constraints+=[cvx.sum(cvx_variable_matrices[appliance_id][t][i]) == cvx_state_vectors[appliance_id][t][i]]
+                                constraints+=[cvx.sum(((cvx_variable_matrices[appliance_id][t]).T)[i]) == cvx_state_vectors[appliance_id][t][i]]
                         # Constraint 6d
                         for t in range(1,len(test_mains)): # 6d
                             for i in range(self.default_num_states):
-                                constraints+=[cvx.sum((cvx_variable_matrices[appliance_id][t]).T[i]) == cvx_state_vectors[appliance_id][t-1][i]]
+                                constraints+=[cvx.sum(cvx_variable_matrices[appliance_id][t][i]) == cvx_state_vectors[appliance_id][t-1][i]]
+
+
+            
                     # Second order cone constraints
                     soc_constraints = []
 
@@ -176,71 +261,78 @@ class AFHMM(Disaggregator):
                                 total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]
 
                     for t in range(len(test_mains)):
-                                    soc_constraints+=[cvx.SOC(delta[t], test_mains[t] -  total_observed_reading[t])]
-
-                        
+                        None
+                        #soc_constraints+=[ cvx.norm(test_mains[t] - total_observed_reading[t]) <=  delta[t]]
+                        #soc_constraints+=[cvx.SOC(delta[t], test_mains[t] -  total_observed_reading[t])]
+                        #constraints+=[delta[t]>=0]
                     constraints+=soc_constraints
-                    # intializing the Expression
-                    
-                    expression = 0                    
-                    for appliance_id in range(self.num_appliances):
-                    
-                        # First loop is over appliances
 
+                    
+                    expression = 0
+                    
+
+                    term_1 = 0
+                    term_2 = 0
+                    term_3 = 0
+                    term_4 = 0
+
+                    for appliance_id in range(self.num_appliances):
+                        # First loop is over appliances
                         variable_matrix = cvx_variable_matrices[appliance_id]
-                        
                         transmat = transmat_vector[appliance_id]
                         # Next loop is over different time-stamps
                         
                         for matrix in variable_matrix:
-                            expression-=cvx.sum(cvx.multiply(matrix,np.log(transmat)))
+                            term_1-=cvx.sum(cvx.multiply(matrix,np.log(transmat)))
                         
                         one_hot_states = cvx_state_vectors[appliance_id]
                         pi = pi_s_vector[appliance_id]
 
                         # The expression involving start states
                         first_one_hot_states = one_hot_states[0]
-                        #print ("Pis")
-                        #print (first_one_hot_states.shape)
-                        #print (pi.shape)
-                        expression-= cvx.sum(cvx.multiply(first_one_hot_states,np.log(pi)))
-                            
-                    #print (delta.shape)
-                    #print (sigma.shape)
-                    
+                        term_2-= cvx.sum(cvx.multiply(first_one_hot_states,np.log(pi)))
+    
                     for t in range(len(test_mains)):
-                        #print (delta[i].shape)
-                        #print (sigma[i].shape)
-                        if sigma[t]>.8:
-                            expression+=.5 * (delta[t][0] / (sigma[t]**2))
-                        else:
-                            expression+=.5 * (delta[t][0])
+                            term_4+= .5 * ((test_mains[t][0] - total_observed_reading[t][0])**2 / (sigma[t]**2))      
+                            term_3+= .5 * (np.log(sigma[t]**2))
+
+                    # for t in range(len(test_mains)):
+                    #     #constraints+=[cvx.SOC(delta[t], test_mains[t] -  total_observed_reading[t])]#
+                    #     constraints+=[cvx.norm(test_mains[t] - total_observed_reading[t]) <= sigma[t]]
+
+                    expression = term_1 + term_2 + term_3 + term_4
 
                     expression = cvx.Minimize(expression)
-                    constraints+=[delta>=0]
+
                     u = time.time()
-                    #print (sigma.shape)
                     prob = cvx.Problem(expression, constraints)
-                    #prob.solve(solver=cvx.ECOS_BB)
-                    prob.solve(cvx.SCS, verbose=False)
-                    print (prob.value)
-                    print (time.time()-u)
+                    prob.solve(solver=cvx.SCS,verbose=False)
+                    # print (sigma.shape)
+                    # print (total_observed_reading.shape)
+                    # print (test_mains.shape)
+                    # print (delta.shape)
+
+                    #prob.solve()#cvx.SCS,verbose=False)
+                    #print (prob.value)
+                    # print ( term_1)
+                    # print (term_2)
+                    # print (term_3)
+                    # print (term_4)
+
+                    #print ("Time : ",time.time()-u)
+
                     s_ = [i.value for i in cvx_state_vectors]
-#                     print (delta.value)
-#                     print (s_[0])
-#                     print (np.sum(s_[0],axis=1))
-#                     print (cvx_variable_matrices[0][0].value)
-#                     print (cvx_variable_matrices[0][1].value)
-                    print ("Over Iteration")
-                    print ("\n\n")
 
             prediction_dict = {}
 
+            # print (s_[0])
             for appliance_id in range(self.num_appliances):
                 app_name = self.appliances[appliance_id]
 
                 app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
                 prediction_dict[app_name] = app_usage.flatten()
+                # plt.plot(app_usage.flatten())
+                # plt.show()
                 #usage+=app_usage
 
             arr_of_results.append(pd.DataFrame(prediction_dict,dtype='float32'))
