@@ -409,6 +409,7 @@ class API():
                 print ("The requested metric {metric} does not exist.".format(metric=metric))
                     
     def predict(self, clf, test_elec, test_submeters, sample_period, timezone):
+        print (clf)
         
         """
         Generates predictions on the test dataset using the specified classifier.
