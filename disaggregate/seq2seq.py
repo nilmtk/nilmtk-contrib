@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from keras.callbacks import ModelCheckpoint
 import keras.backend as K
-
+import random
 
 class Seq2Seq(Disaggregator):
 
@@ -79,7 +79,7 @@ class Seq2Seq(Disaggregator):
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'temp-weights.h5'
+                    filepath = 'seq2seq-temp-weights-'+str(random.randint(0,10))+'.h5'
 
                     checkpoint = ModelCheckpoint(
                         filepath,

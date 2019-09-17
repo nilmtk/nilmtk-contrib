@@ -30,7 +30,7 @@ class API():
         self.metrics = []
         self.train_datasets_dict = {}
         self.test_datasets_dict = {}
-        #self.artificial_aggregate = False
+        self.artificial_aggregate = False
         self.train_submeters = []
         self.train_mains = pd.DataFrame()
         self.test_submeters = []
@@ -62,6 +62,7 @@ class API():
         self.test_datasets_dict = params['test']['datasets']
         self.metrics = params['test']['metrics']
         self.methods = params['methods']
+        self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
         #self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
         self.chunk_size = params.get('chunk_size',self.chunk_size)
 
@@ -247,6 +248,13 @@ class API():
 
                 if self.DROP_ALL_NANS:
                     train_df, appliance_readings = self.dropna(train_df, appliance_readings)
+
+                if self.artificial_aggregate:
+                    print ("Creating an Artificial Aggregate")
+                    train_df = pd.DataFrame(np.zeros(appliance_readings[0].shape),index = appliance_readings[0].index,columns=appliance_readings[0].columns)
+                    for app_reading in appliance_readings:
+                        train_df+=app_reading
+
                 print ("Train Jointly")
                 print (train_df.shape, appliance_readings[0].shape, train_df.columns,appliance_readings[0].columns )
                 self.train_mains=self.train_mains.append(train_df)
@@ -286,6 +294,14 @@ class API():
                 
                 if self.DROP_ALL_NANS:
                     test_mains, appliance_readings = self.dropna(test_mains, appliance_readings)
+
+
+                if self.artificial_aggregate:
+                    print ("Creating an Artificial Aggregate")
+                    test_mains = pd.DataFrame(np.zeros(appliance_readings[0].shape),index = appliance_readings[0].index,columns=appliance_readings[0].columns)
+                    for app_reading in appliance_readings:
+                        test_mains+=app_reading
+
 
                 self.test_mains = [test_mains]
                 for i, appliance_name in enumerate(self.appliances):

@@ -23,7 +23,7 @@ from nilmtk.utils import find_nearest
 from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
-
+import random
 
 class RNN(Disaggregator):
 
@@ -76,7 +76,7 @@ class RNN(Disaggregator):
             meterchunk = np.array(meterchunk)
             meterchunk = meterchunk.reshape(-1, meterchunk.shape[0])
             meterchunk = meterchunk[0]
-            filepath = 'temp-weights.h5'
+            filepath = 'rnn-temp-weights-'+str(random.randint(0,10))+'.h5'
             checkpoint = ModelCheckpoint(
                 filepath,
                 monitor='val_loss',

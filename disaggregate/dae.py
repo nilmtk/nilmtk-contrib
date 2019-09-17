@@ -14,6 +14,7 @@ import keras.backend as K
 from statistics import mean
 import os
 import pickle
+import random
 class DAE(Disaggregator):
     
     def __init__(self, params):
@@ -53,7 +54,7 @@ class DAE(Disaggregator):
                 print (self.models[appliance_name].summary())
             print ("Started Retraining model for ",appliance_name)    
             model = self.models[appliance_name]
-            filepath = 'temp-weights.h5'
+            filepath = 'dae-temp-weights-'+str(random.randint(0,10))+'.h5'
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
             train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15)
             model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)

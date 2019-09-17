@@ -23,7 +23,7 @@ from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 
-
+import random
 class WindowGRU(Disaggregator):
 
     def __init__(self, params):
@@ -76,7 +76,7 @@ class WindowGRU(Disaggregator):
             meterchunk = np.array(meterchunk)
             meterchunk = meterchunk.reshape(-1, meterchunk.shape[0])
             meterchunk = meterchunk[0]
-            filepath = 'temp-weights.h5'
+            filepath = 'windowgru-temp-weights-'+str(random.randint(0,10))+'.h5'
             checkpoint = ModelCheckpoint(
                 filepath,
                 monitor='val_loss',

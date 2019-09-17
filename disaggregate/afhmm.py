@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import time
 from sklearn.metrics import mean_squared_error,mean_absolute_error
 import math
-import threading
+from multiprocessing import Process, Manager
 class AFHMM(Disaggregator):
     """1 dimensional baseline Mean algorithm.
 
@@ -39,7 +39,7 @@ class AFHMM(Disaggregator):
         self.models = []
         self.num_appliances = 0
         self.appliances = []
-        self.time_period = 400
+        self.time_period = 720
         self.signal_aggregates = OrderedDict()
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
@@ -165,7 +165,8 @@ class AFHMM(Disaggregator):
         # term_2_list = []
 
 
-    def disaggregate_thread(self, test_mains,index):
+    def disaggregate_thread(self, test_mains,index,d):
+
         means_vector = self.means_vector
         pi_s_vector = self.pi_s_vector
         means_vector = self.means_vector
@@ -188,7 +189,6 @@ class AFHMM(Disaggregator):
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
                     delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
-
                     for appliance_id in range(self.num_appliances):
                             state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))                    
                             cvx_state_vectors.append(state_vector)
@@ -254,8 +254,10 @@ class AFHMM(Disaggregator):
                 expression = term_1 + term_2 + term_3 + term_4
                 expression = cvx.Minimize(expression)
                 u = time.time()
-                prob = cvx.Problem(expression, constraints)
-                prob.solve(solver=cvx.SCS,verbose=True)
+                print ('startede solving')
+                prob = cvx.Problem(expression, constraints,)
+                print ("Finished solving")
+                prob.solve(solver=cvx.SCS,verbose=False,warm_start=True)
                 s_ = [i.value for i in cvx_state_vectors]
 
         prediction_dict = {}
@@ -264,7 +266,7 @@ class AFHMM(Disaggregator):
             app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
             prediction_dict[app_name] = app_usage.flatten()
 
-        self.arr_of_results[index] =  pd.DataFrame(prediction_dict,dtype='float32')
+        d[index] =  pd.DataFrame(prediction_dict,dtype='float32')
 
 
 
@@ -274,19 +276,22 @@ class AFHMM(Disaggregator):
 
     def disaggregate_chunk(self, test_mains_list):
 
+        manager = Manager()
+        d = manager.dict()
+
         test_mains_list = pd.concat(test_mains_list,axis=0)        
         test_mains_big = test_mains_list.values.flatten().reshape((-1,1))
         self.arr_of_results = []
         print ("Shape ",test_mains_big.shape)
         
+        st = time.time()
+
         
         threads = []
         for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
             
             test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
-            self.arr_of_results.append(pd.DataFrame())
-            t = threading.Thread(target=self.disaggregate_thread, args=(test_mains,test_block))
-            print (test_block)
+            t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
             threads.append(t)
 
         print ("Num threads ",len(threads))
@@ -297,6 +302,11 @@ class AFHMM(Disaggregator):
         for t in threads:
             t.join()
 
+        
+        for i in range(len(threads)):
+            self.arr_of_results.append(d[i])
+
+        print ("finish time is ",time.time() - st)
 
 
 
