@@ -24,6 +24,8 @@ from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 
 import random
+random.seed(10)
+np.random.seed(10)
 class WindowGRU(Disaggregator):
 
     def __init__(self, params):
@@ -76,7 +78,7 @@ class WindowGRU(Disaggregator):
             meterchunk = np.array(meterchunk)
             meterchunk = meterchunk.reshape(-1, meterchunk.shape[0])
             meterchunk = meterchunk[0]
-            filepath = 'windowgru-temp-weights-'+str(random.randint(0,10))+'.h5'
+            filepath = 'windowgru-temp-weights-'+str(random.randint(0,100000))+'.h5'
             checkpoint = ModelCheckpoint(
                 filepath,
                 monitor='val_loss',
@@ -268,4 +270,6 @@ class WindowGRU(Disaggregator):
             l = np.array(df_list[0])
             app_mean = np.mean(l)
             app_std = np.std(l)
+            if app_std<1:
+                app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

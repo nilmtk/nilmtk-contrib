@@ -24,7 +24,8 @@ from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 import random
-
+random.seed(10)
+np.random.seed(10)
 class RNN(Disaggregator):
 
     def __init__(self, params):
@@ -76,7 +77,7 @@ class RNN(Disaggregator):
             meterchunk = np.array(meterchunk)
             meterchunk = meterchunk.reshape(-1, meterchunk.shape[0])
             meterchunk = meterchunk[0]
-            filepath = 'rnn-temp-weights-'+str(random.randint(0,10))+'.h5'
+            filepath = 'rnn-temp-weights-'+str(random.randint(0,100000))+'.h5'
             checkpoint = ModelCheckpoint(
                 filepath,
                 monitor='val_loss',
@@ -253,10 +254,13 @@ class RNN(Disaggregator):
         model.compile(loss='mse', optimizer='adam', metrics=['mse'])
 
         return model
+
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
             l = np.array(df_list[0])
             app_mean = np.mean(l)
             app_std = np.std(l)
+            if app_std<1:
+                app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
