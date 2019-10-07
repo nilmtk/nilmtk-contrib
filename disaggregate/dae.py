@@ -26,10 +26,10 @@ class DAE(Disaggregator):
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 10)
+        self.batch_size = params.get('batch_size',512)
         self.models = OrderedDict()
         self.mains_mean = 1000
         self.mains_std = 1800
-        self.batch_size = 512
         self.appliance_params = params.get('appliance_params',{})
 
         
@@ -58,7 +58,7 @@ class DAE(Disaggregator):
             model = self.models[appliance_name]
             filepath = 'dae-temp-weights-'+str(random.randint(0,100000))+'.h5'
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
-            train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15)
+            train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15,random_state=10)  
             model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)
             model.load_weights(filepath)
             if not os.path.exists('dae'):
@@ -76,7 +76,7 @@ class DAE(Disaggregator):
             test_main = test_main.reshape((-1,self.sequence_length,1))
             disggregation_dict = {}
             for appliance in self.models:
-                prediction = self.models[appliance].predict(test_main)
+                prediction = self.models[appliance].predict(test_main,batch_size=self.batch_size)
                 app_mean = self.appliance_params[appliance]['mean']
                 app_std = self.appliance_params[appliance]['std']
                 prediction = self.denormalize_output(prediction,app_mean,app_std)
@@ -113,7 +113,6 @@ class DAE(Disaggregator):
                 df = pd.concat(df,axis=0)
                 app_mean = self.appliance_params[appliance_name]['mean']
                 app_std = self.appliance_params[appliance_name]['std']
-                
                 data = self.normalize_output(df.values, sequence_length,app_mean,app_std,True)
                 appliance_df_list  = [pd.DataFrame(data)]
                 tuples_of_appliances.append((appliance_name, appliance_df_list))

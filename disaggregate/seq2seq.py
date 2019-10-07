@@ -32,7 +32,7 @@ class Seq2Seq(Disaggregator):
         self.models = OrderedDict()
         self.mains_mean = 1800
         self.mains_std = 600
-        self.batch_size = 512
+        self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
 
     def partial_fit(
@@ -89,7 +89,7 @@ class Seq2Seq(Disaggregator):
                         save_best_only=True,
                         mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(
-                        train_main, power, test_size=.15)
+                        train_main, power, test_size=.15,random_state=10)
 
                     model.fit(
                         train_x,
@@ -139,7 +139,7 @@ class Seq2Seq(Disaggregator):
 
             prediction = []
             model = self.models[appliance]
-            prediction = model.predict(test_main_array, self.batch_size)
+            prediction = model.predict(test_main_array ,batch_size=self.batch_size)
             l = self.sequence_length
             n = len(prediction) + l - 1
             val_arr = np.zeros((n))

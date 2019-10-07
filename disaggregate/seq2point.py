@@ -31,7 +31,7 @@ class Seq2Point(Disaggregator):
         self.models = OrderedDict()
         self.mains_mean = 1800
         self.mains_std = 600
-        self.batch_size = 512
+        self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
 
 
@@ -88,7 +88,7 @@ class Seq2Point(Disaggregator):
                         save_best_only=True,
                         mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(
-                        train_main, power, test_size=.15)
+                        train_main, power, test_size=.15,random_state=10)
                     model.fit(
                         train_x,
                         train_y,
@@ -99,7 +99,6 @@ class Seq2Point(Disaggregator):
                         callbacks=[checkpoint],
                         batch_size=self.batch_size)
                     model.load_weights(filepath)
-
                     if not os.path.exists('seq2point'):
                         os.mkdir('seq2point')
                     pickle_out = open(
@@ -132,7 +131,7 @@ class Seq2Point(Disaggregator):
 
             for appliance in self.models:
 
-                prediction = self.models[appliance].predict(test_main)
+                prediction = self.models[appliance].predict(test_main,batch_size=self.batch_size)
 
                 prediction = self.appliance_params[appliance]['mean'] + \
                     prediction * self.appliance_params[appliance]['std']

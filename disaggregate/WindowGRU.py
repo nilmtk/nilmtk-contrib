@@ -38,7 +38,7 @@ class WindowGRU(Disaggregator):
         self.n_epochs = params.get('n_epochs', 10)
         self.models = OrderedDict()
         self.max_val = 1800
-        self.batch_size = 512
+        self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
 
 
@@ -86,7 +86,7 @@ class WindowGRU(Disaggregator):
                 save_best_only=True,
                 mode='min')
             train_x, v_x, train_y, v_y = train_test_split(
-                mainchunk, meterchunk, test_size=.15)
+                mainchunk, meterchunk, test_size=.15,random_state=10)
             model.fit(
                 train_x,
                 train_y,
@@ -125,7 +125,7 @@ class WindowGRU(Disaggregator):
         disggregation_dict = {}
         for appliance in self.models:
 
-            prediction = self.models[appliance].predict(test_mains)
+            prediction = self.models[appliance].predict(test_mains,batch_size=self.batch_size)
             prediction = np.reshape(prediction, len(prediction))
             valid_predictions = prediction.flatten()
             valid_predictions = np.where(

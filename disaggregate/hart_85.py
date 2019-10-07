@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.metrics import mean_squared_error
 import pickle
 from nilmtk.feature_detectors.cluster import hart85_means_shift_cluster
-from nilmtk.feature_detectors.steady_states import find_steady_states_transients
+from nilmtk.feature_detectors.steady_states import find_steady_states
 from nilmtk.disaggregate import Disaggregator
 
 
@@ -262,8 +262,8 @@ class Hart85(Disaggregator):
         self.columns=columns
         self.state_threshold = state_threshold
         self.noise_level = noise_level
-        [self.steady_states, self.transients] = find_steady_states_transients(
-            train_main,  noise_level, state_threshold)
+        [self.steady_states, self.transients] = find_steady_states(
+            train_main,  noise_level=noise_level, state_threshold=state_threshold)  
         self.pair_df = self.pair(
             buffer_size, min_tolerance, percent_tolerance, large_transition)
         self.centroids = hart85_means_shift_cluster(self.pair_df, columns)
@@ -413,8 +413,8 @@ class Hart85(Disaggregator):
         print('...............................Disaggregator starts...............................')
         for chunk in test_mains:
           
-            [_, transients] = find_steady_states_transients(
-            test_mains[0], columns=self.columns, state_threshold=self.state_threshold,
+            [_, transients] = find_steady_states(
+            test_mains[0],  state_threshold=self.state_threshold,
             noise_level=self.noise_level)
             #print('Transients:',transients)
             # For now ignoring the first transient

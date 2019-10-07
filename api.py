@@ -78,29 +78,32 @@ class API():
         for model_name, clf in self.classifiers:
             # If the model is a neural net, it has an attribute n_epochs, Ex: DAE, Seq2Point
             print ("Started training for ",clf.MODEL_NAME)
-            if hasattr(clf,'n_epochs'):
-                epochs = clf.n_epochs
-            # If it doesn't have the attribute n_epochs, this is executed. Ex: Mean, Zero
-            else:
-                epochs = 1
+
             # If the model has the filename specified for loading the pretrained model, then we don't need to load training data
+
             if clf.load_model_path:
                 print (clf.MODEL_NAME," is loading the pretrained model")
                 continue
 
-            # Need to change
-            epochs = 1
-            for q in range(epochs):
-                print (clf, clf.chunk_wise_training, self.chunk_size)
-                if clf.chunk_wise_training and self.chunk_size:
-                    # The classifier can call partial fit on different chunks and refine the model
-                    print ("Chunk training for ",clf.MODEL_NAME)
-                    self.train_chunk_wise(clf,d)                
+            # if it has to train chunk wise
+            if clf.chunk_wise_training==True:
 
+                if clf.hasattr('n_epochs'):
+                    n_epochs = clf.n_epochs
+                    clf.n_epochs = 1
                 else:
-                    print ("Joint training for ",clf.MODEL_NAME)
-                    self.train_jointly(clf,d)
-            
+                    # If it doesn't have the attribute n_epochs, this is executed. Ex: Mean, Zero
+                    n_epochs = 1
+
+                self.train_chunk_wise(clf,d)    
+
+                for i in range(n_epochs):
+                    self.train_chunk_wise(clf,d) 
+
+            # if it doesn't support chunk wise training
+            else:
+                print ("Joint training for ",clf.MODEL_NAME)
+                clf.train_jointly(clf,d)            
 
             print ("Finished training for ",clf.MODEL_NAME)
             clear_output()
@@ -115,20 +118,6 @@ class API():
             print ("Joint Testing for all algorithms")
             self.test_jointly(d)
 
-        # if clf.chunk_wise_training:
-        #   # The classifier can call partial fit on different chunks and refine the model
-        #   self.test_chunk_wise()              
-
-        # else:
-        #   self.test_jointly()
-
-            
-        # if params['chunk_size']:
-        #   # This is for training and Testing in Chunks
-        #   self.load_datasets_chunks()
-        # else:
-        #   # This is to load all the data from all buildings and use it for training and testing. This might not be possible to execute on computers with low specs
-        #   self.load_datasets()
         
     def train_chunk_wise(self,clf,d):
 
