@@ -20,6 +20,9 @@ np.random.seed(10)
 class DAE(Disaggregator):
     
     def __init__(self, params):
+        """
+        Iniititalize the moel with the given parameters
+        """
         self.MODEL_NAME = "DAE"
         self.save_model_path = params.get('save-model-path',None)
         self.load_model_path = params.get('pretrained-model-path',None)
@@ -27,26 +30,32 @@ class DAE(Disaggregator):
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 10)
         self.batch_size = params.get('batch_size',512)
-        self.models = OrderedDict()
-        self.mains_mean = 1000
-        self.mains_std = 1800
+        self.mains_mean = params.get('mains_mean',1000)
+        self.mains_std = params.get('mains_std',1800)
         self.appliance_params = params.get('appliance_params',{})
+        self.models = OrderedDict()
+        
 
         
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True,**load_kwargs):
-        
-        print("...............DAE partial_fit running...............")
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True,**load_kwargs):        
+        """
+        The partial fit function
+        """
+
+        # If no appliance wise parameters are specified, then they are computed from the data
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
+
+        # TO preprocess the data and bring it to a valid shape
         if do_preprocessing:
             print ("Doing Preprocessing")
             train_main,train_appliances = self.call_preprocessing(train_main,train_appliances,'train')
         train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))#np.array([i.values.reshape((self.sequence_length,1)) for i in train_main])
+        train_main = train_main.reshape((-1,self.sequence_length,1))
         new_train_appliances  = []
         for app_name, app_df in train_appliances:
             app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,self.sequence_length,1))#np.array([i.values.reshape((self.sequence_length,1)) for i in app_df])
+            app_df = app_df.reshape((-1,self.sequence_length,1))
             new_train_appliances.append((app_name, app_df))
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
@@ -70,6 +79,7 @@ class DAE(Disaggregator):
     def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
         if do_preprocessing:
             test_main_list = self.call_preprocessing(test_main_list,submeters=None,method='test')
+        test_main_list = [pd.concat(test_main_list,axis=0)]
         test_predictions = []
         for test_main in test_main_list:
             test_main = test_main.values

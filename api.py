@@ -3,7 +3,7 @@ from nilmtk.metergroup import MeterGroup
 import pandas as pd
 from disaggregate import *
 from six import iteritems
-from sklearn.metrics import mean_squared_error, mean_absolute_error, f1_score
+from losses import *
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
@@ -42,15 +42,13 @@ class API():
         self.mae = pd.DataFrame()
         self.rmse = pd.DataFrame()
         self.errors = []
-        self.experiment(params)
+        self.predictions = []
+        self.errors_keys = []
+        self.predictions_keys = []
+        self.params = params
 
 
-    
-    def initialise(self,params):
 
-        """
-        Instantiates the API with the specified Parameters
-        """
         for elems in params['power']:
             self.power = params['power']
         self.sample_period = params['sample_rate']
@@ -66,12 +64,14 @@ class API():
         #self.artificial_aggregate = params.get('artificial_aggregate',self.artificial_aggregate)
         self.chunk_size = params.get('chunk_size',self.chunk_size)
 
+        self.experiment(params)
+
+
     def experiment(self,params):
         """
         Calls the Experiments with the specified parameters
         """
-        self.params=params
-        self.initialise(params)
+        
         self.store_classifier_instances()
         d=self.train_datasets_dict
 
@@ -85,25 +85,30 @@ class API():
                 print (clf.MODEL_NAME," is loading the pretrained model")
                 continue
 
-            # if it has to train chunk wise
-            if clf.chunk_wise_training==True:
+            # if user wants to train chunk wise
+            if self.chunk_size:
+                # If the classifier supports chunk wise training
+                if clf.chunk_wise_training:
+                    # if it has an attribute n_epochs. Ex: neural nets. Then it is trained chunk wise for every wise
+                    if hasattr(clf,'n_epochs'):
+                        n_epochs = clf.n_epochs
+                        clf.n_epochs = 1
+                    else:
+                        # If it doesn't have the attribute n_epochs, this is executed. Ex: Mean, Zero
+                        n_epochs = 1
+                    # Training on those many chunks for those many epochs
+                    print ("Chunk wise training for ",clf.MODEL_NAME)
+                    for i in range(n_epochs):
+                        self.train_chunk_wise(clf,d) 
 
-                if clf.hasattr('n_epochs'):
-                    n_epochs = clf.n_epochs
-                    clf.n_epochs = 1
                 else:
-                    # If it doesn't have the attribute n_epochs, this is executed. Ex: Mean, Zero
-                    n_epochs = 1
-
-                self.train_chunk_wise(clf,d)    
-
-                for i in range(n_epochs):
-                    self.train_chunk_wise(clf,d) 
+                    print ("Joint training for ",clf.MODEL_NAME)
+                    self.train_jointly(clf,d)            
 
             # if it doesn't support chunk wise training
             else:
                 print ("Joint training for ",clf.MODEL_NAME)
-                clf.train_jointly(clf,d)            
+                self.train_jointly(clf,d)            
 
             print ("Finished training for ",clf.MODEL_NAME)
             clear_output()
@@ -117,6 +122,8 @@ class API():
         else:
             print ("Joint Testing for all algorithms")
             self.test_jointly(d)
+
+        self.store_errors_and_predictions()
 
         
     def train_chunk_wise(self,clf,d):
@@ -210,6 +217,7 @@ class API():
                     self.test_mains = [test_df]
                     self.test_submeters = test_appliances
                     print("Results for Dataset {dataset} Building {building} Chunk {chunk_num}".format(dataset=dataset,building=building,chunk_num=chunk_num))
+                    self.storing_key = str(dataset) + "_" + str(building) + "_" + str(chunk_num) 
                     self.call_predict(self.classifiers)
 
 
@@ -296,6 +304,7 @@ class API():
                 for i, appliance_name in enumerate(self.appliances):
                     self.test_submeters.append((appliance_name,[appliance_readings[i]]))
                 
+                self.storing_key = str(dataset) + "_" + str(building) 
                 self.call_predict(self.classifiers)
             
 
@@ -368,50 +377,64 @@ class API():
             return None
 
         for i in gt_overall.columns:
-            plt.figure()
-            
+
+            plt.figure()            
             plt.plot(self.test_mains[0],label='Mains reading')
             plt.plot(gt_overall[i],label='Truth')
-            for clf in pred_overall:
-                
+            for clf in pred_overall:                
                 plt.plot(pred_overall[clf][i],label=clf)
             plt.title(i)
             plt.legend()
             
-
-
-
+        
         for metric in self.metrics:
+            
+            try:
+                loss_function = globals()[metric]                
+
+            except:
+                print ("Loss function ",metric, " is not supported currently!")
+                continue
             computed_metric={}
-            if metric in ['f1-score','rmse','mae','rel_error']:
-                if metric=='f1-score':
-                                    
-                    for clf_name,clf in classifiers:
-                        computed_metric[clf_name] = self.compute_f1_score(gt_overall, pred_overall[clf_name])
 
-                elif metric=='rmse':
+            for clf_name,clf in classifiers:
+                computed_metric[clf_name] = self.compute_loss(gt_overall, pred_overall[clf_name], loss_function)
 
-                    for clf_name,clf in classifiers:
-                        computed_metric[clf_name] = self.compute_rmse(gt_overall, pred_overall[clf_name])
+            computed_metric = pd.DataFrame(computed_metric)
+            print("............ " ,metric," ..............")
+            print(computed_metric) 
+            self.errors.append(computed_metric)
+            self.errors_keys.append(self.storing_key + "_" + metric)
 
-                elif metric=='mae':
+        for app_name in self.appliances:
+            app_dict = {}
+            app_dict['gt'] = gt_overall[app_name]
 
-                    for clf_name,clf in classifiers:
-                        computed_metric[clf_name] = self.compute_mae(gt_overall, pred_overall[clf_name])
-                    
+            for clf_name, clf in classifiers:
+                app_dict[clf_name] = pred_overall[clf_name][app_name]
 
-                elif metric == 'rel_error':
-                    for clf_name,clf in classifiers:
-                        computed_metric[clf_name] = self.compute_rel_error(gt_overall, pred_overall[clf_name])
+            concatenated_df = pd.DataFrame(app_dict)
+            
+            # Pending conversion of datetime to string
+            concatenated_df = concatenated_df.reset_index()
+            concatenated_df = concatenated_df.drop('localminute', axis=1)
+            
+            self.predictions.append(concatenated_df)
+            self.predictions_keys.append(self.storing_key + "_" + app_name)
 
-                computed_metric = pd.DataFrame(computed_metric)
-                print("............ " ,metric," ..............")
-                print(computed_metric) 
-                self.errors.append(computed_metric)
+    def store_errors_and_predictions(self):
+        
+        with pd.ExcelWriter('errors.xlsx') as writer:
+            for i in range(len(self.errors_keys)):
+                errors = self.errors[i]
+                errors.to_excel(writer, sheet_name=self.errors_keys[i])
+
+        with pd.ExcelWriter('results.xlsx') as writer:
+            for i in range(len(self.predictions_keys)):
+                errors = self.predictions[i]
+                errors.to_excel(writer, sheet_name=self.predictions_keys[i])
+
                 
-                
-            else:
-                print ("The requested metric {metric} does not exist.".format(metric=metric))
                     
     def predict(self, clf, test_elec, test_submeters, sample_period, timezone):
         print (clf)
@@ -483,51 +506,8 @@ class API():
 
 
     # metrics
-    def compute_mae(self,gt,pred):
-        """
-        Computes the Mean Absolute Error between Ground truth and Prediction
-        """
-
-        mae={}
-        for appliance in gt.columns:
-            mae[appliance]=mean_absolute_error(gt[appliance],pred[appliance])
-        return pd.Series(mae)
-
-
-    def compute_rmse(self,gt, pred):
-        """
-        Computes the Root Mean Squared Error between Ground truth and Prediction
-        """
-        rms_error = {}
-        for appliance in gt.columns:
-            rms_error[appliance] = np.sqrt(mean_squared_error(gt[appliance], pred[appliance]))
-        #print (gt['sockets'])
-        #print (pred[])
-        return pd.Series(rms_error)
-    
-    def compute_f1_score(self,gt, pred):
-        """
-        Computes the F1 Score between Ground truth and Prediction
-        """ 
-        f1 = {}
-        gttemp={}
-        predtemp={}
-        for appliance in gt.columns:
-            gttemp[appliance] = np.array(gt[appliance])
-            gttemp[appliance] = np.where(gttemp[appliance]<10,0,1)
-            predtemp[appliance] = np.array(pred[appliance])
-            predtemp[appliance] = np.where(predtemp[appliance]<10,0,1)
-            f1[appliance] = f1_score(gttemp[appliance], predtemp[appliance])
-        return pd.Series(f1)
-
-    def compute_rel_error(self,gt,pred):
-
-        """
-        Computes the Relative Error between Ground truth and Prediction
-        """
-        # THe metric is wrong
-        rel_error={}
-        for appliance in gt.columns:
-            rel_error[appliance] = np.mean(np.abs((gt[appliance] - pred[appliance])/(gt[appliance] + 1))) * 100
-        # The extra 1 is added for the case where gt is zero
-        return pd.Series(rel_error) 
+    def compute_loss(self,gt,clf_pred, loss_function):
+        error = {}
+        for app_name in gt.columns:
+            error[app_name] = loss_function(gt[app_name],clf_pred[app_name])
+        return pd.Series(error)        
