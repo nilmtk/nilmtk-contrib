@@ -23,17 +23,16 @@ class Seq2Point(Disaggregator):
     def __init__(self, params):
 
         self.MODEL_NAME = "Seq2Point"
+        self.models = OrderedDict()
         self.save_model_path = params.get('save-model-path',None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 10 )
-        self.models = OrderedDict()
-        self.mains_mean = 1800
-        self.mains_std = 600
         self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
-
+        self.mains_mean = params.get('mains_mean',1800)
+        self.mains_std = params.get('mains_std',600)
 
     def partial_fit(
             self,
@@ -42,12 +41,12 @@ class Seq2Point(Disaggregator):
             do_preprocessing=True,
             **load_kwargs):
 
-
+        # If no appliance wise parametwers are provided, then copmute them using the first chunk
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
-
         print("...............Seq2Point partial_fit running...............")
+        # Do the pre-processing, such as  windowing and normalizing
 
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -57,25 +56,21 @@ class Seq2Point(Disaggregator):
             [i.values.reshape((self.sequence_length, 1)) for i in train_main])
 
         new_train_appliances = []
-
         for app_name, app_df in train_appliances:
             app_df = np.array([i.values for i in app_df]).reshape((-1, 1))
             new_train_appliances.append((app_name, app_df))
-
         train_appliances = new_train_appliances
 
         for appliance_name, power in train_appliances:
-
+            # Check if the appliance was already trained. If not then create a new model for it
             if appliance_name not in self.models:
                 print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
-
+            # Retrain the particular appliance
             else:
-
                 print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
-
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
@@ -114,58 +109,33 @@ class Seq2Point(Disaggregator):
 
         if model is not None:
             self.models = model
-        if do_preprocessing:
 
+        # Preprocess the test mains such as windowsing and normalizing
+
+        if do_preprocessing:
             test_main_list = self.call_preprocessing(
                 test_main_list, submeters=None, method='test')
 
         test_predictions = []
-
         for test_main in test_main_list:
-
             test_main = test_main.values
-
             test_main = test_main.reshape((-1, self.sequence_length, 1))
-
             disggregation_dict = {}
-
             for appliance in self.models:
-
                 prediction = self.models[appliance].predict(test_main,batch_size=self.batch_size)
-
-                prediction = self.appliance_params[appliance]['mean'] + \
-                    prediction * self.appliance_params[appliance]['std']
-
+                prediction = self.appliance_params[appliance]['mean'] + prediction * self.appliance_params[appliance]['std']
                 valid_predictions = prediction.flatten()
-
-                valid_predictions = np.where(
-                    valid_predictions > 0, valid_predictions, 0)
-
+                valid_predictions = np.where(valid_predictions > 0, valid_predictions, 0)
                 df = pd.Series(valid_predictions)
-
                 disggregation_dict[appliance] = df
-
             results = pd.DataFrame(disggregation_dict, dtype='float32')
-
             test_predictions.append(results)
-
-        #print (test_predictions[-1])
-
         return test_predictions
 
     def return_network(self):
-
+        # Model architecture
         model = Sequential()
-        # 1D Conv
-        model.add(
-            Conv1D(
-                30,
-                10,
-                activation="relu",
-                input_shape=(
-                    self.sequence_length,
-                    1),
-                strides=1))
+        model.add(Conv1D(30,10,activation="relu",input_shape=(self.sequence_length,1),strides=1))
         model.add(Conv1D(30, 8, activation='relu', strides=1))
         model.add(Conv1D(40, 6, activation='relu', strides=1))
         model.add(Conv1D(50, 5, activation='relu', strides=1))
@@ -176,11 +146,7 @@ class Seq2Point(Disaggregator):
         model.add(Dense(1024, activation='relu'))
         model.add(Dropout(.2))
         model.add(Dense(1))
-        #optimizer = SGD(lr=self.learning_rate)
         model.compile(loss='mse', optimizer='adam')  # ,metrics=[self.mse])
-
-        #optimizer = SGD(lr=self.learning_rate)
-
         return model
 
     def call_preprocessing(self, mains, submeters, method):
@@ -227,13 +193,8 @@ class Seq2Point(Disaggregator):
                 new_app_readings = (
                     new_app_readings - app_mean) / app_std  # /self.max_val
                 # I know that the following window has only one value
-                app_df_list = [pd.DataFrame(window)
-                               for window in new_app_readings]
-                #new_app_readings = pd.DataFrame(new_app_readings)
-                # aggregate_list.append(new_mains)
+                app_df_list = [pd.DataFrame(window) for window in new_app_readings]
                 appliance_list.append((app_name, app_df_list))
-                #new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
-                #print (new_mains.shape, new_app_readings.shape, app_name)
 
             return mains_df_list, appliance_list
 

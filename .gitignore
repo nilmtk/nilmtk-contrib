@@ -8,3 +8,12 @@ dae
 disaggregate/__pycache__
 *hdf5
 excess
+.ipynb_checkpoints
+.pycache
+mean_folder
+pre-trained-mean
+prev_disaggregate
+.xlsx
+.xlxs
+__pycache__
+disaggregate/__pycache__

@@ -24,7 +24,8 @@ class AFHMM(Disaggregator):
         self.num_appliances = 0
         self.appliances = []        
         self.signal_aggregates = OrderedDict()
-        self.time_period = params.get('save-model-path', self.time_period)
+        self.time_period = 720
+        self.time_period = params.get('time_period', self.time_period)
         self.default_num_states = params.get('default_num_states',2)
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
@@ -44,33 +45,24 @@ class AFHMM(Disaggregator):
             df_list = pd.concat(df_list, axis=0)
             train_app_tmp.append((app_name,df_list))
 
+        # All the initializations required by the model
         train_appliances = train_app_tmp
-
-
         learnt_model = OrderedDict()
-
         means_vector = []
-
         one_hot_states_vector = []
-
         pi_s_vector = []
-
         transmat_vector = []
-
         states_vector = []
-
         train_main = train_main.values.flatten().reshape((-1,1))
-        
+
         for appliance_name, power in train_appliances:
             #print (appliance_name)
-            self.appliances.append(appliance_name)
-            
+            # Learning the pi's and transistion probabliites  for each appliance using a simple HMM
+            self.appliances.append(appliance_name)    
             X = power.values.reshape((-1,1))
-
             learnt_model[appliance_name] = hmm.GaussianHMM(self.default_num_states, "full")
             # Fit
             learnt_model[appliance_name].fit(X)
-
             means = learnt_model[appliance_name].means_.flatten().reshape((-1,1))
             states = learnt_model[appliance_name].predict(X)
             transmat = learnt_model[appliance_name].transmat_
@@ -81,17 +73,13 @@ class AFHMM(Disaggregator):
 
             for i in keys:
                 total+=counter[i]
-            
             pi = []
 
             for i in keys:
                 pi.append(counter[i]/total)
-            
             pi = np.array(pi)
-
             nb_classes = self.default_num_states
             targets = states.reshape(-1)
-            
             means_vector.append(means)
             pi_s_vector.append(pi)
             transmat_vector.append(transmat.T)
@@ -107,15 +95,19 @@ class AFHMM(Disaggregator):
 
     def disaggregate_thread(self, test_mains,index,d):
 
+        # A threads that does disaggregation
+
         means_vector = self.means_vector
         pi_s_vector = self.pi_s_vector
         means_vector = self.means_vector
         transmat_vector = self.transmat_vector
+
         sigma = 100*np.ones((len(test_mains),1))
         flag = 0
+
         for epoch in range(6):
+            # The alernative Minimization
             if epoch%2==1:
-                # The alernative Minimization
                 usage = np.zeros((len(test_mains)))
                 for appliance_id in range(self.num_appliances):
                     app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
@@ -157,13 +149,14 @@ class AFHMM(Disaggregator):
                                 for i in range(self.default_num_states):
                                     constraints+=[cvx.sum(cvx_variable_matrices[appliance_id][t][i]) == cvx_state_vectors[appliance_id][t-1][i]]
 
-                    # Second order cone constraints
+                    
                     
                     total_observed_reading = np.zeros((test_mains.shape))
-                        #print (len(cvx_state_vectors))
+                    # TOtal observed reading equals the sum of each appliance
                     for appliance_id in range(self.num_appliances):
                                 total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
 
+                    # Loss function to be minimized
                     
                     term_1 = 0
                     term_2 = 0
@@ -179,12 +172,12 @@ class AFHMM(Disaggregator):
                         # The expression involving start states
                         first_one_hot_states = one_hot_states[0]
                         term_2-= cvx.sum(cvx.multiply(first_one_hot_states,np.log(pi)))
-                    
                     flag = 1
 
                 expression = 0
                 term_3 = 0
                 term_4 = 0
+
 
                 for t in range(len(test_mains)):
                         term_4+= .5 * ((test_mains[t][0] - total_observed_reading[t][0])**2 / (sigma[t]**2))      
@@ -202,10 +195,13 @@ class AFHMM(Disaggregator):
             app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
             prediction_dict[app_name] = app_usage.flatten()
 
+        # Store the result in the index corresponding to the thread.
+
         d[index] =  pd.DataFrame(prediction_dict,dtype='float32')
 
     def disaggregate_chunk(self, test_mains_list):
 
+        # Sistributes the test mains across multiple threads and runs them in parallel
         manager = Manager()
         d = manager.dict()
         test_mains_list = pd.concat(test_mains_list,axis=0)        

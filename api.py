@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import datetime
 from IPython.display import clear_output
 
+print (Mean)
 class API():
 
     """
@@ -114,6 +115,7 @@ class API():
             clear_output()
 
         d=self.test_datasets_dict
+
         if self.chunk_size:
             print ("Chunk Wise Testing for all algorithms")
             # It means that, predictions can also be done on chunks
@@ -130,16 +132,13 @@ class API():
 
         """
         This function loads the data from buildings and datasets with the specified chunk size and trains on each of them. 
-
-        After the training process is over, it tests on the specified testing set whilst loading it in chunks.
-
         """
-        # First, we initialize all the models   
-
             
         for dataset in d:
+            # Loading the dataset
             print("Loading data for ",dataset, " dataset")          
             for building in d[dataset]['buildings']:
+                # Loading the building
                 train=DataSet(d[dataset]['path'])
                 print("Loading building ... ",building)
                 train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
@@ -147,6 +146,7 @@ class API():
                 appliance_iterators = [train.buildings[building].elec[app_name].load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
                 print(train.buildings[building].elec.mains())
                 for chunk_num,chunk in enumerate (train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
+                    # Loading the chunk for the specifeid building
                     #Dummry loop for executing on outer level. Just for looping till end of a chunk
                     print("Starting enumeration..........")
                     train_df = next(mains_iterator)
@@ -278,12 +278,6 @@ class API():
                 test_mains=next(test.buildings[building].elec.mains().load(physical_quantity='power', ac_type=self.power['mains'], sample_period=self.sample_period))
                 appliance_readings=[]
 
-                #print (self.appliances  , self.power['appliance'],self.sample_period)
-                
-                #elec = test.buildings[building].elec
-                #df=next((elec.select_using_appliances(type='fridge').load(physical_quantity='power', ac_type=['apparent','active'], sample_period=60)))
-
-                #print (df.shape)
                 for appliance in self.appliances:
                     test_df=next((test.buildings[building].elec[appliance].load(physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period)))
                     appliance_readings.append(test_df)
@@ -333,30 +327,16 @@ class API():
         """
         This function is reponsible for initializing the models with the specified model parameters
         """
-        method_dict={}
-        for i in self.methods:
-            model_class = globals()[i]
-            method_dict[i] = model_class(self.methods[i])
-
-        # method_dict={'CO':CombinatorialOptimisation(self.method_dict['CO']),
-        #             'FHMM':FHMM(self.method_dict['FHMM']),
-        #             'DAE':DAE(self.method_dict['DAE']),
-        #             'Mean':Mean(self.method_dict['Mean']),
-        #             'Zero':Zero(self.method_dict['Zero']),
-        #             'Seq2Seq':Seq2Seq(self.method_dict['Seq2Seq']),
-        #             'Seq2Point':Seq2Point(self.method_dict['Seq2Point']),
-        #             'DSC':DSC(self.method_dict['DSC']),
-        #              'AFHMM':AFHMM(self.method_dict['AFHMM']),
-        #              'AFHMM_SAC':AFHMM_SAC(self.method_dict['AFHMM_SAC']),              
-        #              'RNN':RNN(self.method_dict['RNN'])
-        #             }
-
         for name in self.methods:
-            if 1:
-                clf=method_dict[name]
+            try:
+                model_class = globals()[name]
+                
+                clf=model_class(self.methods[name])
                 self.classifiers.append((name,clf))
-            else:
-                print ("\n\nThe method {model_name} specied does not exist. \n\n".format(model_name=i))
+
+            except Exception as e:
+                print ("\n\nThe method {model_name} specied does not exist. \n\n".format(model_name=name))
+                print (e)
     
     def call_predict(self,classifiers):
 
@@ -388,18 +368,15 @@ class API():
             
         
         for metric in self.metrics:
-            
             try:
                 loss_function = globals()[metric]                
-
             except:
                 print ("Loss function ",metric, " is not supported currently!")
                 continue
-            computed_metric={}
 
+            computed_metric={}
             for clf_name,clf in classifiers:
                 computed_metric[clf_name] = self.compute_loss(gt_overall, pred_overall[clf_name], loss_function)
-
             computed_metric = pd.DataFrame(computed_metric)
             print("............ " ,metric," ..............")
             print(computed_metric) 
@@ -409,16 +386,12 @@ class API():
         for app_name in self.appliances:
             app_dict = {}
             app_dict['gt'] = gt_overall[app_name]
-
             for clf_name, clf in classifiers:
                 app_dict[clf_name] = pred_overall[clf_name][app_name]
-
             concatenated_df = pd.DataFrame(app_dict)
-            
             # Pending conversion of datetime to string
             concatenated_df = concatenated_df.reset_index()
-            concatenated_df = concatenated_df.drop('localminute', axis=1)
-            
+            concatenated_df = concatenated_df.drop('localminute', axis=1) 
             self.predictions.append(concatenated_df)
             self.predictions_keys.append(self.storing_key + "_" + app_name)
 
@@ -461,49 +434,14 @@ class API():
                 gt[meter] = pd.Series(concatenated_df_app.values.flatten(),index=index)
 
         gt_overall = pd.DataFrame(gt, dtype='float32')
-        
         pred = {}
-
         for app_name in concat_pred_df.columns:
-
             app_series_values = concat_pred_df[app_name].values.flatten()
-
             # Neural nets do extra padding sometimes, to fit, so get rid of extra predictions
-
             app_series_values = app_series_values[:len(gt_overall[app_name])]
-
-            #print (len(gt_overall[app_name]),len(app_series_values))
-
             pred[app_name] = pd.Series(app_series_values, index = gt_overall.index)
-
         pred_overall = pd.DataFrame(pred,dtype='float32')
-
-
-        #gt[i] = pd.DataFrame({k:v.squeeze() for k,v in iteritems(gt[i]) if len(v)}, index=next(iter(gt[i].values())).index).dropna()
-
-        # If everything can fit in memory
-
-        #gt_overall = pd.concat(gt)
-        # gt_overall.index = gt_overall.index.droplevel()
-        # #pred_overall = pd.concat(pred)
-        # pred_overall.index = pred_overall.index.droplevel()
-
-        # Having the same order of columns
-        # gt_overall = gt_overall[pred_overall.columns]
-
-        # #Intersection of index
-        # gt_index_utc = gt_overall.index.tz_convert("UTC")
-        # pred_index_utc = pred_overall.index.tz_convert("UTC")
-        # common_index_utc = gt_index_utc.intersection(pred_index_utc)
-
-        # common_index_local = common_index_utc.tz_convert(timezone)
-        # gt_overall = gt_overall.loc[common_index_local]
-        # pred_overall = pred_overall.loc[common_index_local]
-        # appliance_labels = [m for m in gt_overall.columns.values]
-        # gt_overall.columns = appliance_labels
-        # pred_overall.columns = appliance_labels
         return gt_overall, pred_overall
-
 
     # metrics
     def compute_loss(self,gt,clf_pred, loss_function):

@@ -19,17 +19,6 @@ from multiprocessing import Process, Manager
 class AFHMM_SAC(Disaggregator):
     """1 dimensional baseline Mean algorithm.
 
-    Attributes
-    ----------
-    model : list of dicts
-       Each dict has these keys:
-           mean : list of mean values, one for each appliance (the mean power
-           (Watts)) training_metadata : The appliance type (and perhaps some
-           other metadata) for each model.
-
-    MIN_CHUNK_LENGTH : int
-
-    MODEL_NAME = string
     """
 
     def __init__(self, params):
@@ -42,9 +31,11 @@ class AFHMM_SAC(Disaggregator):
         self.appliances = []
         self.time_period = 720
         self.signal_aggregates = OrderedDict()
+        self.time_period = params.get('time_period', self.time_period)
+        self.default_num_states = params.get('default_num_states',2)
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
+        self.chunk_wise_training = False
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
@@ -314,117 +305,4 @@ class AFHMM_SAC(Disaggregator):
         print ("finish time is ",time.time() - st)
 
         return [pd.concat(self.arr_of_results,axis=0)]
-        #    #print (one_hot_states.shape)
-        #    #print (means_vector[appliance_id].shape)
-        #    #print (term_3.shape)
-        #    #print ((np.sum(one_hot_states*means_vector[appliance_id],axis=1).shape))
-        #    term_3+= np.sum(one_hot_states*means_vector[appliance_id],axis=1)
-
-            
-        #    #print (term_3.shape)
-        #    # term_1_list.append(variable_matrix*np.log(transmat))
-        #    # term_2_list.append(one_hot_states*np.log(pi))
-        #    #term_3+=hone#appliance_power.values.reshape((-1,1))
-
-        # #print (np.array(term_1_list).shape,np.array(term_2_list).shape,term_3.shape)
-        # # term_1_list = np.array(term_1_list)
-        # # term_2_list = np.array(term_2_list)
-
-
-
-        # # sigma = 30
-
-        # # expression = 0
-        # # s = 0
-        # # for appliance_id in range(len(term_1_list)):
-
-        # #  for t in range(len(term_1_list[appliance_id])):
-
-        # #      matrix =  term_1_list[appliance_id, t]
-        # #      s-=np.sum(matrix)
-        # #      #print (matrix.shape)
-        # #      #print (matrix)
-        # #      expression-=cvx.sum(matrix)
-
-
-
-        # # for appliance_id in range(len(term_2_list)):
-        # #  matrix = term_2_list[appliance_id]
-        # #  s-=np.sum(matrix)
-        # #  #print (matrix)
-        # #  expression-=cvx.sum(matrix)
-
-        # #print (train_main.shape)
-        # #print (expression.value)
-        # sigma = 30
-        # expression+= .5 * (cvx.norm(train_main - term_3) **2)/(sigma**2)
-
-        # constraints = [one_hot_states_vector<=1, one_hot_states_vector>=0, appliance_variable_matrix>=0,appliance_variable_matrix<=1]
-
-        # exp = '['
-        # for appliance_id in range(len(one_hot_states_vector)):
-
-        #    states_vector = one_hot_states_vector[appliance_id]
-
-        #    for t in range(len(states_vector)):
-        #        exp+='cvx.sum(one_hot_states_vector[%s,%s])==1'%(appliance_id,t)
-        #        exp+=','
-        # exp = exp[:-1]
-        # exp+=']'
-        
-        # constraints+=eval(exp)
-
-        # print (expression.value)
-
-        # expression = cvx.Minimize(expression)
-
-        # prob = cvx.Problem(expression, constraints)
-
-        # H = cvx.Variable(shape=(10, 20,30), name='H')
-        # print (prob.value) 
-        # #print (eval(exp))
-
-        # #print (expression.value)
-
-        # # plt.figure(figsize=(20,8))
-        # # plt.plot(train_main.flatten())
-        # # plt.plot(term_3.flatten())
-        # # plt.show()
-        # #expresssion = -cvx.sum(term_1_list) - cvx.sum(term_2_list) + 
-
-        # # print (expression.value)
-        # # print (s)
-
-        # # constraints = []
-
-        # # s = "["
-        # # for appliance_id in range(len(states_vector)):
-
-        # #  for t in range(len(appliance_id)):
-        # #      s+=
-
-
-
-        # # term_1 = variable_matrix*(transmat.T)
-        # # print (one_hot_states.shape)
-        # # term_2 = one_hot_states[0]*pi
-
-        # # #term_3 =  train_main - X
-        # # print (term_2.shape, term_1.shape,term_3.shape)
-        # # print (train_main.shape)
-        #    #print (variable_matrix[1])
-        #    #print (variable_matrix[-1])
-        #    #print (appliance_states)
-
-
-        # #print (learnt_model[appliance_name].transmat_)
-        # # print (means_vector[0])
-        # # print (means_vector[1])
-        # # print (states)
-        # # print (one_hot_targets)
-        # # means_vector = []
-
-        # # for appliance_name in learnt_model:
-
-        # #  for mean_val in learnt_model[appliance_name].predict(X):
-        # #      means_vector.append(mean_val)
+ 
