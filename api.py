@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import datetime
 from IPython.display import clear_output
 
-print (Mean)
+
 class API():
 
     """

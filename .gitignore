@@ -16,5 +16,7 @@ prev_disaggregate
 .xlsx
 .xlxs
 __pycache__
-disaggregate/__pycache__
+__pycache__/*
+disaggregate/__pycache__/*
+disaggregate/__pycache__/
 buildsys_notebooks
