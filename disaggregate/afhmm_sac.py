@@ -254,9 +254,8 @@ class AFHMM_SAC(Disaggregator):
                 expression = cvx.Minimize(expression)
                 u = time.time()
                 prob = cvx.Problem(expression, constraints)
-                print ('started solving')
+
                 prob.solve(solver=cvx.SCS,verbose=False, warm_start=True)
-                print ('Finished solving')
                 s_ = [i.value for i in cvx_state_vectors]
 
         prediction_dict = {}

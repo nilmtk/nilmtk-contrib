@@ -11,5 +11,5 @@ from .hart_85 import Hart85
 # from .seq2seq import Seq2Seq
 # from .WindowGRU import WindowGRU
 # from .rnn import RNN
-# From the file, import the algorithm class
+#From the file, import the algorithm class
 

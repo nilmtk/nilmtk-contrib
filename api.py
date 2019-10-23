@@ -125,7 +125,7 @@ class API():
             print ("Joint Testing for all algorithms")
             self.test_jointly(d)
 
-        self.store_errors_and_predictions()
+        #self.store_errors_and_predictions()
 
         
     def train_chunk_wise(self,clf,d):
@@ -144,7 +144,7 @@ class API():
                 train.set_window(start=d[dataset]['buildings'][building]['start_time'],end=d[dataset]['buildings'][building]['end_time'])
                 mains_iterator = train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)
                 appliance_iterators = [train.buildings[building].elec[app_name].load(chunksize = self.chunk_size, physical_quantity='power', ac_type=self.power['appliance'], sample_period=self.sample_period) for app_name in self.appliances]
-                print(train.buildings[building].elec.mains())
+                
                 for chunk_num,chunk in enumerate (train.buildings[building].elec.mains().load(chunksize = self.chunk_size, physical_quantity='power', ac_type = self.power['mains'], sample_period=self.sample_period)):
                     # Loading the chunk for the specifeid building
                     #Dummry loop for executing on outer level. Just for looping till end of a chunk
@@ -253,7 +253,7 @@ class API():
                         train_df+=app_reading
 
                 print ("Train Jointly")
-                print (train_df.shape, appliance_readings[0].shape, train_df.columns,appliance_readings[0].columns )
+                
                 self.train_mains=self.train_mains.append(train_df)
                 for i,appliance_name in enumerate(self.appliances):
                     self.train_submeters[i] = self.train_submeters[i].append(appliance_readings[i])
@@ -340,6 +340,8 @@ class API():
     
     def call_predict(self,classifiers):
 
+        
+        
         """
         This functions computers the predictions on the self.test_mains using all the trained models and then compares different learn't models using the metrics specified
         """
@@ -347,6 +349,7 @@ class API():
         pred_overall={}
         gt_overall={}
         for name,clf in classifiers:
+            print ("Started Prediction using: ",clf.MODEL_NAME)
             gt_overall,pred_overall[name]=self.predict(clf,self.test_mains,self.test_submeters, self.sample_period,'Europe/London')
 
         self.gt_overall=gt_overall
@@ -410,7 +413,7 @@ class API():
                 
                     
     def predict(self, clf, test_elec, test_submeters, sample_period, timezone):
-        print (clf)
+        
         
         """
         Generates predictions on the test dataset using the specified classifier.
@@ -441,6 +444,10 @@ class API():
             app_series_values = app_series_values[:len(gt_overall[app_name])]
             pred[app_name] = pd.Series(app_series_values, index = gt_overall.index)
         pred_overall = pd.DataFrame(pred,dtype='float32')
+        
+        
+        
+        
         return gt_overall, pred_overall
 
     # metrics

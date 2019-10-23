@@ -137,7 +137,7 @@ class WindowGRU(Disaggregator):
 
         results = pd.DataFrame(disggregation_dict, dtype='float32')
         test_predictions.append(results)
-        print("test predictions ", test_predictions, len(test_predictions))
+
         return test_predictions
 
     def call_preprocessing(self, mains, submeters, method):

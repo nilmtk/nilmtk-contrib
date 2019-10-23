@@ -410,7 +410,7 @@ class Hart85(Disaggregator):
         """
         #print(test_mains)
         test_predictions_list = []
-        print('...............................Disaggregator starts...............................')
+        
         for chunk in test_mains:
           
             [_, transients] = find_steady_states(
@@ -497,7 +497,7 @@ class Hart85(Disaggregator):
             temp[appliance]=temp_df[matched_col]
         test_predictions_list.append(temp)    
           
-        print('............................Disaggregator ends...........................')
+        
         return test_predictions_list
     
     def min_rmse_column(self,temp_df,gt_df):

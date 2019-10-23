@@ -162,7 +162,7 @@ class CO(Disaggregator):
 
             for i, model in enumerate(self.model):
                 print("Estimating power demand for '{}'"
-                      .format(model['appliance_name']))
+                      .format(model['appliance_name']),end="\r")
                 predicted_power = state_combinations[
                     indices_of_state_combinations, i].flatten()
                 column = pd.Series(

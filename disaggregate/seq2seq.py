@@ -122,19 +122,17 @@ class Seq2Seq(Disaggregator):
             test_main_list = self.call_preprocessing(
                 test_main_list, submeters=None, method='test')
 
-        print("New testing")
+        
         disggregation_dict = {}
         test_predictions = []
 
         #print (test_main_list.shape)
-        print("Length")
-        print(len(test_main_list))
+        
         test_main_array = np.array([window.values.flatten()
                                     for window in test_main_list])
         test_main_array = test_main_array.reshape(
             (-1, self.sequence_length, 1))
-        print("Max input")
-        print(np.max(test_main_array), np.min(test_main_array))
+        
         for appliance in self.models:
 
             prediction = []
