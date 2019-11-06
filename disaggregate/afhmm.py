@@ -207,7 +207,7 @@ class AFHMM(Disaggregator):
         
         predictions_lst = []
         for test_mains in test_mains_list:        
-            test_mains_big = test_mains_list.values.flatten().reshape((-1,1))
+            test_mains_big = test_mains.values.flatten().reshape((-1,1))
             self.arr_of_results = []        
             st = time.time()
             threads = []

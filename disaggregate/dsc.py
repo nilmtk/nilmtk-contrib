@@ -28,6 +28,7 @@ class DSC(Disaggregator):
         self.shape = params.get('shape',self.shape)
         self.learning_rate = params.get('learning_rate',self.learning_rate)
         self.iterations = params.get('iterations',self.iterations)
+        self.n_epochs = self.iterations
         self.n_components = params.get('n_components',self.n_components)
 
     def learn_dictionary(self, appliance_main, app_name):
@@ -151,22 +152,26 @@ class DSC(Disaggregator):
 
             concatenated_bases = np.concatenate(concatenated_bases,axis=1)
             concatenated_activations = np.concatenate(concatenated_activations,axis=0)
+            print ("--"*15)
             print ("Optimal Errors")
             self.print_appliance_wise_errors(concatenated_activations, concatenated_bases)
-
-
+            print ("--"*15)
             model = SparseCoder(dictionary=concatenated_bases.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
             predicted_activations = model.transform(train_main.T).T
-            print ("\n\n\n")
+            print ('\n\n')
+            print ("--"*15)
             print ("Error in prediction before discriminative sparse coding")
             self.print_appliance_wise_errors(predicted_activations, concatenated_bases)
+            print ("--"*15)
             print ('\n\n')
             optimal_b = self.discriminative_training(concatenated_activations,concatenated_bases)
             model = SparseCoder(dictionary=optimal_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
             self.disggregation_model = model
             predicted_activations = model.transform(train_main.T).T
-            print ("\n\n")
+            print ("--"*15)
+            print ("Model Errors after Discriminative Training")
             self.print_appliance_wise_errors(predicted_activations, concatenated_bases)
+            print ("--"*15)
             self.disaggregation_bases = optimal_b
             self.reconstruction_bases = concatenated_bases
             
