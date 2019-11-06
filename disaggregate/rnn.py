@@ -50,6 +50,7 @@ class RNN(Disaggregator):
         # If no appliance wise parameters are provided, then copmute them using the first chunk
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
+            
 
         print("...............RNN partial_fit running...............")
         # Do the pre-processing, such as  windowing and normalizing
