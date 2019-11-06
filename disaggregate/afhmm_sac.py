@@ -273,35 +273,33 @@ class AFHMM_SAC(Disaggregator):
 
 
     def disaggregate_chunk(self, test_mains_list):
-        
+
+        # Sistributes the test mains across multiple threads and runs them in parallel
         manager = Manager()
         d = manager.dict()
-
-        test_mains_list = pd.concat(test_mains_list,axis=0)        
-        test_mains_big = test_mains_list.values.flatten().reshape((-1,1))
-        self.arr_of_results = []
-        #print ("Shape ",test_mains_big.shape)
         
-        st = time.time()
-        threads = []
-        
-        for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
-            test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
-            t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
-            threads.append(t)
+        predictions_lst = []
+        for test_mains in test_mains_list:        
+            test_mains_big = test_mains_list.values.flatten().reshape((-1,1))
+            self.arr_of_results = []        
+            st = time.time()
+            threads = []
+            for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
+                test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
+                t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
+                threads.append(t)
 
-        print ("Num threads ",len(threads))
+            for t in threads:
+                t.start()
 
-        for t in threads:
-            t.start()
+            for t in threads:
+                t.join()
 
-        for t in threads:
-            t.join()
+            for i in range(len(threads)):
+                self.arr_of_results.append(d[i])
+            prediction = pd.concat(self.arr_of_results,axis=0)
+            predictions_lst.append(prediction)
+            
+        return predictions_lst
 
-        for i in range(len(threads)):
-            self.arr_of_results.append(d[i])
-
-        print ("finish time is ",time.time() - st)
-
-        return [pd.concat(self.arr_of_results,axis=0)]
  

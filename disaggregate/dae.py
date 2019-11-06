@@ -15,6 +15,8 @@ from statistics import mean
 import os
 import pickle
 import random
+import json
+
 random.seed(10)
 np.random.seed(10)
 class DAE(Disaggregator):
@@ -24,16 +26,18 @@ class DAE(Disaggregator):
         Iniititalize the moel with the given parameters
         """
         self.MODEL_NAME = "DAE"
-        self.save_model_path = params.get('save-model-path',None)
-        self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 10)
         self.batch_size = params.get('batch_size',512)
         self.mains_mean = params.get('mains_mean',1000)
-        self.mains_std = params.get('mains_std',1800)
+        self.mains_std = params.get('mains_std',600)
         self.appliance_params = params.get('appliance_params',{})
+        self.save_model_path = params.get('save-model-path', None)
+        self.load_model_path = params.get('pretrained-model-path',None)
         self.models = OrderedDict()
+        if self.load_model_path:
+            self.load_model()
         
 
         
@@ -70,16 +74,49 @@ class DAE(Disaggregator):
             train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15,random_state=10)  
             model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)
             model.load_weights(filepath)
-            if not os.path.exists('dae'):
-                    os.mkdir('dae')
-            pickle_out = open("dae/" + appliance_name + ".pickle", "wb")
-            pickle.dump(model, pickle_out)
-            pickle_out.close()
+
+        if self.save_model_path:
+            self.save_model()
+
+    def load_model(self):
+        print ("Loading the model using the pretrained-weights")        
+        model_folder = self.load_model_path
+        with open(os.path.join(model_folder, "model.json"), "r") as f:
+            model_string = f.read().strip()
+            params_to_load = json.loads(model_string)
+
+
+        self.sequence_length = int(params_to_load['sequence_length'])
+        self.mains_mean = params_to_load['mains_mean']
+        self.mains_std = params_to_load['mains_std']
+        self.appliance_params = params_to_load['appliance_params']
+
+        for appliance_name in self.appliance_params:
+            self.models[appliance_name] = self.return_network()
+            self.models[appliance_name].load_weights(os.path.join(model_folder,appliance_name+".h5"))
+
+
+    def save_model(self):
+        
+        os.makedirs(self.save_model_path)    
+        params_to_save = {}
+        params_to_save['appliance_params'] = self.appliance_params
+        params_to_save['sequence_length'] = self.sequence_length
+        params_to_save['mains_mean'] = self.mains_mean
+        params_to_save['mains_std'] = self.mains_std
+        for appliance_name in self.models:
+            print ("Saving model for ", appliance_name)
+            self.models[appliance_name].save_weights(os.path.join(self.save_model_path,appliance_name+".h5"))
+
+        with open(os.path.join(self.save_model_path,'model.json'),'w') as file:
+            file.write(json.dumps(params_to_save))
+
+
 
     def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(test_main_list,submeters=None,method='test')
-        test_main_list = [pd.concat(test_main_list,axis=0)]
+            test_main_list = self.call_preprocessing(test_main_list,submeters_lst=None,method='test')
+
         test_predictions = []
         for test_main in test_main_list:
             test_main = test_main.values
@@ -98,9 +135,7 @@ class DAE(Disaggregator):
             test_predictions.append(results)
         return test_predictions
             
-
     def return_network(self):
-        
         model = Sequential()
         model.add(Conv1D(8, 4, activation="linear", input_shape=(self.sequence_length, 1), padding="same", strides=1))
         model.add(Flatten())
@@ -112,28 +147,32 @@ class DAE(Disaggregator):
         model.compile(loss='mse', optimizer='adam')
         return model
 
-    def call_preprocessing(self, mains, submeters, method):
+    def call_preprocessing(self, mains_lst, submeters_lst, method):
         sequence_length  = self.sequence_length
         if method=='train':
-            mains = pd.concat(mains,axis=0)
-            mains = self.normalize_input(mains.values,sequence_length,self.mains_mean,self.mains_std,True)
-            mains_df_list = [pd.DataFrame(mains)]
+            processed_mains = []
+            for mains in mains_lst:                
+                mains = self.normalize_input(mains.values,sequence_length,self.mains_mean,self.mains_std,True)
+                processed_mains.append(pd.DataFrame(mains))
+
             tuples_of_appliances = []
-            for (appliance_name,df) in submeters:
-                df = pd.concat(df,axis=0)
+            for (appliance_name,app_df_list) in submeters_lst:
                 app_mean = self.appliance_params[appliance_name]['mean']
                 app_std = self.appliance_params[appliance_name]['std']
-                data = self.normalize_output(df.values, sequence_length,app_mean,app_std,True)
-                appliance_df_list  = [pd.DataFrame(data)]
-                tuples_of_appliances.append((appliance_name, appliance_df_list))
-            return mains_df_list, tuples_of_appliances
+                processed_app_dfs = []
+                for app_df in app_df_list:
+                    data = self.normalize_output(app_df.values, sequence_length,app_mean,app_std,True)
+                    processed_app_dfs.append(pd.DataFrame(data))                    
+                tuples_of_appliances.append((appliance_name, processed_app_dfs))
+
+            return processed_mains, tuples_of_appliances
 
         if method=='test':
-
-            mains = pd.concat(mains,axis=0)
-            mains = self.normalize_input(mains.values ,sequence_length,self.mains_mean,self.mains_std,False)
-            mains_df_list = [pd.DataFrame(mains)]
-            return mains_df_list
+            processed_mains = []
+            for mains in mains_lst:                
+                mains = self.normalize_input(mains.values,sequence_length,self.mains_mean,self.mains_std,False)
+                processed_mains.append(pd.DataFrame(mains))
+            return processed_mains
     
         
     def normalize_input(self,data,sequence_length, mean, std, overlapping=False):
@@ -146,6 +185,7 @@ class DAE(Disaggregator):
         else:
             windowed_x = arr.reshape((-1,sequence_length))
         windowed_x = windowed_x - mean
+        windowed_x = windowed_x/std
         return (windowed_x/std).reshape((-1,sequence_length))
 
     def normalize_output(self,data,sequence_length, mean, std, overlapping=False):
@@ -163,11 +203,10 @@ class DAE(Disaggregator):
     def denormalize_output(self,data,mean,std):
         return mean + data*std
     
-
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(df_list[0])
+            l = np.array(pd.concat(df_list,axis=1))
             app_mean = np.mean(l)
             app_std = np.std(l)
             if app_std<1:

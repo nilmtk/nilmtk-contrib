@@ -17,13 +17,7 @@ class DSC(Disaggregator):
     def __init__(self, params):
 
         self.MODEL_NAME = 'DSC'  # Add the name for the algorithm
-        self.save_model_path = params.get('save-model-path', None)
-        self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        if self.load_model_path:
-            self.load_model(self.load_model_path)
-
-
+        self.chunk_wise_training = False
         self.dictionaries = OrderedDict()
         self.power = OrderedDict()
         self.shape = 60*2
@@ -51,13 +45,9 @@ class DSC(Disaggregator):
         else:
             print ("Re-training dictionary for ",app_name)
             model = self.dictionaries[app_name]
-    
         model.fit(appliance_main.T)
-
         reconstruction = np.matmul(model.components_.T,model.transform(appliance_main.T).T)
-
         print ("RMSE reconstruction for appliance %s is %s"%(app_name,mean_squared_error(reconstruction,appliance_main)**(.5)))
-
         self.dictionaries[app_name] = model
         
 
@@ -66,9 +56,7 @@ class DSC(Disaggregator):
 
         # Making copies of concatenated bases and activation. 
         optimal_a = np.copy(concatenated_activations)
-        
         predicted_b = np.copy(concatenated_bases)
-
         
         '''
         Next step is to modify bases such that, we get optimal A upon sparse coding
@@ -76,35 +64,24 @@ class DSC(Disaggregator):
         '''
 
         alpha = self.learning_rate
-        
         least_error = 1e10
-
         total_power = self.total_power
-
         v_size = .20
-
         v_index = int(total_power.shape[1] * v_size)
-
         train_power = total_power[:,:-v_index]
-
         v_power = total_power[:,-v_index:]
-
         train_optimal_a = optimal_a[:,:-v_index]
-
         v_optimal_a = optimal_a[:,-v_index:]
 
-
+        print ("If Iteration wise errors are not decreasing, then please decrease the learning rate")
         for i in range(self.iterations):
+
             a = time.time()
             # Finding activations for the given bases
             model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
             train_predicted_a = model.transform(train_power.T).T
-
             model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
-            val_predicted_a = model.transform(v_power.T).T
-
-            
-
+            val_predicted_a = model.transform(v_power.T).T        
             err = np.mean(np.abs(val_predicted_a - v_optimal_a))
 
             if err<least_error:
@@ -122,39 +99,17 @@ class DSC(Disaggregator):
             #if i%verbose==0:
             print ("Iteration ",i," Error ",err)
 
-            
-            # if i%verbose==0:
-            #     print ("Epoch ",i,' in discriminative training')
-            #     print ("Diff is ",err)
-            #     print ('\n\n')
-    #             model = SparseCoder(dictionary=b_hat.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=cof)
-    #             a_hat = model.transform(aggregate_usage.T).T
-    #             d_error(con_b,a_hat,aggregate_usage,power, sparsedict, show_plot=False)
-    #             #print (np.sum(np.linalg.norm(b_hat,axis=0)))
-    #             print ('\n\n')
-
-        # model = SparseCoder(dictionary=best_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=cof)
-        # a_hat = model.transform(self.total_power.T).T
-        
-        # err = np.mean(np.abs(a_hat - a_opt))
-        # print ("Final Err is ",err)
         return  best_b
-
-
 
     def print_appliance_wise_errors(self, activations, bases):
 
-        start_comp = 0
-        
+        start_comp = 0        
         for cnt, i in enumerate(self.power):
-            
             X = self.power[i]
             n_comps = self.dictionaries[i].n_components
             pred = np.matmul(bases[:,start_comp:start_comp+n_comps],activations[start_comp:start_comp+n_comps,:])
             start_comp+=n_comps
-
             #plt.plot(pred.T[home_id],label=i)
-            
             print ("Error for ",i," is ",mean_squared_error(pred, X)**(.5))
         
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
@@ -170,9 +125,7 @@ class DSC(Disaggregator):
             train_main = list(train_main.values.flatten()) + [0]*extra_values
         
         train_main = np.array(train_main).reshape((-1,self.shape)).T
-
         self.total_power = train_main
-
         new_train_appliances  = []
         
         for app_name, app_df in train_appliances:
@@ -216,25 +169,6 @@ class DSC(Disaggregator):
             self.print_appliance_wise_errors(predicted_activations, concatenated_bases)
             self.disaggregation_bases = optimal_b
             self.reconstruction_bases = concatenated_bases
-
-                #print (np.max(train_main),np.max(power),np.min(train_main),np.min(power),np.isnan(train_main).any(),np.isnan(power).any())
-                
-
-                    
-
-
-                # Do validation when you have sufficient samples
-
-                # p = model.predict(v_x) * self.max_val
-                # t = v_y *self.max_val
-                # x = v_x*self.max_val
-
-                # for  i in range(len(p)):
-                #     plt.figure()
-                #     plt.plot(t[i],color='g')
-                #     plt.plot(p[i],color='r')
-                #     plt.plot(x[i],color='b')
-                #     plt.show()
             
         else:
             print ("This chunk has small number of samples, so skipping the training")
@@ -242,20 +176,14 @@ class DSC(Disaggregator):
     def disaggregate_chunk(self, test_main_list):
 
         test_predictions = []
-
         for test_main in test_main_list:
-            #print (test_main.shape)
-
             if test_main.size%self.shape!=0:
                 extra_values = self.shape - (test_main.size)%(self.shape)
                 test_main = list(test_main.values.flatten()) + [0]*extra_values
-            
             test_main = np.array(test_main).reshape((-1,self.shape)).T
             predicted_activations = self.disggregation_model.transform(test_main.T).T
-
             #predicted_usage = self.reconstruction_bases@predicted_activations
             disggregation_dict = {}
-
             start_comp = 0            
             for cnt, app_name in enumerate(self.power):
                 n_comps = self.dictionaries[app_name].n_components
@@ -265,9 +193,7 @@ class DSC(Disaggregator):
                 flat_mains = test_main.T.flatten()
                 predicted_usage = np.where(predicted_usage>flat_mains,flat_mains,predicted_usage)
                 disggregation_dict[app_name] = pd.Series(predicted_usage)
-
             results = pd.DataFrame(disggregation_dict, dtype='float32')
-
             test_predictions.append(results)
 
         return test_predictions
