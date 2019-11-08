@@ -1,5 +1,5 @@
 package:
-    name: nilmtk_contrib
+    name: nilmtk-contrib
     version: "0.1.0.dev1"
 
 source:
