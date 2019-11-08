@@ -1,0 +1,19 @@
+package:
+    name: nilmtk_contrib
+    version: "0.1.0.dev1"
+
+source:
+    path: ..
+
+build:
+    noarch: python
+    
+requirements:
+    host:
+        - python
+        - setuptools
+    run: 
+        - python>=3.6
+        - nilmtk>=0.4
+        - keras>=2.2.4
+        - cvxpy>=1.0.0
