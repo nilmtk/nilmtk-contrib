@@ -1,7 +1,30 @@
 
 # nilmtk-contrib
 
-This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API
+This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://nipunbatra.github.io/papers/batra_buildsys_19.pdf). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
+
+
+
+Using the NILMTK-contrib you can use the following algorithms:
+ - Additive Factorial Hidden Markov Model
+ - Additive Factorial Hidden Markov Model with Signal Aggregate Constraints
+ - Discriminative Sparse Coding
+ - RNN
+ - Denoising Auto Encoder
+ - Seq2Point
+ - Seq2Seq
+ - WindowGRU
+
+The above state-of-the-art algorithms, have been added to this repository. 
+
+You can do the following using the new NILMTK's Rapid Experimentation API
+ - Training and Testing across multiple appliances
+ - Training and Testing across multiple datasets (Transfer learning)
+ - Training and Testing across multiple buildings
+ - Training and Testing with Artificial aggregate
+ - Training and Testing with different sampling frequencies
+ 
+Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/blob/master/sample_notebooks/NILMTK%20API%20Tutorial.ipynb) to know more about the usage of the API.
 
 # Installation Details
 
