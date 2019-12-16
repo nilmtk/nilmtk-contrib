@@ -85,8 +85,8 @@ class WindowGRU(Disaggregator):
         test_predictions = []
         for mains in test_main_list:
             disggregation_dict = {}
+            mains = mains.values.reshape((-1,self.sequence_length,1))
             for appliance in self.models:
-                mains = mains.values.reshape((-1,self.sequence_length,1))
                 prediction = self.models[appliance].predict(mains,batch_size=self.batch_size)
                 prediction = np.reshape(prediction, len(prediction))
                 valid_predictions = prediction.flatten()
