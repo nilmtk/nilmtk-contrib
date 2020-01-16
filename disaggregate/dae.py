@@ -206,7 +206,7 @@ class DAE(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=1))
+            l = np.array(pd.concat(df_list,axis=0))
             app_mean = np.mean(l)
             app_std = np.std(l)
             if app_std<1:

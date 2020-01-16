@@ -58,12 +58,12 @@ class Seq2Point(Disaggregator):
             train_main, train_appliances = self.call_preprocessing(
                 train_main, train_appliances, 'train')
 
-        train_main = pd.concat(train_main,axis=1)
+        train_main = pd.concat(train_main,axis=0)
         train_main = train_main.values.reshape((-1,self.sequence_length,1))
         
         new_train_appliances = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=1)
+            app_df = pd.concat(app_df,axis=0)
             app_df_values = app_df.values.reshape((-1,1))
             new_train_appliances.append((app_name, app_df_values))
         train_appliances = new_train_appliances
@@ -182,9 +182,10 @@ class Seq2Point(Disaggregator):
     def set_appliance_params(self,train_appliances):
         # Find the parameters using the first
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=1))
+            l = np.array(pd.concat(df_list,axis=0))
             app_mean = np.mean(l)
             app_std = np.std(l)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
+        print (self.appliance_params)

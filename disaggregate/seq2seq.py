@@ -52,15 +52,16 @@ class Seq2Seq(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
+        print (len(train_main))
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
                 train_main, train_appliances, 'train')
-        train_main = pd.concat(train_main,axis=1)
+        train_main = pd.concat(train_main,axis=0)
         train_main = train_main.values.reshape((-1,self.sequence_length,1))
         
         new_train_appliances = []
         for app_name, app_dfs in train_appliances:
-            app_df = pd.concat(app_dfs,axis=1)
+            app_df = pd.concat(app_dfs,axis=0)
             app_df_values = app_df.values.reshape((-1,self.sequence_length))
             new_train_appliances.append((app_name, app_df_values))
         train_appliances = new_train_appliances
@@ -206,7 +207,7 @@ class Seq2Seq(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=1))
+            l = np.array(pd.concat(df_list,axis=0))
             app_mean = np.mean(l)
             app_std = np.std(l)
             if app_std<1:
