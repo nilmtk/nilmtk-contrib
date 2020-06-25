@@ -1,8 +1,8 @@
-# nilmtk-contrib
+[![conda package version](https://anaconda.org/nilmtk/nilmtk-contrib/badges/version.svg)](https://anaconda.org/nilmtk/nilmtk-contrib)
+
+# NILMTK-Contrib
 
 This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://nipunbatra.github.io/papers/batra_buildsys_19.pdf). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
-
-
 
 Using the NILMTK-contrib you can use the following algorithms:
  - Additive Factorial Hidden Markov Model
@@ -14,9 +14,9 @@ Using the NILMTK-contrib you can use the following algorithms:
  - Seq2Seq
  - WindowGRU
 
-The above state-of-the-art algorithms, have been added to this repository. 
+The above state-of-the-art algorithms have been added to this repository. 
 
-You can do the following using the new NILMTK's Rapid Experimentation API
+You can do the following using the new NILMTK's Rapid Experimentation API:
  - Training and Testing across multiple appliances
  - Training and Testing across multiple datasets (Transfer learning)
  - Training and Testing across multiple buildings
@@ -30,13 +30,13 @@ Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/blob/master/sa
 We're currently testing a conda package. You can install in your current environment with:
 
 ```
-conda install -c conda-forge -c nilmtk -c nilmtk/label/dev nilmtk-contrib
+conda install -c conda-forge -c nilmtk nilmtk-contrib
 ```
 
 or create a dedicated environment (recommended) with:
 
 ```
-conda create -n nilm -c conda-forge -c nilmtk -c nilmtk/label/dev nilmtk-contrib
+conda create -n nilm -c conda-forge -c nilmtk nilmtk-contrib
 ```
 
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sample_notebooks) for using the nilmtk-contrib algorithms, using the new NILMTK-API.
