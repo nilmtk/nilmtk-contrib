@@ -15,7 +15,7 @@ if TRAVIS_TAG:
 else:
     MAJOR = 0
     MINOR = 1
-    MICRO = 0
+    MICRO = 2
     DEV = 1 # For multiple dev pre-releases, please increment this value
     ISRELEASED = False
     VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
