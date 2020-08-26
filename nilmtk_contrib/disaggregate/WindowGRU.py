@@ -1,58 +1,45 @@
-from __future__ import print_function, division
-from warnings import warn, filterwarnings
-
-from matplotlib import rcParams
-import matplotlib.pyplot as plt
 from collections import OrderedDict
 import random
-import sys
 import pandas as pd
 import numpy as np
-import h5py
-import os
-import pickle
 
 from keras.models import Sequential
 from keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
-from keras.utils import plot_model
 from sklearn.model_selection import train_test_split
 from keras.callbacks import ModelCheckpoint
-import keras.backend as K
-from nilmtk.utils import find_nearest
-from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
-from nilmtk.datastore import HDFDataStore
 
 import random
+
 random.seed(10)
 np.random.seed(10)
-class WindowGRU(Disaggregator):
 
+
+class WindowGRU(Disaggregator):
     def __init__(self, params):
 
         self.MODEL_NAME = "WindowGRU"
-        self.save_model_path = params.get('save-model-path',None)
-        self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = params.get('chunk_wise_training',False)
-        self.sequence_length = params.get('sequence_length',99)
+        self.save_model_path = params.get('save-model-path', None)
+        self.load_model_path = params.get('pretrained-model-path', None)
+        self.chunk_wise_training = params.get('chunk_wise_training', False)
+        self.sequence_length = params.get('sequence_length', 99)
         self.n_epochs = params.get('n_epochs', 10)
         self.models = OrderedDict()
         self.max_val = 800
-        self.batch_size = params.get('batch_size',512)
+        self.batch_size = params.get('batch_size', 512)
 
-    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
-
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
 
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
 
-        train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))
+        train_main = pd.concat(train_main, axis=0).values
+        train_main = train_main.reshape((-1, self.sequence_length, 1))
 
-        new_train_appliances  = []
+        new_train_appliances = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,1))
+            app_df = pd.concat(app_df, axis=0).values
+            app_df = app_df.reshape((-1, 1))
             new_train_appliances.append((app_name, app_df))
 
         train_appliances = new_train_appliances
@@ -64,30 +51,36 @@ class WindowGRU(Disaggregator):
                 print("Started re-training model for ", app_name)
 
             model = self.models[app_name]
-            mains = train_main.reshape((-1,self.sequence_length,1))
-            app_reading = app_df.reshape((-1,1))
-            filepath = 'windowgru-temp-weights-'+str(random.randint(0,100000))+'.h5'
-            checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
-            train_x, v_x, train_y, v_y = train_test_split(mains, app_reading, test_size=.15,random_state=10)
-            model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],shuffle=True,batch_size=self.batch_size)
+            mains = train_main.reshape((-1, self.sequence_length, 1))
+            app_reading = app_df.reshape((-1, 1))
+            filepath = 'windowgru-temp-weights-' + str(random.randint(0, 100000)) + '.h5'
+            checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
+            train_x, v_x, train_y, v_y = train_test_split(mains, app_reading, test_size=0.15, random_state=10)
+            model.fit(
+                train_x,
+                train_y,
+                validation_data=[v_x, v_y],
+                epochs=self.n_epochs,
+                callbacks=[checkpoint],
+                shuffle=True,
+                batch_size=self.batch_size,
+            )
             model.load_weights(filepath)
 
-
-    def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
+    def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
 
         if model is not None:
             self.models = model
 
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, submeters_lst=None, method='test')
-        
+            test_main_list = self.call_preprocessing(test_main_list, submeters_lst=None, method='test')
+
         test_predictions = []
         for mains in test_main_list:
             disggregation_dict = {}
-            mains = mains.values.reshape((-1,self.sequence_length,1))
+            mains = mains.values.reshape((-1, self.sequence_length, 1))
             for appliance in self.models:
-                prediction = self.models[appliance].predict(mains,batch_size=self.batch_size)
+                prediction = self.models[appliance].predict(mains, batch_size=self.batch_size)
                 prediction = np.reshape(prediction, len(prediction))
                 valid_predictions = prediction.flatten()
                 valid_predictions = np.where(valid_predictions > 0, valid_predictions, 0)
@@ -99,7 +92,7 @@ class WindowGRU(Disaggregator):
         return test_predictions
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
-        max_val = self.max_val
+        self.max_val
         if method == 'train':
             print("Training processing")
             processed_mains = []
@@ -115,16 +108,16 @@ class WindowGRU(Disaggregator):
             tuples_of_appliances = []
             for (appliance_name, app_dfs_list) in submeters_lst:
                 processed_app_dfs = []
-                for app_df in app_dfs_list:                    
+                for app_df in app_dfs_list:
                     data = self.preprocess_train_appliances(app_df)
                     processed_app_dfs.append(pd.DataFrame(data))
                 tuples_of_appliances.append((appliance_name, processed_app_dfs))
 
-            return processed_mains , tuples_of_appliances
+            return processed_mains, tuples_of_appliances
 
         if method == 'test':
             processed_mains = []
-            for mains in mains_lst:                
+            for mains in mains_lst:
                 # add padding values
                 padding = [0 for i in range(0, self.sequence_length - 1)]
                 paddf = pd.DataFrame({mains.columns.values[0]: padding})
@@ -138,17 +131,16 @@ class WindowGRU(Disaggregator):
 
         mains = self._normalize(mains, self.max_val)
         mainsarray = np.array(mains)
-        indexer = np.arange(self.sequence_length)[
-            None, :] + np.arange(len(mainsarray) - self.sequence_length + 1)[:, None]
+        indexer = np.arange(self.sequence_length)[None, :] + np.arange(len(mainsarray) - self.sequence_length + 1)[:, None]
         mainsarray = mainsarray[indexer]
-        mainsarray = mainsarray.reshape((-1,self.sequence_length))
+        mainsarray = mainsarray.reshape((-1, self.sequence_length))
         return pd.DataFrame(mainsarray)
 
     def preprocess_train_appliances(self, appliance):
 
         appliance = self._normalize(appliance, self.max_val)
         appliancearray = np.array(appliance)
-        appliancearray = appliancearray.reshape((-1,1))
+        appliancearray = appliancearray.reshape((-1, 1))
         return pd.DataFrame(appliancearray)
 
     def preprocess_train_mains(self, mains):
@@ -157,7 +149,7 @@ class WindowGRU(Disaggregator):
         mainsarray = np.array(mains)
         indexer = np.arange(self.sequence_length)[None, :] + np.arange(len(mainsarray) - self.sequence_length + 1)[:, None]
         mainsarray = mainsarray[indexer]
-        mainsarray = mainsarray.reshape((-1,self.sequence_length))
+        mainsarray = mainsarray.reshape((-1, self.sequence_length))
         return pd.DataFrame(mainsarray)
 
     def _normalize(self, chunk, mmax):
@@ -175,13 +167,11 @@ class WindowGRU(Disaggregator):
         '''
         model = Sequential()
         # 1D Conv
-        model.add(Conv1D(16,4,activation='relu',input_shape=(self.sequence_length,1),padding="same",strides=1))
+        model.add(Conv1D(16, 4, activation='relu', input_shape=(self.sequence_length, 1), padding="same", strides=1))
         # Bi-directional GRUs
-        model.add(Bidirectional(GRU(64, activation='relu',
-                                    return_sequences=True), merge_mode='concat'))
+        model.add(Bidirectional(GRU(64, activation='relu', return_sequences=True), merge_mode='concat'))
         model.add(Dropout(0.5))
-        model.add(Bidirectional(GRU(128, activation='relu',
-                                    return_sequences=False), merge_mode='concat'))
+        model.add(Bidirectional(GRU(128, activation='relu', return_sequences=False), merge_mode='concat'))
         model.add(Dropout(0.5))
         # Fully Connected Layers
         model.add(Dense(128, activation='relu'))
