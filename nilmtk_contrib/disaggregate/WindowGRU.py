@@ -12,12 +12,12 @@ import h5py
 import os
 import pickle
 
-from keras.models import Sequential
-from keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
-from keras.utils import plot_model
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
+from tensorflow.keras.utils import plot_model
 from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 from nilmtk.utils import find_nearest
 from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
