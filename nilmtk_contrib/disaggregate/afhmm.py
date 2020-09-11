@@ -13,10 +13,10 @@ class AFHMM(Disaggregator):
     See: http://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.pdf
     """
     def __init__(self, params):
-        self.MODEL_NAME = 'AFHMM'        
+        self.MODEL_NAME = 'AFHMM'
         self.models = []
         self.num_appliances = 0
-        self.appliances = []        
+        self.appliances = []
         self.signal_aggregates = OrderedDict()
         self.time_period = params.get("time_period", 720)
         self.default_num_states = params.get("default_num_states", 2)
@@ -26,9 +26,7 @@ class AFHMM(Disaggregator):
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
-
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
-        
         self.models = []
         self.num_appliances = 0
         self.appliances = []
@@ -49,9 +47,8 @@ class AFHMM(Disaggregator):
         train_main = train_main.values.flatten().reshape((-1,1))
 
         for appliance_name, power in train_appliances:
-            #print (appliance_name)
-            # Learning the pi's and transistion probabliites  for each appliance using a simple HMM
-            self.appliances.append(appliance_name)    
+            # Learning the pi's and transistion probablities for each appliance using a simple HMM
+            self.appliances.append(appliance_name)
             X = power.values.reshape((-1,1))
             learnt_model[appliance_name] = hmm.GaussianHMM(self.default_num_states, "full")
             # Fit
@@ -87,9 +84,6 @@ class AFHMM(Disaggregator):
         print ("Finished Training")
 
     def disaggregate_thread(self, test_mains,index,d):
-
-        # A threads that does disaggregation
-
         means_vector = self.means_vector
         pi_s_vector = self.pi_s_vector
         means_vector = self.means_vector
@@ -99,7 +93,7 @@ class AFHMM(Disaggregator):
         flag = 0
 
         for epoch in range(6):
-            # The alernative Minimization
+            # The alernative minimization
             if epoch%2==1:
                 usage = np.zeros((len(test_mains)))
                 for appliance_id in range(self.num_appliances):
@@ -108,14 +102,16 @@ class AFHMM(Disaggregator):
                 sigma = (test_mains.flatten() - usage.flatten()).reshape((-1,1))
                 sigma = np.where(sigma<1,1,sigma)
             else:
-
                 if flag==0:
                     constraints = []
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
                     delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
                     for appliance_id in range(self.num_appliances):
-                            state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))                    
+                            state_vector = cvx.Variable(
+                                    shape=(len(test_mains), self.default_num_states), 
+                                    name='state_vec-%s'%(appliance_id)
+                            )
                             cvx_state_vectors.append(state_vector)
                             # Enforcing that their values are ranged
                             constraints+=[cvx_state_vectors[appliance_id]>=0]
@@ -126,7 +122,10 @@ class AFHMM(Disaggregator):
                             # Creating Variable matrices for every appliance
                             appliance_variable_matrix = []
                             for t in range(len(test_mains)):
-                                matrix = cvx.Variable(shape=(self.default_num_states, self.default_num_states), name='variable_matrix-%s-%d'%(appliance_id,t))
+                                matrix = cvx.Variable(
+                                        shape=(self.default_num_states, self.default_num_states), 
+                                        name='variable_matrix-%s-%d'%(appliance_id,t)
+                                )
                                 appliance_variable_matrix.append(matrix)
                             cvx_variable_matrices.append(appliance_variable_matrix)
                             # Enforcing that their values are ranged
@@ -140,17 +139,16 @@ class AFHMM(Disaggregator):
                             # Constraint 6d
                             for t in range(1,len(test_mains)): # 6d
                                 for i in range(self.default_num_states):
-                                    constraints+=[cvx.sum(cvx_variable_matrices[appliance_id][t][i]) == cvx_state_vectors[appliance_id][t-1][i]]
+                                    constraints+=[
+                                            cvx.sum(cvx_variable_matrices[appliance_id][t][i]) == cvx_state_vectors[appliance_id][t-1][i]
+                                    ]
 
-                    
-                    
                     total_observed_reading = np.zeros((test_mains.shape))
-                    # TOtal observed reading equals the sum of each appliance
+                    # Total observed reading equals the sum of each appliance
                     for appliance_id in range(self.num_appliances):
-                                total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
+                        total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]
 
                     # Loss function to be minimized
-                    
                     term_1 = 0
                     term_2 = 0
                     for appliance_id in range(self.num_appliances):
@@ -171,13 +169,13 @@ class AFHMM(Disaggregator):
                 term_3 = 0
                 term_4 = 0
 
-
                 for t in range(len(test_mains)):
-                        term_4+= .5 * ((test_mains[t][0] - total_observed_reading[t][0])**2 / (sigma[t]**2))      
-                        term_3+= .5 * (np.log(sigma[t]**2))
+                    term_4+= .5 * ((test_mains[t][0] - total_observed_reading[t][0])**2 / (sigma[t]**2))
+                    term_3+= .5 * (np.log(sigma[t]**2))
+
                 expression = term_1 + term_2 + term_3 + term_4
                 expression = cvx.Minimize(expression)
-                prob = cvx.Problem(expression, constraints,)                
+                prob = cvx.Problem(expression, constraints,)
                 prob.solve(solver=cvx.SCS,verbose=False,warm_start=True)
                 s_ = [i.value for i in cvx_state_vectors]
 
@@ -188,19 +186,16 @@ class AFHMM(Disaggregator):
             prediction_dict[app_name] = app_usage.flatten()
 
         # Store the result in the index corresponding to the thread.
-
         d[index] =  pd.DataFrame(prediction_dict,dtype='float32')
 
     def disaggregate_chunk(self, test_mains_list):
-
-        # Sistributes the test mains across multiple threads and runs them in parallel
+        # Distributes the test mains across multiple threads and runs them in parallel
         manager = Manager()
         d = manager.dict()
-        
         predictions_lst = []
-        for test_mains in test_mains_list:        
+        for test_mains in test_mains_list:
             test_mains_big = test_mains.values.flatten().reshape((-1,1))
-            self.arr_of_results = []        
+            self.arr_of_results = []
             threads = []
             for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
                 test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
@@ -217,8 +212,6 @@ class AFHMM(Disaggregator):
                 self.arr_of_results.append(d[i])
             prediction = pd.concat(self.arr_of_results,axis=0)
             predictions_lst.append(prediction)
-            
+
         return predictions_lst
-
-
 
