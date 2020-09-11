@@ -24,7 +24,7 @@ class AFHMM_SAC(Disaggregator):
         self.default_num_states = params.get('default_num_states',2)
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = False
+        self.chunk_wise_training = params.get("chunk_wise_training", False)
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
