@@ -2,7 +2,7 @@ from __future__ import print_function, division
 from warnings import warn
 
 from nilmtk.disaggregate import Disaggregator
-from keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
 
 import os
 import pandas as pd
@@ -10,12 +10,12 @@ import numpy as np
 import pickle
 from collections import OrderedDict
 
-from keras.optimizers import SGD
-from keras.models import Sequential, load_model
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.models import Sequential, load_model
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 import random
 random.seed(10)
 np.random.seed(10)
