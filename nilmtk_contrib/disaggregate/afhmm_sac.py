@@ -6,34 +6,19 @@ from nilmtk.disaggregate import Disaggregator
 import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
+from nilmtk_contrib.disaggregate import AFHMM
 
-class AFHMM_SAC(Disaggregator):
+
+class AFHMM_SAC(AFHMM):
     """
     Additive Factorial Hidden Markov Model with Signal Aggregate Constraints
     See: http://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.pdf
     """
     def __init__(self, params):
-        self.model = []
-        self.MIN_CHUNK_LENGTH = 100
+        super().__init__(params)
         self.MODEL_NAME = 'AFHMM_SAC'
-        self.default_num_states = 2
-        self.models = []
-        self.num_appliances = 0
-        self.appliances = []
-        self.time_period = 720
-        self.signal_aggregates = OrderedDict()
-        self.time_period = params.get('time_period', self.time_period)
-        self.default_num_states = params.get('default_num_states',2)
-        self.save_model_path = params.get('save-model-path', None)
-        self.load_model_path = params.get('pretrained-model-path',None)
-        self.chunk_wise_training = params.get("chunk_wise_training", False)
-        if self.load_model_path:
-            self.load_model(self.load_model_path)
-
-
 
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
-        
         self.models = []
         self.num_appliances = 0
         self.appliances = []

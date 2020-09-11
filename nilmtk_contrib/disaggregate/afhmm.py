@@ -13,17 +13,15 @@ class AFHMM(Disaggregator):
     See: http://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.pdf
     """
     def __init__(self, params):
-        self.model = []
         self.MODEL_NAME = 'AFHMM'        
         self.models = []
         self.num_appliances = 0
         self.appliances = []        
         self.signal_aggregates = OrderedDict()
-        self.time_period = 720
-        self.time_period = params.get('time_period', self.time_period)
-        self.default_num_states = params.get('default_num_states',2)
-        self.save_model_path = params.get('save-model-path', None)
-        self.load_model_path = params.get('pretrained-model-path',None)
+        self.time_period = params.get("time_period", 720)
+        self.default_num_states = params.get("default_num_states", 2)
+        self.save_model_path = params.get("save-model-path", None)
+        self.load_model_path = params.get("pretrained-model-path", None)
         self.chunk_wise_training = params.get("chunk_wise_training", False)
         if self.load_model_path:
             self.load_model(self.load_model_path)
