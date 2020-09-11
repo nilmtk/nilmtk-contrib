@@ -8,8 +8,10 @@ from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
 class AFHMM_SAC(Disaggregator):
-    """1 dimensional baseline Mean algorithm."""
-
+    """
+    Additive Factorial Hidden Markov Model with Signal Aggregate Constraints
+    See: http://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.pdf
+    """
     def __init__(self, params):
         self.model = []
         self.MIN_CHUNK_LENGTH = 100

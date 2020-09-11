@@ -8,7 +8,10 @@ from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
 class AFHMM(Disaggregator):
-
+    """
+    Additive Factorial Hidden Markov Model (without Signal Aggregate Constraints)
+    See: http://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.pdf
+    """
     def __init__(self, params):
         self.model = []
         self.MODEL_NAME = 'AFHMM'        
