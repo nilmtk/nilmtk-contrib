@@ -39,28 +39,25 @@ class WindowGRU(Disaggregator):
         self.max_val = 800
         self.batch_size = params.get('batch_size',512)
 
-    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
-
-
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
 
         train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))
-
+        train_main = train_main.reshape((-1, self.sequence_length, 1))
         new_train_appliances  = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,1))
+            app_df = pd.concat(app_df, axis=0).values
+            app_df = app_df.reshape((-1, 1))
             new_train_appliances.append((app_name, app_df))
 
         train_appliances = new_train_appliances
         for app_name, app_df in train_appliances:
             if app_name not in self.models:
-                print("First model training for ", app_name)
+                print("First model training for", app_name)
                 self.models[app_name] = self.return_network()
             else:
-                print("Started re-training model for ", app_name)
+                print("Started re-training model for", app_name)
 
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
@@ -76,7 +73,6 @@ class WindowGRU(Disaggregator):
                     shuffle=True,
             )
             model.load_weights(filepath)
-
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
 

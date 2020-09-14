@@ -19,7 +19,7 @@ import json
 random.seed(10)
 np.random.seed(10)
 class DAE(Disaggregator):
-    
+
     def __init__(self, params):
         """
         Iniititalize the moel with the given parameters
@@ -37,10 +37,8 @@ class DAE(Disaggregator):
         self.models = OrderedDict()
         if self.load_model_path:
             self.load_model()
-        
 
-        
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True,**load_kwargs):        
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         """
         The partial fit function
         """
@@ -49,24 +47,26 @@ class DAE(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
-        # TO preprocess the data and bring it to a valid shape
+        # To preprocess the data and bring it to a valid shape
         if do_preprocessing:
-            print ("Doing Preprocessing")
-            train_main,train_appliances = self.call_preprocessing(train_main,train_appliances,'train')
-        train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))
+            print ("Preprocessing")
+            train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
+        train_main = pd.concat(train_main, axis=0).values
+        train_main = train_main.reshape((-1, self.sequence_length, 1))
         new_train_appliances  = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,self.sequence_length,1))
+            app_df = pd.concat(app_df, axis=0).values
+            app_df = app_df.reshape((-1, self.sequence_length, 1))
             new_train_appliances.append((app_name, app_df))
+
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print ("First model training for ",appliance_name)
+                print("First model training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
-                print (self.models[appliance_name].summary())
-            print ("Started Retraining model for ",appliance_name)    
+                print(self.models[appliance_name].summary())
+
+            print("Started Retraining model for", appliance_name)
             model = self.models[appliance_name]
             filepath = 'dae-temp-weights-'+str(random.randint(0,100000))+'.h5'
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
