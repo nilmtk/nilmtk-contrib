@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 from collections import OrderedDict 
 import matplotlib.pyplot as  plt
-from sklearn.model_selection import train_test_split
 from sklearn.decomposition import MiniBatchDictionaryLearning, SparseCoder
 from sklearn.metrics import mean_squared_error
 import time

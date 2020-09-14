@@ -10,7 +10,6 @@ from collections import OrderedDict
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.models import Sequential, load_model
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import random
@@ -85,8 +84,13 @@ class RNN(Disaggregator):
                     # Do validation when you have sufficient samples
                     filepath = 'RNN-temp-weights-'+str(random.randint(0,100000))+'.h5'
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
-                    train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
-                    model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
+                    model.fit(
+                            train_x, train_y,
+                            validation_split=.15,
+                            epochs=self.n_epochs,
+                            batch_size=self.batch_size,
+                            callbacks=[ checkpoint ],
+                    )
                     model.load_weights(filepath)
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
