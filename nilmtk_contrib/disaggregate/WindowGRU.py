@@ -15,7 +15,6 @@ import pickle
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
 from tensorflow.keras.utils import plot_model
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 from nilmtk.utils import find_nearest
@@ -68,8 +67,14 @@ class WindowGRU(Disaggregator):
             app_reading = app_df.reshape((-1,1))
             filepath = 'windowgru-temp-weights-'+str(random.randint(0,100000))+'.h5'
             checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
-            train_x, v_x, train_y, v_y = train_test_split(mains, app_reading, test_size=.15,random_state=10)
-            model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],shuffle=True,batch_size=self.batch_size)
+            model.fit(
+                    mains, app_reading,
+                    validation_split=.15,
+                    epochs=self.n_epochs,
+                    batch_size=self.batch_size,
+                    callbacks=[ checkpoint ],
+                    shuffle=True,
+            )
             model.load_weights(filepath)
 
 
