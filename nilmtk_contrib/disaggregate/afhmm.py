@@ -177,7 +177,11 @@ class AFHMM(Disaggregator):
                 expression = cvx.Minimize(expression)
                 prob = cvx.Problem(expression, constraints,)
                 prob.solve(solver=cvx.SCS,verbose=False,warm_start=True)
-                s_ = [i.value for i in cvx_state_vectors]
+                s_ = [
+                        np.zeros((len(test_mains), self.default_num_states)) if i.value is None
+                        else i.value
+                        for i in cvx_state_vectors
+                ]
 
         prediction_dict = {}
         for appliance_id in range(self.num_appliances):
