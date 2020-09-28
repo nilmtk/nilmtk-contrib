@@ -13,10 +13,8 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from keras.callbacks import ModelCheckpoint
 import keras.backend as K
-import random
 import sys
-random.seed(10)
-np.random.seed(10)
+
 
 class SequenceLengthError(Exception):
     pass
@@ -44,8 +42,7 @@ class RNN(Disaggregator):
             print ("Sequence length should be odd!")
             raise (SequenceLengthError)
 
-    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,
-            **load_kwargs):
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
 
         # If no appliance wise parameters are provided, then copmute them using the first chunk
         if len(self.appliance_params) == 0:
@@ -83,7 +80,11 @@ class RNN(Disaggregator):
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'RNN-temp-weights-'+str(random.randint(0,100000))+'.h5'
+                    filepath = "{}-temp-weights-{}-epoch{}.h5".format(
+                            self.MODEL_NAME.lower(),
+                            "_".join(appliance_name.split()),
+                            current_epoch,
+                    )
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
                     model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)

@@ -4,7 +4,6 @@ from warnings import warn, filterwarnings
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-import random
 import sys
 import pandas as pd
 import numpy as np
@@ -23,9 +22,7 @@ from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 
-import random
-random.seed(10)
-np.random.seed(10)
+
 class WindowGRU(Disaggregator):
 
     def __init__(self, params):
@@ -40,7 +37,7 @@ class WindowGRU(Disaggregator):
         self.max_val = 800
         self.batch_size = params.get('batch_size',512)
 
-    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
 
 
         if do_preprocessing:
@@ -66,7 +63,11 @@ class WindowGRU(Disaggregator):
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
             app_reading = app_df.reshape((-1,1))
-            filepath = 'windowgru-temp-weights-'+str(random.randint(0,100000))+'.h5'
+            filepath = "{}-temp-weights-{}-epoch{}.h5".format(
+                    self.MODEL_NAME.lower(),
+                    "_".join(appliance_name.split()),
+                    current_epoch,
+            )
             checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
             train_x, v_x, train_y, v_y = train_test_split(mains, app_reading, test_size=.15,random_state=10)
             model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],shuffle=True,batch_size=self.batch_size)

@@ -14,11 +14,9 @@ import keras.backend as K
 from statistics import mean
 import os
 import pickle
-import random
 import json
 
-random.seed(10)
-np.random.seed(10)
+
 class DAE(Disaggregator):
     
     def __init__(self, params):
@@ -41,7 +39,7 @@ class DAE(Disaggregator):
         
 
         
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True,**load_kwargs):        
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """
         The partial fit function
         """
@@ -69,7 +67,11 @@ class DAE(Disaggregator):
                 print (self.models[appliance_name].summary())
             print ("Started Retraining model for ",appliance_name)    
             model = self.models[appliance_name]
-            filepath = 'dae-temp-weights-'+str(random.randint(0,100000))+'.h5'
+            filepath = "{}-temp-weights-{}-epoch{}.h5".format(
+                    self.MODEL_NAME.lower(),
+                    "_".join(appliance_name.split()),
+                    current_epoch,
+            )
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
             train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15,random_state=10)  
             model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)
