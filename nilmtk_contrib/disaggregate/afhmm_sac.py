@@ -2,8 +2,6 @@ import cvxpy as cvx
 import numpy as np
 import pandas as pd
 
-from collections import Counter, OrderedDict
-from hmmlearn import hmm
 from nilmtk_contrib.disaggregate import AFHMM
 
 
@@ -15,71 +13,6 @@ class AFHMM_SAC(AFHMM):
     def __init__(self, params):
         super().__init__(params)
         self.MODEL_NAME = 'AFHMM_SAC'
-
-    def partial_fit(self, train_main, train_appliances, **load_kwargs):
-        self.models = []
-        self.num_appliances = 0
-        self.appliances = []
-        '''
-            train_main :- pd.DataFrame It will contain the mains reading.
-            train_appliances :- list of tuples [('appliance1',df1),('appliance2',df2),...]
-        '''
-        train_main = pd.concat(train_main, axis=0)
-        train_app_tmp = []
-
-        for app_name, df_list in train_appliances:
-            df_list = pd.concat(df_list, axis=0)
-            train_app_tmp.append((app_name,df_list))
-
-        train_appliances = train_app_tmp
-        learnt_model = OrderedDict()
-        means_vector = []
-        one_hot_states_vector = []
-        pi_s_vector = []
-        transmat_vector = []
-        states_vector = []
-
-        train_main = train_main.values.flatten().reshape((-1,1))
-
-        for appliance_name, power in train_appliances:
-            #print (appliance_name)
-            self.appliances.append(appliance_name)
-            X = power.values.reshape((-1,1))
-            learnt_model[appliance_name] = hmm.GaussianHMM(self.default_num_states, "full")
-            # Fit
-            learnt_model[appliance_name].fit(X)
-            means = learnt_model[appliance_name].means_.flatten().reshape((-1,1))
-            states = learnt_model[appliance_name].predict(X)
-            transmat = learnt_model[appliance_name].transmat_
-            counter = Counter(states.flatten())
-            total = 0
-            keys = list(counter.keys())
-            keys.sort()
-
-            for i in keys:
-                total+=counter[i]
-
-            pi = []
-            for i in keys:
-                pi.append(counter[i]/total)
-
-            pi = np.array(pi)
-
-            nb_classes = self.default_num_states
-            targets = states.reshape(-1)
-
-            means_vector.append(means)
-            pi_s_vector.append(pi)
-            transmat_vector.append(transmat.T)
-            states_vector.append(states)
-            self.num_appliances+=1
-            self.signal_aggregates[appliance_name] = (np.mean(X)*self.time_period).reshape((-1,))
-
-        self.means_vector = means_vector
-        self.pi_s_vector = pi_s_vector
-        self.means_vector = means_vector
-        self.transmat_vector = transmat_vector
-        print ("Finished Training")
 
     def disaggregate_thread(self, test_mains,index,d):
         means_vector = self.means_vector

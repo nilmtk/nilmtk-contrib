@@ -18,8 +18,9 @@ class AFHMM(Disaggregator):
     def __init__(self, params):
         self.MODEL_NAME = 'AFHMM'
         self.models = []
-        self.num_appliances = 0
-        self.appliances = []
+        self.means_vector = OrderedDict()
+        self.pi_s_vector = OrderedDict()
+        self.transmat_vector = OrderedDict()
         self.signal_aggregates = OrderedDict()
         self.time_period = params.get("time_period", 720)
         self.default_num_states = params.get("default_num_states", 2)
@@ -29,62 +30,41 @@ class AFHMM(Disaggregator):
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
+    @nilmtk.docinherit.doc_inherit
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
-        self.models = []
-        self.num_appliances = 0
-        self.appliances = []
-        train_main = pd.concat(train_main, axis=0)
-        train_app_tmp = []
-        for app_name, df_list in train_appliances:
-            df_list = pd.concat(df_list, axis=0)
-            train_app_tmp.append((app_name,df_list))
-
-        # All the initializations required by the model
-        train_appliances = train_app_tmp
-        learnt_model = OrderedDict()
-        means_vector = []
-        one_hot_states_vector = []
-        pi_s_vector = []
-        transmat_vector = []
-        states_vector = []
-        train_main = train_main.values.flatten().reshape((-1,1))
-
-        for appliance_name, power in train_appliances:
-            # Learning the pi's and transistion probablities for each appliance using a simple HMM
-            self.appliances.append(appliance_name)
-            X = power.values.reshape((-1,1))
-            learnt_model[appliance_name] = hmm.GaussianHMM(self.default_num_states, "full")
-            # Fit
-            learnt_model[appliance_name].fit(X)
-            means = learnt_model[appliance_name].means_.flatten().reshape((-1,1))
-            states = learnt_model[appliance_name].predict(X)
-            transmat = learnt_model[appliance_name].transmat_
+        """
+            train_main: pd.DataFrame It will contain the mains reading.
+            train_appliances: list of tuples [('appliance1', [ df1 ]),('appliance2', [ df2 ]),...]
+        """
+        for appli_name, df_list in train_appliances:
+            # Compute model parameters for this chunk.
+            app_df = pd.concat(df_list, axis=0)
+            X = app_df.values.reshape(( -1, 1 ))
+            learnt_model = hmm.GaussianHMM(self.default_num_states, "full")
+            learnt_model.fit(X)
+            means = learnt_model.means_.flatten().reshape(( -1, 1 ))
+            states = learnt_model.predict(X)
+            transmat = learnt_model.transmat_.T
             counter = Counter(states.flatten())
-            total = 0
-            keys = list(counter.keys())
-            keys.sort()
+            total = sum(counter.values())
+            pi = np.array([ v/total for v in counter.values() ])
+            sigagg = (np.mean(X) * self.time_period).reshape(( -1, ))
+            # Merge with previous values.
+            # Hypothesis 1: chunk size is constant. (mean of means)
+            # Hypothesis 2: if the appliance is already registered in
+            # self.means_vector, then it is also known in all other dicts.
+            if appli_name in self.means_vector:
+                self.means_vector[appli_name] = (self.means_vector[appli_name] + means) / 2
+                self.pi_s_vector[appli_name] = (self.pi_s_vector[appli_name] + pi) / 2
+                self.transmat_vector[appli_name] = (self.transmat_vector[appli_name] + transmat) / 2
+                self.signal_aggregates[appli_name] = (self.signal_aggregates[appli_name] + sigagg) / 2
+            else:
+                self.means_vector[appli_name] = means
+                self.pi_s_vector[appli_name] = pi
+                self.transmat_vector[appli_name] = transmat
+                self.signal_aggregates[appli_name] = sigagg
 
-            for i in keys:
-                total+=counter[i]
-            pi = []
-
-            for i in keys:
-                pi.append(counter[i]/total)
-            pi = np.array(pi)
-            nb_classes = self.default_num_states
-            targets = states.reshape(-1)
-            means_vector.append(means)
-            pi_s_vector.append(pi)
-            transmat_vector.append(transmat.T)
-            states_vector.append(states)
-            self.num_appliances+=1
-            self.signal_aggregates[appliance_name] = (np.mean(X)*self.time_period).reshape((-1,))
-
-        self.means_vector = means_vector
-        self.pi_s_vector = pi_s_vector
-        self.means_vector = means_vector
-        self.transmat_vector = transmat_vector
-        print ("Finished Training")
+        print ("{}: Finished training".format(self.MODEL_NAME))
 
     def disaggregate_thread(self, test_mains,index,d):
         means_vector = self.means_vector
