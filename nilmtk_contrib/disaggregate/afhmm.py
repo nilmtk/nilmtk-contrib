@@ -1,11 +1,14 @@
-from collections import Counter, OrderedDict
-import math
-import pandas as pd
-import numpy as np
-from nilmtk.disaggregate import Disaggregator
 import cvxpy as cvx
+import math
+import multiprocessing
+import nilmtk.docinherit
+import numpy as np
+import pandas as pd
+
+from collections import Counter, OrderedDict
 from hmmlearn import hmm
-from multiprocessing import Process, Manager
+from nilmtk.disaggregate import Disaggregator
+
 
 class AFHMM(Disaggregator):
     """
