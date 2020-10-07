@@ -1,6 +1,4 @@
 import cvxpy as cvx
-import math
-import multiprocessing
 import numpy as np
 import pandas as pd
 
@@ -203,32 +201,4 @@ class AFHMM_SAC(AFHMM):
             prediction_dict[app_name] = app_usage.flatten()
 
         d[index] =  pd.DataFrame(prediction_dict,dtype='float32')
-
-    def disaggregate_chunk(self, test_mains_list):
-        # Distributes the test mains across multiple threads and runs them in parallel
-        manager = Manager()
-        d = manager.dict()
-        predictions_lst = []
-        for test_mains in test_mains_list:
-            test_mains_big = test_mains.values.flatten().reshape((-1,1))
-            self.arr_of_results = []
-            st = time.time()
-            threads = []
-            for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
-                test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
-                t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
-                threads.append(t)
-
-            for t in threads:
-                t.start()
-
-            for t in threads:
-                t.join()
-
-            for i in range(len(threads)):
-                self.arr_of_results.append(d[i])
-            prediction = pd.concat(self.arr_of_results,axis=0)
-            predictions_lst.append(prediction)
-
-        return predictions_lst
 

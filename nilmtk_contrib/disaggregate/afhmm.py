@@ -195,30 +195,22 @@ class AFHMM(Disaggregator):
         # Store the result in the index corresponding to the thread.
         d[index] =  pd.DataFrame(prediction_dict,dtype='float32')
 
-    def disaggregate_chunk(self, test_mains_list):
-        # Distributes the test mains across multiple threads and runs them in parallel
-        manager = Manager()
-        d = manager.dict()
+    @nilmtk.docinherit.doc_inherit
+    def disaggregate_chunk(self, test_mains):
+        # Distributes the test mains across multiple threads and disaggregate in parallel
+        # Use all available CPUs except one for the OS.
+        n_workers = max(( 1, multiprocessing.cpu_count() - 1 ))
         predictions_lst = []
-        for test_mains in test_mains_list:
-            test_mains_big = test_mains.values.flatten().reshape((-1,1))
-            self.arr_of_results = []
-            threads = []
-            for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
-                test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]
-                t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
-                threads.append(t)
-
-            for t in threads:
-                t.start()
-
-            for t in threads:
-                t.join()
-
-            for i in range(len(threads)):
-                self.arr_of_results.append(d[i])
-            prediction = pd.concat(self.arr_of_results,axis=0)
-            predictions_lst.append(prediction)
+        with multiprocessing.Pool(n_workers) as workers:
+            for mains_df in test_mains:
+                mains_vect = mains_df.values.flatten().reshape(( -1, 1 ))
+                n_blocks = int(math.ceil(len(mains_vect)/self.time_period))
+                blocks = [
+                        mains_vect[b * self.time_period:(b + 1) * self.time_period]
+                        for b in range(n_blocks)
+                ]
+                res_arr = workers.map(self.disaggregate_thread, blocks)
+                predictions_lst.append(pd.concat(res_arr, axis=0))
 
         return predictions_lst
 
