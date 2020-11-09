@@ -28,6 +28,7 @@ class WindowGRU(Disaggregator):
     def __init__(self, params):
 
         self.MODEL_NAME = "WindowGRU"
+        self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
         self.save_model_path = params.get('save-model-path',None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
@@ -63,8 +64,7 @@ class WindowGRU(Disaggregator):
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
             app_reading = app_df.reshape((-1,1))
-            filepath = "{}-temp-weights-{}-epoch{}.h5".format(
-                    self.MODEL_NAME.lower(),
+            filepath = self.file_prefix + "-{}-epoch{}.h5".format(
                     "_".join(appliance_name.split()),
                     current_epoch,
             )
@@ -190,3 +190,12 @@ class WindowGRU(Disaggregator):
         model.add(Dense(1, activation='linear'))
         model.compile(loss='mse', optimizer='adam')
         return model
+
+    def clear_model_checkpoints(self):
+        with os.scandir() as path_list:
+            for entry in path_list:
+                if entry.is_file() and entry.name.startswith(self.file_prefix) \
+                        and entry.name.endswith(".h5"):
+                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
+                    os.remove(entry.path)
+

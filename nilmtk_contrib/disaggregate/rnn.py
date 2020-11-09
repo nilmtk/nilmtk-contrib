@@ -31,6 +31,7 @@ class RNN(Disaggregator):
 
         self.MODEL_NAME = "RNN"
         self.models = OrderedDict()
+        self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',19)
         self.n_epochs = params.get('n_epochs', 10 )
@@ -80,8 +81,7 @@ class RNN(Disaggregator):
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = "{}-temp-weights-{}-epoch{}.h5".format(
-                            self.MODEL_NAME.lower(),
+                    filepath = self.file_prefix + "-{}-epoch{}.h5".format(
                             "_".join(appliance_name.split()),
                             current_epoch,
                     )
@@ -193,4 +193,12 @@ class RNN(Disaggregator):
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
         print (self.appliance_params)
- 
+
+    def clear_model_checkpoints(self):
+        with os.scandir() as path_list:
+            for entry in path_list:
+                if entry.is_file() and entry.name.startswith(self.file_prefix) \
+                        and entry.name.endswith(".h5"):
+                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
+                    os.remove(entry.path)
+
