@@ -1,16 +1,15 @@
 from __future__ import print_function, division
 from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
 import pandas as pd
 import numpy as np
 from collections import OrderedDict 
-from keras.optimizers import SGD
-from keras.models import Sequential
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.models import Sequential
 import matplotlib.pyplot as  plt
-from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 from statistics import mean
 import os
 import pickle
@@ -18,7 +17,7 @@ import json
 
 
 class DAE(Disaggregator):
-    
+
     def __init__(self, params):
         """
         Iniititalize the moel with the given parameters
@@ -37,9 +36,8 @@ class DAE(Disaggregator):
         self.models = OrderedDict()
         if self.load_model_path:
             self.load_model()
-        
 
-        
+
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """
         The partial fit function
@@ -49,32 +47,40 @@ class DAE(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
-        # TO preprocess the data and bring it to a valid shape
+        # To preprocess the data and bring it to a valid shape
         if do_preprocessing:
-            print ("Doing Preprocessing")
-            train_main,train_appliances = self.call_preprocessing(train_main,train_appliances,'train')
-        train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))
+            print ("Preprocessing")
+            train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
+        train_main = pd.concat(train_main, axis=0).values
+        train_main = train_main.reshape((-1, self.sequence_length, 1))
         new_train_appliances  = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,self.sequence_length,1))
+            app_df = pd.concat(app_df, axis=0).values
+            app_df = app_df.reshape((-1, self.sequence_length, 1))
             new_train_appliances.append((app_name, app_df))
+
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print ("First model training for ",appliance_name)
+                print("First model training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
-                print (self.models[appliance_name].summary())
-            print ("Started Retraining model for ",appliance_name)    
+                print(self.models[appliance_name].summary())
+
+            print("Started Retraining model for", appliance_name)
             model = self.models[appliance_name]
             filepath = self.file_prefix + "-{}-epoch{}.h5".format(
                     "_".join(appliance_name.split()),
                     current_epoch,
             )
             checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
-            train_x,v_x,train_y,v_y = train_test_split(train_main,power,test_size=.15,random_state=10)  
-            model.fit(train_x,train_y,validation_data = [v_x,v_y],epochs = self.n_epochs, callbacks = [checkpoint],shuffle=True,batch_size=self.batch_size)
+            model.fit(
+                    train_main, power,
+                    validation_split=.15,
+                    batch_size=self.batch_size,
+                    epochs=self.n_epochs,
+                    callbacks=[ checkpoint ],
+                    shuffle=True,
+            )
             model.load_weights(filepath)
 
         if self.save_model_path:

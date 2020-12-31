@@ -73,6 +73,7 @@ setup(
     install_requires=[
         'nilmtk>=0.4',
         'keras>=2.2.4',
+        'tensorflow>=2.0',
         'cvxpy>=1.0.0'
     ],
     description="State-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API",

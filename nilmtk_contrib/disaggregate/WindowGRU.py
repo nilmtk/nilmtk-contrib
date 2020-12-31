@@ -1,4 +1,3 @@
-from __future__ import print_function, division
 from warnings import warn, filterwarnings
 
 from matplotlib import rcParams
@@ -11,12 +10,11 @@ import h5py
 import os
 import pickle
 
-from keras.models import Sequential
-from keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
-from keras.utils import plot_model
-from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 from nilmtk.utils import find_nearest
 from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
@@ -39,27 +37,24 @@ class WindowGRU(Disaggregator):
         self.batch_size = params.get('batch_size',512)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
-
-
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
 
         train_main = pd.concat(train_main,axis=0).values
-        train_main = train_main.reshape((-1,self.sequence_length,1))
-
+        train_main = train_main.reshape((-1, self.sequence_length, 1))
         new_train_appliances  = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0).values
-            app_df = app_df.reshape((-1,1))
+            app_df = pd.concat(app_df, axis=0).values
+            app_df = app_df.reshape((-1, 1))
             new_train_appliances.append((app_name, app_df))
 
         train_appliances = new_train_appliances
         for app_name, app_df in train_appliances:
             if app_name not in self.models:
-                print("First model training for ", app_name)
+                print("First model training for", app_name)
                 self.models[app_name] = self.return_network()
             else:
-                print("Started re-training model for ", app_name)
+                print("Started re-training model for", app_name)
 
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
@@ -69,10 +64,15 @@ class WindowGRU(Disaggregator):
                     current_epoch,
             )
             checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
-            train_x, v_x, train_y, v_y = train_test_split(mains, app_reading, test_size=.15,random_state=10)
-            model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],shuffle=True,batch_size=self.batch_size)
+            model.fit(
+                    mains, app_reading,
+                    validation_split=.15,
+                    epochs=self.n_epochs,
+                    batch_size=self.batch_size,
+                    callbacks=[ checkpoint ],
+                    shuffle=True,
+            )
             model.load_weights(filepath)
-
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
 
