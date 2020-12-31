@@ -16,8 +16,6 @@ import matplotlib.pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import random
-random.seed(10)
-np.random.seed(10)
 
 
 class SequenceLengthError(Exception):
@@ -33,6 +31,7 @@ class Seq2Seq(Disaggregator):
     def __init__(self, params):
 
         self.MODEL_NAME = "Seq2Seq"
+        self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
         self.chunk_wise_training = params.get('chunk_wise_training',False)
         self.sequence_length = params.get('sequence_length',99)
         self.n_epochs = params.get('n_epochs', 10)
@@ -45,7 +44,7 @@ class Seq2Seq(Disaggregator):
             print ("Sequence length should be odd!")
             raise (SequenceLengthError)
 
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         print("...............Seq2Seq partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
@@ -75,7 +74,10 @@ class Seq2Seq(Disaggregator):
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'seq2seq-temp-weights-'+str(random.randint(0,100000))+'.h5'
+                    filepath = self.file_prefix + "-{}-epoch{}.h5".format(
+                            "_".join(appliance_name.split()),
+                            current_epoch,
+                    )
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
                     model.fit(
                             train_main, power,
@@ -86,8 +88,8 @@ class Seq2Seq(Disaggregator):
                     )
                     model.load_weights(filepath)
 
+                    
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
-
         if model is not None:
             self.models = model
 
@@ -215,3 +217,12 @@ class Seq2Seq(Disaggregator):
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
+
+    def clear_model_checkpoints(self):
+        with os.scandir() as path_list:
+            for entry in path_list:
+                if entry.is_file() and entry.name.startswith(self.file_prefix) \
+                        and entry.name.endswith(".h5"):
+                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
+                    os.remove(entry.path)
+

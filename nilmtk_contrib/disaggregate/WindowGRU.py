@@ -1,10 +1,8 @@
-from __future__ import print_function, division
 from warnings import warn, filterwarnings
 
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-import random
 import sys
 import pandas as pd
 import numpy as np
@@ -22,14 +20,13 @@ from nilmtk.feature_detectors import cluster
 from nilmtk.disaggregate import Disaggregator
 from nilmtk.datastore import HDFDataStore
 
-import random
-random.seed(10)
-np.random.seed(10)
+
 class WindowGRU(Disaggregator):
 
     def __init__(self, params):
 
         self.MODEL_NAME = "WindowGRU"
+        self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
         self.save_model_path = params.get('save-model-path',None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = params.get('chunk_wise_training',False)
@@ -39,7 +36,7 @@ class WindowGRU(Disaggregator):
         self.max_val = 800
         self.batch_size = params.get('batch_size',512)
 
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
 
@@ -62,7 +59,10 @@ class WindowGRU(Disaggregator):
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
             app_reading = app_df.reshape((-1,1))
-            filepath = 'windowgru-temp-weights-'+str(random.randint(0,100000))+'.h5'
+            filepath = self.file_prefix + "-{}-epoch{}.h5".format(
+                    "_".join(appliance_name.split()),
+                    current_epoch,
+            )
             checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
             model.fit(
                     mains, app_reading,
@@ -190,3 +190,12 @@ class WindowGRU(Disaggregator):
         model.add(Dense(1, activation='linear'))
         model.compile(loss='mse', optimizer='adam')
         return model
+
+    def clear_model_checkpoints(self):
+        with os.scandir() as path_list:
+            for entry in path_list:
+                if entry.is_file() and entry.name.startswith(self.file_prefix) \
+                        and entry.name.endswith(".h5"):
+                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
+                    os.remove(entry.path)
+
