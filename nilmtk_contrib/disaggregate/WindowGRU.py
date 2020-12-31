@@ -1,24 +1,10 @@
-from warnings import warn, filterwarnings
-
-from matplotlib import rcParams
-import matplotlib.pyplot as plt
 from collections import OrderedDict
-import sys
-import pandas as pd
 import numpy as np
-import h5py
-import os
-import pickle
-
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
-from tensorflow.keras.utils import plot_model
-from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
-from nilmtk.utils import find_nearest
-from nilmtk.feature_detectors import cluster
+import pandas as pd
 from nilmtk.disaggregate import Disaggregator
-from nilmtk.datastore import HDFDataStore
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
+from tensorflow.keras.models import Sequential
 
 
 class WindowGRU(Disaggregator):
@@ -190,12 +176,4 @@ class WindowGRU(Disaggregator):
         model.add(Dense(1, activation='linear'))
         model.compile(loss='mse', optimizer='adam')
         return model
-
-    def clear_model_checkpoints(self):
-        with os.scandir() as path_list:
-            for entry in path_list:
-                if entry.is_file() and entry.name.startswith(self.file_prefix) \
-                        and entry.name.endswith(".h5"):
-                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
-                    os.remove(entry.path)
 

@@ -1,4 +1,3 @@
-from __future__ import print_function, division
 from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
@@ -12,7 +11,6 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 from statistics import mean
 import os
-import pickle
 import json
 
 
@@ -212,7 +210,6 @@ class DAE(Disaggregator):
         return mean + data*std
     
     def set_appliance_params(self,train_appliances):
-
         for (app_name,df_list) in train_appliances:
             l = np.array(pd.concat(df_list,axis=0))
             app_mean = np.mean(l)
@@ -220,12 +217,4 @@ class DAE(Disaggregator):
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
-
-    def clear_model_checkpoints(self):
-        with os.scandir() as path_list:
-            for entry in path_list:
-                if entry.is_file() and entry.name.startswith(self.file_prefix) \
-                        and entry.name.endswith(".h5"):
-                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
-                    os.remove(entry.path)
 

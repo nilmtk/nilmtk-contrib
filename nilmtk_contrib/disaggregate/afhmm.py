@@ -1,20 +1,12 @@
-from __future__ import print_function, division
-from warnings import warn
-
+from collections import Counter, OrderedDict
+import math
 import pandas as pd
 import numpy as np
-
 from nilmtk.disaggregate import Disaggregator
-from hmmlearn import hmm
-from collections import OrderedDict
-
 import cvxpy as cvx
-from collections import Counter
-import matplotlib.pyplot as plt
-import time
-from sklearn.metrics import mean_squared_error,mean_absolute_error
-import math
+from hmmlearn import hmm
 from multiprocessing import Process, Manager
+
 class AFHMM(Disaggregator):
 
     def __init__(self, params):
@@ -184,7 +176,6 @@ class AFHMM(Disaggregator):
                         term_3+= .5 * (np.log(sigma[t]**2))
                 expression = term_1 + term_2 + term_3 + term_4
                 expression = cvx.Minimize(expression)
-                u = time.time()                
                 prob = cvx.Problem(expression, constraints,)                
                 prob.solve(solver=cvx.SCS,verbose=False,warm_start=True)
                 s_ = [i.value for i in cvx_state_vectors]
@@ -209,7 +200,6 @@ class AFHMM(Disaggregator):
         for test_mains in test_mains_list:        
             test_mains_big = test_mains.values.flatten().reshape((-1,1))
             self.arr_of_results = []        
-            st = time.time()
             threads = []
             for test_block in range(int(math.ceil(len(test_mains_big)/self.time_period))):
                 test_mains = test_mains_big[test_block*(self.time_period):(test_block+1)*self.time_period]

@@ -1,21 +1,10 @@
-from __future__ import print_function, division
-from warnings import warn
-
-from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
-
-import os
-import pandas as pd
-import numpy as np
-import pickle
 from collections import OrderedDict
-
-from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.models import Sequential, load_model
-import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from nilmtk.disaggregate import Disaggregator
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
-import random
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten
+from tensorflow.keras.models import Sequential
 
 
 class SequenceLengthError(Exception):
@@ -217,12 +206,4 @@ class Seq2Seq(Disaggregator):
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
-
-    def clear_model_checkpoints(self):
-        with os.scandir() as path_list:
-            for entry in path_list:
-                if entry.is_file() and entry.name.startswith(self.file_prefix) \
-                        and entry.name.endswith(".h5"):
-                    print("{}: Removing {}".format(self.MODEL_NAME, entry.path))
-                    os.remove(entry.path)
 
