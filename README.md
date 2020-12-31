@@ -41,6 +41,8 @@ conda create -n nilm -c conda-forge -c nilmtk nilmtk-contrib
 
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sample_notebooks) for using the nilmtk-contrib algorithms, using the new NILMTK-API.
 
+Unless you are an advanced user, prefer using the Conda package instead of the Git repostory as the latter can contain work-in-progress changes.
+
 ## Dependencies
 
 - NILMTK>=0.4
