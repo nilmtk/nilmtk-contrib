@@ -25,6 +25,33 @@ You can do the following using the new NILMTK's Rapid Experimentation API:
  
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/blob/master/sample_notebooks/NILMTK%20API%20Tutorial.ipynb) to know more about the usage of the API.
 
+## Citation
+
+
+If you find this repo useful for your research, please consider citing our paper:
+
+```bibtex
+@inproceedings{10.1145/3360322.3360844,
+author = {Batra, Nipun and Kukunuri, Rithwik and Pandey, Ayush and Malakar, Raktim and Kumar, Rajat and Krystalakos, Odysseas and Zhong, Mingjun and Meira, Paulo and Parson, Oliver},
+title = {Towards Reproducible State-of-the-Art Energy Disaggregation},
+year = {2019},
+isbn = {9781450370059},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3360322.3360844},
+doi = {10.1145/3360322.3360844},
+booktitle = {Proceedings of the 6th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation},
+pages = {193–202},
+numpages = {10},
+keywords = {smart meters, energy disaggregation, non-intrusive load monitoring},
+location = {New York, NY, USA},
+series = {BuildSys '19}
+}
+}
+
+```
+For any enquiries, please contact the main authors.
+
 ## Installation Details
 
 We're currently testing a conda package. You can install in your current environment with:
