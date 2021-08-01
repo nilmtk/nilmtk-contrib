@@ -177,7 +177,7 @@ class RNN_attention_classification(Disaggregator):
             print ("Sequence length should be odd!")
             raise (SequenceLengthError)
 
-    def partial_fit(self,train_main,train_appliances,fold_no,do_preprocessing=True,**load_kwargs):
+    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
 
         print("...............RNN_attention_classification partial_fit running...............")
         if len(self.appliance_params) == 0:

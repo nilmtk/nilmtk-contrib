@@ -78,7 +78,7 @@ class RNN_attention(Disaggregator):
             print ("Sequence length should be odd!")
             raise (SequenceLengthError)
 
-    def partial_fit(self,train_main,train_appliances,fold_no,do_preprocessing=True,
+    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,
             **load_kwargs):
 
         # If no appliance wise parameters are provided, then copmute them using the first chunk
