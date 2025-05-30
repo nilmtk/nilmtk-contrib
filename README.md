@@ -2,6 +2,8 @@
 
 # NILMTK-Contrib
 
+(Note - This package only works on Python versions <= 3.11)
+
 This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://doi.org/10.1145/3360322.3360844). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
 
 Using the NILMTK-contrib you can use the following algorithms:
@@ -54,16 +56,10 @@ For any enquiries, please contact the main authors.
 
 ## Installation Details
 
-We're currently testing a conda package. You can install in your current environment with:
+You can simply install this package by using pip, for that you need to clone the repo and change directory to the cloned repo and then run the following command on terminal -
 
 ```
-conda install -c conda-forge -c nilmtk nilmtk-contrib
-```
-
-or create a dedicated environment (recommended) with:
-
-```
-conda create -n nilm -c conda-forge -c nilmtk nilmtk-contrib
+pip install .
 ```
 
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sample_notebooks) for using the nilmtk-contrib algorithms, using the new NILMTK-API.
@@ -74,7 +70,7 @@ Unless you are an advanced user, prefer using the Conda package instead of the G
 
 - NILMTK>=0.4
 - scikit-learn>=0.21 (already required by NILMTK)
-- Keras>=2.2.4 
+- Tensorflow >= 2.12.0 < 2.16.0 
 - cvxpy>=1.0.0
 
 **Note: For faster computation of neural networks, it is suggested that you install keras-gpu, since it can take advantage of GPUs. The algorithms AFHMM, AFHMM_SAC and DSC are CPU intensive, use a system with good CPU for these algorithms.**
