@@ -71,8 +71,8 @@ setup(
     version=FULLVERSION,
     packages=['nilmtk_contrib', 'nilmtk_contrib.disaggregate'],
     install_requires=[
-        'nilmtk>=0.4',
-        'tensorflow>=2.0',
+        'nilmtk',
+        'tensorflow>=2.12.0,<2.16.0',
         'cvxpy>=1.0.0'
     ],
     description="State-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API",
