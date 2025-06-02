@@ -1,8 +1,38 @@
+Metadata-Version: 2.4
+Name: nilmtk-contrib
+Version: 0.1.2.dev1+git.0dd2ef5
+Summary: State-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API
+Home-page: https://github.com/nilmtk/nilmtk-contrib
+Download-URL: https://github.com/nilmtk/nilmtk-contrib/tarball/master#egg=nilmtk-contrib-dev
+Author: NILMTK-contrib developers
+Author-email: 
+License: Apache 2.0
+Keywords: smartmeters power electricity energy analytics redd disaggregation nilm nialm nilmtk
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache 2.0
+Classifier: Programming Language :: Python
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: nilmtk
+Requires-Dist: tensorflow<2.16.0,>=2.12.0
+Requires-Dist: cvxpy>=1.0.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: download-url
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary
+
 [![conda package version](https://anaconda.org/nilmtk/nilmtk-contrib/badges/version.svg)](https://anaconda.org/nilmtk/nilmtk-contrib)
 
 # NILMTK-Contrib
-
-(Note - This package only works on Python versions <= 3.11)
 
 This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://doi.org/10.1145/3360322.3360844). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
 
@@ -56,10 +86,16 @@ For any enquiries, please contact the main authors.
 
 ## Installation Details
 
-You can simply install this package by using pip, for that you need to clone the repo and change directory to the cloned repo and then run the following command on terminal -
+We're currently testing a conda package. You can install in your current environment with:
 
 ```
-pip install .
+conda install -c conda-forge -c nilmtk nilmtk-contrib
+```
+
+or create a dedicated environment (recommended) with:
+
+```
+conda create -n nilm -c conda-forge -c nilmtk nilmtk-contrib
 ```
 
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sample_notebooks) for using the nilmtk-contrib algorithms, using the new NILMTK-API.
@@ -70,7 +106,7 @@ Unless you are an advanced user, prefer using the Conda package instead of the G
 
 - NILMTK>=0.4
 - scikit-learn>=0.21 (already required by NILMTK)
-- Tensorflow >= 2.12.0 < 2.16.0 
+- Keras>=2.2.4 
 - cvxpy>=1.0.0
 
 **Note: For faster computation of neural networks, it is suggested that you install keras-gpu, since it can take advantage of GPUs. The algorithms AFHMM, AFHMM_SAC and DSC are CPU intensive, use a system with good CPU for these algorithms.**

@@ -1,25 +1,25 @@
 from __future__ import print_function, division
 from warnings import warn
 
-from keras.layers.convolutional import Conv2D, ZeroPadding1D,MaxPooling1D
-from keras.layers.core import Activation
-from keras.layers.normalization import BatchNormalization
-from keras.layers.pooling import AveragePooling1D
+from tensorflow.keras.layers import Conv2D, ZeroPadding1D,MaxPooling1D
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import AveragePooling1D
 
 from nilmtk.disaggregate import Disaggregator
-from keras.layers import Layer,Conv1D, Dense, Dropout, Reshape, Flatten,Add,MaxPool1D,BatchNormalization
+from tensorflow.keras.layers import Layer,Conv1D, Dense, Dropout, Reshape, Flatten,Add,MaxPool1D,BatchNormalization
 import os
 import pandas as pd
 import numpy as np
 import pickle
 from collections import OrderedDict
 
-from keras.optimizers import SGD
-from keras.models import Sequential, load_model
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.models import Sequential, load_model
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 import tensorflow as tf
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
