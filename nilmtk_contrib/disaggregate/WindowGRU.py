@@ -46,7 +46,7 @@ class WindowGRU(Disaggregator):
             mains = train_main.reshape((-1,self.sequence_length,1))
             app_reading = app_df.reshape((-1,1))
             filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                    "_".join(appliance_name.split()),
+                    "_".join(app_name.split()),
                     current_epoch,
             )
             checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
