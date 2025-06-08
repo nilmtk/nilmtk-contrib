@@ -1,5 +1,3 @@
-[![conda package version](https://anaconda.org/nilmtk/nilmtk-contrib/badges/version.svg)](https://anaconda.org/nilmtk/nilmtk-contrib)
-
 # NILMTK-Contrib
 
 (Note - This package only works on Python versions <= 3.11)
@@ -56,15 +54,30 @@ For any enquiries, please contact the main authors.
 
 ## Installation Details
 
-You can simply install this package by using pip, for that you need to clone the repo and change directory to the cloned repo and then run the following command on terminal -
+## UV Support
+This Python package uses uv for installation. uv is a fast and modern Python package manager that replaces tools like pip and virtualenv, with support for pyproject.toml and ultra-fast dependency resolution. 
 
+To install nilmtk_contrib, first install [uv](https://docs.astral.sh/uv/getting-started/installation/) and then run:<br>
 ```
-pip install .
+uv pip install git+https://github.com/nilmtk/nilmtk-contrib.git
+```
+
+## Docker Support
+Docker is an open-source platform for developing, shipping, and running applications in lightweight, portable containers that bundle code, runtime, libraries, and system tools into a single package. It ensures everyone runs the same environment, regardless of host OS, and keeps nilmtk-contrib’s dependencies contained without polluting the system Python.
+
+
+Build and run locally
+```
+docker build -t nilmtk-contrib .
+docker run --rm -it nilmtk-contrib bash
+```
+Pull the pre-built image
+```
+docker pull ghcr.io/enfuego27826/nilmtk-contrib:latest
+docker run --rm -it ghcr.io/enfuego27826/nilmtk-contrib:latest bash
 ```
 
 Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sample_notebooks) for using the nilmtk-contrib algorithms, using the new NILMTK-API.
-
-Unless you are an advanced user, prefer using the Conda package instead of the Git repostory as the latter can contain work-in-progress changes.
 
 ## Dependencies
 
