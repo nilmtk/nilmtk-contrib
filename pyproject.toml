@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project]
+name = "nilmtk-contrib"
+version = "0.1.2"
+description = "State-of-the-art algorithms for energy disaggregation using NILMTK’s Rapid Experimentation API"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = "==3.11.5"
+authors = [
+  { name = "NILMTK-contrib developers" }
+]
+keywords = [
+  "energy", "disaggregation", "nilm", "smartmeters", "analytics", "nilmtk"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Mathematics"
+]
+dependencies = [
+  "tensorflow-io-gcs-filesystem==0.31.0",
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "tensorflow>=2.12.0,<2.16.0",
+  "cvxpy>=1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4.0",
+  "pytest-cov>=4.1.0",
+  "black>=23.0.0",
+  "ruff>=0.0.280"
+]
+
+[tool.hatch.version]
+path = "nilmtk_contrib/version.py"
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=7.4.0",
+  "black>=23.0.0",
+  "ruff>=0.0.280"
+]
