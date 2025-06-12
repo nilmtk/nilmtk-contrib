@@ -95,7 +95,7 @@ class WindowGRU(Disaggregator):
                 # add padding values
                 padding = [0 for i in range(0, self.sequence_length - 1)]
                 paddf = pd.DataFrame({mains.columns.values[0]: padding})
-                mains = mains.append(paddf)
+                mains = pd.concat([mains, paddf])
                 mainsarray = self.preprocess_train_mains(mains)
                 processed_mains.append(pd.DataFrame(mainsarray))
 
@@ -115,7 +115,7 @@ class WindowGRU(Disaggregator):
                 # add padding values
                 padding = [0 for i in range(0, self.sequence_length - 1)]
                 paddf = pd.DataFrame({mains.columns.values[0]: padding})
-                mains = mains.append(paddf)
+                mains = pd.concat([mains, paddf])
                 mainsarray = self.preprocess_test_mains(mains)
                 processed_mains.append(pd.DataFrame(mainsarray))
 
