@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import random
 import sys
+from nilmtk_contrib.torch.preprocessing import preprocess
 
 # Set random seeds for reproducibility
 random.seed(10)
@@ -167,8 +168,16 @@ class RNN_attention(Disaggregator):
         # Do the pre-processing, such as windowing and normalizing
         if do_preprocessing:
             print("Preprocessing data...")
-            train_main, train_appliances = self.call_preprocessing(
-                train_main, train_appliances, 'train')
+            train_main, train_appliances = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean = self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=train_main,
+                submeters_lst=train_appliances,
+                method="train",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
         
         train_main = pd.concat(train_main, axis=0)
         train_main = train_main.values.reshape((-1, self.sequence_length, 1))
@@ -296,8 +305,16 @@ class RNN_attention(Disaggregator):
         # Preprocess the test mains such as windowing and normalizing
         if do_preprocessing:
             print("Preprocessing test data...")
-            test_main_list = self.call_preprocessing(
-                test_main_list, submeters_lst=None, method='test')
+            test_main_list = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=test_main_list,
+                submeters_lst=None,
+                method="test",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
         
         test_predictions = []
         
@@ -354,72 +371,7 @@ class RNN_attention(Disaggregator):
         """Creates the RNN_Attention module described in the paper"""
         model = RNNAttentionModel(self.sequence_length).to(self.device)
         return model
-    
-    def call_preprocessing(self, mains_lst, submeters_lst, method):
-        if method == 'train':
-            mains_df_list = []
-            
-            # Progress bar for mains preprocessing
-            mains_progress = tqdm(mains_lst, desc="Processing mains data", unit="chunk")
-            
-            for mains in mains_progress:
-                new_mains = mains.values.flatten()
-                n = self.sequence_length
-                units_to_pad = n // 2
-                new_mains = np.pad(new_mains, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
-                new_mains = np.array([new_mains[i:i + n] for i in range(len(new_mains) - n + 1)])
-                new_mains = (new_mains - self.mains_mean) / self.mains_std
-                mains_df_list.append(pd.DataFrame(new_mains))
-            
-            appliance_list = []
-            
-            # Progress bar for appliances preprocessing
-            app_progress = tqdm(submeters_lst, desc="Processing appliance data", unit="appliance")
-            
-            for app_index, (app_name, app_df_list) in enumerate(app_progress):
-                app_progress.set_postfix({"Current": app_name})
-                
-                if app_name in self.appliance_params:
-                    app_mean = self.appliance_params[app_name]['mean']
-                    app_std = self.appliance_params[app_name]['std']
-                else:
-                    print("Parameters for ", app_name, " were not found!")
-                    raise ApplianceNotFoundError()
-                
-                processed_appliance_dfs = []
-                
-                # Progress bar for appliance dataframes
-                df_progress = tqdm(app_df_list, desc=f"Processing {app_name} chunks", 
-                                 leave=False, unit="chunk")
-                
-                for app_df in df_progress:
-                    new_app_readings = app_df.values.reshape((-1, 1))
-                    # This is for choosing windows
-                    new_app_readings = (new_app_readings - app_mean) / app_std
-                    # Return as a list of dataframe
-                    processed_appliance_dfs.append(pd.DataFrame(new_app_readings))
-                
-                appliance_list.append((app_name, processed_appliance_dfs))
-            
-            return mains_df_list, appliance_list
         
-        else:
-            mains_df_list = []
-            
-            # Progress bar for test mains preprocessing
-            mains_progress = tqdm(mains_lst, desc="Processing test mains data", unit="chunk")
-            
-            for mains in mains_progress:
-                new_mains = mains.values.flatten()
-                n = self.sequence_length
-                units_to_pad = n // 2
-                new_mains = np.pad(new_mains, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
-                new_mains = np.array([new_mains[i:i + n] for i in range(len(new_mains) - n + 1)])
-                new_mains = (new_mains - self.mains_mean) / self.mains_std
-                mains_df_list.append(pd.DataFrame(new_mains))
-            
-            return mains_df_list
-    
     def set_appliance_params(self, train_appliances):
         print("Setting appliance parameters...")
         

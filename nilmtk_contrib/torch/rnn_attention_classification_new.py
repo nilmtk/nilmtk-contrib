@@ -10,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm                                 
 
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.torch.preprocessing import preprocess
 
 
 class SequenceLengthError(Exception):
@@ -132,47 +133,6 @@ class RNN_attention_classification(Disaggregator):
     def _fresh_network(self):
         return _RNNAttNet(self.sequence_length).to(self.device)
     
-    def call_preprocessing(self, mains_lst, submeters_lst, method):
-        """
-        Window, pad and normalise mains; optionally do the same
-        for appliance channels depending on `method`.
-        """
-        seq_len = self.sequence_length
-        pad     = seq_len // 2
-
-        proc_mains = []
-        for mains in mains_lst:
-            v = mains.values.flatten()
-            v = np.pad(v, (pad, pad))
-            windows = np.array(
-                [v[i:i+seq_len] for i in range(len(v)-seq_len+1)],
-                dtype=np.float32
-            )
-            windows = (windows - self.mains_mean) / self.mains_std
-            proc_mains.append(pd.DataFrame(windows))
-
-        if method == "test":                         # nothing more to do
-            return proc_mains
-
-        proc_apps = []
-        for app_name, df_list in submeters_lst:
-            if app_name not in self.appliance_params:
-                raise ApplianceNotFoundError(
-                    f"Parameters for {app_name} not initialised."
-                )
-            mean = self.appliance_params[app_name]["mean"]
-            std  = self.appliance_params[app_name]["std"]
-
-            sub = []
-            for df in df_list:
-                v = df.values.flatten()
-                v = np.pad(v, (pad, pad))
-                v = (v - mean) / std
-                sub.append(pd.DataFrame(v.reshape(-1, 1)))
-            proc_apps.append((app_name, sub))
-
-        return proc_mains, proc_apps
-
     def set_mains_params(self, mains_list):
         data = np.concatenate([m.values.flatten() for m in mains_list])
         self.mains_mean = data.mean()
@@ -211,7 +171,16 @@ class RNN_attention_classification(Disaggregator):
 
         if do_preprocessing:
             cls_targets = self.classify(copy.deepcopy(apps))
-            mains, apps = self.call_preprocessing(mains, apps, 'train')
+            mains, apps = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=mains,
+                submeters_lst=apps,
+                method="train",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
 
         X = torch.tensor(pd.concat(mains).values,
                          dtype=torch.float32).unsqueeze(1)   # (N,1,L)
@@ -285,7 +254,16 @@ class RNN_attention_classification(Disaggregator):
         if model is not None:
             self.models = model
         if do_preprocessing:
-            mains = self.call_preprocessing(mains, None, 'test')
+            mains = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=mains,
+                submeters_lst=None,
+                method="test",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
 
         L = self.sequence_length
         out = []

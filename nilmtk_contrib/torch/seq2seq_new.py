@@ -4,6 +4,7 @@ from tqdm import tqdm
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.torch.preprocessing import preprocess
 
 class Seq2SeqModel(nn.Module):
     def __init__(self, seq_len):
@@ -76,47 +77,21 @@ class Seq2Seq(Disaggregator):
             if s < 1: s = 100
             self.appliance_params[name] = {'mean':m, 'std':s}
 
-    def call_preprocessing(self, mains_lst, submeters_lst, method):
-        n = self.sequence_length
-        pad = n//2
-        if method == 'train':
-            pm, apps = [], []
-            for mains in mains_lst:
-                data = mains.values.flatten()
-                data = np.pad(data,(pad,pad),'constant')
-                windows = np.array([data[i:i+n] for i in range(len(data)-n+1)])
-                normed = (windows - self.mains_mean)/self.mains_std
-                pm.append(pd.DataFrame(normed))
-            for name, lst in submeters_lst:
-                if name not in self.appliance_params:
-                    raise KeyError(f"No params for {name}")
-                m,s = self.appliance_params[name]['mean'], self.appliance_params[name]['std']
-                dfs = []
-                for df in lst:
-                    data = df.values.flatten()
-                    data = np.pad(data,(pad,pad),'constant')
-                    windows = np.array([data[i:i+n] for i in range(len(data)-n+1)])
-                    normed = (windows - m)/s
-                    dfs.append(pd.DataFrame(normed))
-                apps.append((name, dfs))
-            return pm, apps
-        else:
-            pm = []
-            for mains in mains_lst:
-                data = mains.values.flatten()
-                windows = np.array([data[i:i+n] for i in range(len(data)-n+1)])
-                normed = (windows - self.mains_mean)/self.mains_std
-                pm.append(pd.DataFrame(normed))
-            return pm
-
     def partial_fit(self, train_main, train_appliances,
                     do_preprocessing=True, current_epoch=0, **_):
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
         if do_preprocessing:
-            train_main, train_appliances = self.call_preprocessing(
-                train_main, train_appliances, 'train'
+            train_main, train_appliances = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=train_main,
+                submeters_lst=train_appliances,
+                method="train",
+                appliance_params=self.appliance_params,
+                windowing=True
             )
 
         mains_arr = pd.concat(train_main,axis=0).values \
@@ -168,8 +143,15 @@ class Seq2Seq(Disaggregator):
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         if model: self.models = model
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, None, 'test'
+            test_main_list = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=test_main_list,
+                submeters_lst=None,
+                method="test",
+                appliance_params=self.appliance_params,
+                windowing=True
             )
 
         results = []

@@ -10,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm                        
 
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.torch.preprocessing import preprocess
 
 
 class SequenceLengthError(Exception):
@@ -124,7 +125,16 @@ class ResNet_classification(Disaggregator):
 
         if do_preprocessing:
             cls_labels = self._make_on_off(copy.deepcopy(appliances))
-            mains, appliances = self._preprocess(mains, appliances, "train")
+            mains, appliances = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=mains,
+                submeters_lst=appliances,
+                method="train",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
 
         X = torch.tensor(pd.concat(mains).values, dtype=torch.float32).unsqueeze(1)
         N = X.size(0)
@@ -191,7 +201,16 @@ class ResNet_classification(Disaggregator):
         if model is not None:
             self.models = model
         if do_preprocessing:
-            mains = self._preprocess(mains, None, "test")
+            mains = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=mains,
+                submeters_lst=None,
+                method="test",
+                appliance_params=self.appliance_params,
+                windowing=False
+            )
 
         L = self.sequence_length
         out = []
@@ -217,30 +236,6 @@ class ResNet_classification(Disaggregator):
                 disc[app] = pd.Series(power, dtype="float32")
             out.append(pd.DataFrame(disc, dtype="float32"))
         return out
-
-
-    def _preprocess(self, mains, submeters, mode):
-        n, pad = self.sequence_length, self.sequence_length//2
-        proc_mains = []
-        for m in mains:
-            v = np.pad(m.values.flatten(), (pad, pad))
-            w = np.array([v[i:i+n] for i in range(len(v)-n+1)], np.float32)
-            w = (w - self.mains_mean)/self.mains_std
-            proc_mains.append(pd.DataFrame(w))
-        if mode == "test":
-            return proc_mains
-
-        proc_apps = []
-        for app, dfs in submeters:
-            p = self.appliance_params[app]
-            mean, std = p["mean"], p["std"]
-            sub = []
-            for df in dfs:
-                v = np.pad(df.values.flatten(), (pad, pad))
-                v = (v-mean)/std
-                sub.append(pd.DataFrame(v.reshape(-1,1)))
-            proc_apps.append((app, sub))
-        return proc_mains, proc_apps
 
     def _make_on_off(self, apps):
         TH, n, pad = 15, self.sequence_length, self.sequence_length//2

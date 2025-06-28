@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
-
+from nilmtk_contrib.torch.preprocessing import preprocess
 
 class SequenceLengthError(Exception):
     pass
@@ -59,8 +59,15 @@ class Seq2PointTorch(Disaggregator):
             self.set_appliance_params(train_appliances)
 
         if do_preprocessing:
-            train_main, train_appliances = self.call_preprocessing(
-                train_main, train_appliances, "train"
+            train_main, train_appliances = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=train_main,
+                submeters_lst=train_appliances,
+                method="train",
+                appliance_params=self.appliance_params,
+                windowing=False
             )
 
         train_main = pd.concat(train_main, axis=0).values.reshape(
@@ -137,8 +144,15 @@ class Seq2PointTorch(Disaggregator):
             self.models = model
 
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, submeters_lst=None, method="test"
+            test_main_list = preprocess(
+                sequence_length=self.sequence_length,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                mains_lst=test_main_list,
+                submeters_lst=None,
+                method="test",
+                appliance_params=self.appliance_params,
+                windowing=False
             )
 
         results = []
@@ -164,50 +178,6 @@ class Seq2PointTorch(Disaggregator):
 
             results.append(pd.DataFrame(disagg, dtype="float32"))
         return results
-
-    def call_preprocessing(self, mains_lst, submeters_lst, method):
-        if method == "train":
-            mains_df_list = []
-            for mains in mains_lst:
-                new_mains = mains.values.flatten()
-                n = self.sequence_length
-                pad = n // 2
-                new_mains = np.pad(new_mains, (pad, pad), "constant")
-                new_mains = np.array(
-                    [new_mains[i: i + n] for i in range(len(new_mains) - n + 1)]
-                )
-                new_mains = (new_mains - self.mains_mean) / self.mains_std
-                mains_df_list.append(pd.DataFrame(new_mains))
-
-            appliance_list = []
-            for app_name, app_df_list in submeters_lst:
-                if app_name not in self.appliance_params:
-                    raise ApplianceNotFoundError(
-                        f"Parameters for {app_name} were not found!"
-                    )
-                app_mean = self.appliance_params[app_name]["mean"]
-                app_std = self.appliance_params[app_name]["std"]
-
-                processed = []
-                for app_df in app_df_list:
-                    vals = app_df.values.reshape(-1, 1)
-                    vals = (vals - app_mean) / app_std
-                    processed.append(pd.DataFrame(vals))
-                appliance_list.append((app_name, processed))
-            return mains_df_list, appliance_list
-
-        mains_df_list = []
-        for mains in mains_lst:
-            new_mains = mains.values.flatten()
-            n = self.sequence_length
-            pad = n // 2
-            new_mains = np.pad(new_mains, (pad, pad), "constant")
-            new_mains = np.array(
-                [new_mains[i: i + n] for i in range(len(new_mains) - n + 1)]
-            )
-            new_mains = (new_mains - self.mains_mean) / self.mains_std
-            mains_df_list.append(pd.DataFrame(new_mains))
-        return mains_df_list
 
     def set_appliance_params(self, train_appliances):
         for app_name, df_list in train_appliances:
