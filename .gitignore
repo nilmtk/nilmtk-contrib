@@ -20,3 +20,4 @@ __pycache__/*
 disaggregate/__pycache__/*
 disaggregate/__pycache__/
 buildsys_notebooks
+.vscode
