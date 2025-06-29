@@ -114,6 +114,10 @@ class ConvolutionBlock(nn.Module):
         return out
 
 class ResNetModel(nn.Module):
+    """
+    ResNet model for appliance load disaggregation.
+    It includes initial convolutional layers, ResNet blocks, and fully connected layers.
+    """
     def __init__(self, sequence_length, num_filters=30):
         super(ResNetModel, self).__init__()
         self.sequence_length = sequence_length
@@ -192,7 +196,11 @@ class ResNetModel(nn.Module):
         return x
 
 class ResNet(Disaggregator):
-    
+    """
+    ResNet-based disaggregator for NILMTK.
+    This class implements a ResNet model for disaggregating mains electricity data
+    into appliance-level data.
+    """ 
     def __init__(self, params):
         self.MODEL_NAME = "ResNet"
         self.chunk_wise_training = params.get('chunk_wise_training', False)

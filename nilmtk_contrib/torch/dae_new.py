@@ -7,6 +7,9 @@ from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
 
 class DAEModel(nn.Module):
+    """
+    Convolutional autoencoder for appliance load disaggregation.
+    """
     def __init__(self, seq_len):
         super().__init__()
         # PyTorch 1.10+ supports padding="same"
@@ -54,10 +57,13 @@ class DAE(Disaggregator):
         return DAEModel(self.sequence_length).to(self.device)
 
     def set_appliance_params(self, train_appliances):
+        """
+        Set the mean and std for each appliance based on the training data.
+        """
         for name, lst in train_appliances:
             arr = pd.concat(lst, axis=0).values.flatten()
             m, s = arr.mean(), arr.std()
-            if s < 1: s = 100
+            if s < 1: s = 100  # avoid zero std
             self.appliance_params[name] = {'mean': m, 'std': s}
 
     def normalize_input(self, data, n, mean, std, overlap):
@@ -65,15 +71,20 @@ class DAE(Disaggregator):
         pad  = (n - flat.size % n) % n
         flat = np.concatenate([flat, np.zeros(pad)])
         if overlap:
+            # sliding windows
             w = np.array([flat[i:i+n] for i in range(len(flat)-n+1)])
         else:
+            # non-overlapping windows
             w = flat.reshape(-1, n)
-        return ((w - mean)/std).reshape(-1, n, 1)
+        return ((w - mean)/std).reshape(-1, n, 1)  # normalize and reshape for model
 
     def denormalize_output(self, data, mean, std):
         return mean + data*std
 
     def call_preprocessing(self, mains_lst, subs, method):
+        """
+        Preprocess the mains and appliances data for training or testing.
+        """
         if method == 'train':
             pm, apps = [], []
             for mains in mains_lst:
@@ -94,7 +105,7 @@ class DAE(Disaggregator):
                 apps.append((name, dfs))
             return pm, apps
 
-        # test
+        # test mode
         pm = []
         for mains in mains_lst:
             x = self.normalize_input(
@@ -127,13 +138,13 @@ class DAE(Disaggregator):
                 self.models[name] = self.return_network()
             model = self.models[name]
 
-            X = torch.tensor(mains_arr, dtype=torch.float32)
-            Y = torch.tensor(arr,       dtype=torch.float32)
+            X = torch.tensor(mains_arr, dtype=torch.float32)  # mains input
+            Y = torch.tensor(arr, dtype=torch.float32)  # appliance output
             split = int(len(X)*0.85)
-            tr_ds = TensorDataset(X[:split], Y[:split])
-            va_ds = TensorDataset(X[split:], Y[split:])
-            tr = DataLoader(tr_ds, batch_size=self.batch_size, shuffle=True)
-            va = DataLoader(va_ds, batch_size=self.batch_size)
+            tr_ds = TensorDataset(X[:split], Y[:split])  # train set
+            va_ds = TensorDataset(X[split:], Y[split:])  # validation set
+            tr = DataLoader(tr_ds, batch_size=self.batch_size, shuffle=True)  # train loader
+            va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
 
             opt     = optim.Adam(model.parameters())
             loss_fn = nn.MSELoss()

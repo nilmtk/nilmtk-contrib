@@ -28,10 +28,13 @@ class Permute(nn.Module):
         super(Permute, self).__init__()
         self.dims = dims
     def forward(self, x):
-        return x.permute(*self.dims)
+        return x.permute(*self.dims)  # reorder for Conv1d
 
 
 class TransformerBlock(nn.Module):
+    """
+    Transformer encoder block: multi-head self-attention + feed-forward network.
+    """
     def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
         super(TransformerBlock, self).__init__()
         self.att = nn.MultiheadAttention(embed_dim, num_heads, dropout=rate)
@@ -46,6 +49,7 @@ class TransformerBlock(nn.Module):
         self.dropout2 = nn.Dropout(rate)
         
     def forward(self, x):
+        # x shape: [seq_len, batch, embed_dim]
         attn_output, _ = self.att(x, x, x)
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)
@@ -56,10 +60,10 @@ class TransformerBlock(nn.Module):
 class PositionalEncoding(nn.Module):
     def __init__(self, embed_dim, maxlen):
         super(PositionalEncoding, self).__init__()
-        self.pos_emb = nn.Parameter(torch.randn(1, maxlen, embed_dim))
+        self.pos_emb = nn.Parameter(torch.randn(1, maxlen, embed_dim)) 
 
     def forward(self, x):
-        return x + self.pos_emb
+        return x + self.pos_emb  # add positional info
 
 class TokenAndPositionEmbedding(nn.Module):
     def __init__(self, maxlen, vocab_size, embed_dim):
@@ -98,6 +102,9 @@ class NILMDataset(Dataset):
         return self.mains[idx], self.appliances[idx]
 
 class BERT(Disaggregator):
+    """
+    BERT-inspired transformer model for non-intrusive load monitoring.
+    """
     def __init__(self, params):
         self.MODEL_NAME = "BERT"
         self.chunk_wise_training = params.get('chunk_wise_training', False)
@@ -259,7 +266,7 @@ class BERT(Disaggregator):
                 n = len(prediction) + l - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                o = len(sum_arr) 
                 
                 for i in range(len(prediction)):
                     sum_arr[i:i + l] += prediction[i].flatten()

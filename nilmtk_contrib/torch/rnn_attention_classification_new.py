@@ -110,7 +110,12 @@ class _RNNAttNet(nn.Module):
 
 
 class RNN_attention_classification(Disaggregator):
-
+    """
+    RNN-based disaggregator with attention mechanism for classification.
+    This model uses a combination of convolutional layers, LSTM layers,
+    and attention mechanisms to disaggregate mains electricity data into
+    appliance-level data.
+    """
     def __init__(self, params: Dict[str, Any]):
         super().__init__()
         self.MODEL_NAME = "RNN_attention_classification"
@@ -154,11 +159,11 @@ class RNN_attention_classification(Disaggregator):
         for app, dfs in apps:
             proc = []
             for df in dfs:
-                v = df.values.flatten()
+                v = df.values.flatten()  # Flatten the DataFrame to 1D array
                 v[v <= threshold] = 0
                 v[v >  threshold] = 1
                 v = np.pad(v, (pad, pad))
-                w = np.array([v[i:i+L] for i in range(len(v)-L+1)], np.float32)
+                w = np.array([v[i:i+L] for i in range(len(v)-L+1)], np.float32)  # Overlapping windows
                 proc.append(pd.DataFrame(w))
             out.append((app, proc))
         return out
@@ -184,7 +189,7 @@ class RNN_attention_classification(Disaggregator):
 
         X = torch.tensor(pd.concat(mains).values,
                          dtype=torch.float32).unsqueeze(1)   # (N,1,L)
-        N = X.size(0)
+        N = X.size(0)  # Number of samples
         perm = torch.randperm(N)
         split = int(0.15 * N)
         val_idx, tr_idx = perm[:split], perm[split:]
@@ -216,6 +221,7 @@ class RNN_attention_classification(Disaggregator):
                 batch_size=self.batch_size, shuffle=True
             )
 
+            # Training loop
             for ep in range(self.n_epochs):
                 net.train()
                 run_loss = 0.0
@@ -233,9 +239,10 @@ class RNN_attention_classification(Disaggregator):
 
                 avg_loss = run_loss / len(loader)
 
+                # Validation
                 net.eval()
                 with torch.no_grad():
-                    vr, vc, _ = net(X_val)
+                    vr, vc, _ = net(X_val)  
                     v_loss = mse(vr, y_val).item() + bce(vc, c_val).item()
 
                 tqdm.write(
@@ -274,12 +281,12 @@ class RNN_attention_classification(Disaggregator):
             for app, net in self.models.items():
                 net.eval()
                 with torch.no_grad():
-                    pr, _, _ = net(X)
+                    pr, _, _ = net(X)  
                     pr = pr.cpu().numpy()
 
                 # overlap-mean
                 def ov(a):
-                    s, c = np.zeros(len(a)+L-1), np.zeros(len(a)+L-1)
+                    s, c = np.zeros(len(a)+L-1), np.zeros(len(a)+L-1)  # sums, counts
                     for i,row in enumerate(a):
                         s[i:i+L] += row
                         c[i:i+L] += 1

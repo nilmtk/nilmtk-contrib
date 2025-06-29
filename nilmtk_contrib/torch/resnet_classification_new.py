@@ -22,6 +22,7 @@ class ApplianceNotFoundError(Exception):
 
 
 class IdentityBlock(nn.Module):
+    """Residual block with identity shortcut connection."""
     def __init__(self, ch: int, k: int):
         super().__init__()
         self.c1 = nn.Conv1d(ch, ch, k, padding="same")
@@ -38,6 +39,7 @@ class IdentityBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
+    """Residual block with projection shortcut."""
     def __init__(self, in_ch: int, mid: int, out: int, k: int):
         super().__init__()
         self.c1 = nn.Conv1d(in_ch, mid, k, padding="same")
@@ -55,10 +57,17 @@ class ConvBlock(nn.Module):
 
 
 class _ResNetNet(nn.Module):
+    """
+    ResNet-like architecture for load disaggregation.
+    This model uses convolutional layers to extract features from the input sequence,
+    followed by fully connected layers for regression and classification.
+    The model predicts both the disaggregated load and a binary classification for each time step.
+    """
     def __init__(self, seq_len: int):
         super().__init__()
         self.seq_len = seq_len
 
+        # Classification head
         self.cls_feat = nn.Sequential(
             nn.Conv1d(1, 30, 10), nn.ReLU(),
             nn.Conv1d(30, 30, 8), nn.ReLU(),
@@ -71,6 +80,7 @@ class _ResNetNet(nn.Module):
         )
         self.cls_head = nn.Linear(1024, seq_len)
 
+        # Regression branch
         self.pad   = nn.ConstantPad1d((3, 3), 0)
         self.conv0 = nn.Conv1d(1, 30, 48, stride=2)
         self.bn0   = nn.BatchNorm1d(30)
@@ -94,10 +104,11 @@ class _ResNetNet(nn.Module):
         y   = self.block2(y)
         y   = self.block3(y)
         reg = self.reg_end(y)
-        return reg * cls, cls
+        return reg * cls, cls  # apply classification mask to regression output
 
 
 class ResNet_classification(Disaggregator):
+    """Residual network for NILM with classification-aware output scaling."""
     def __init__(self, params: Dict[str, Any]):
         super().__init__()
         self.MODEL_NAME = "ResNet_classification"
@@ -136,9 +147,9 @@ class ResNet_classification(Disaggregator):
                 windowing=False
             )
 
-        X = torch.tensor(pd.concat(mains).values, dtype=torch.float32).unsqueeze(1)
-        N = X.size(0)
-        perm = torch.randperm(N)
+        X = torch.tensor(pd.concat(mains).values, dtype=torch.float32).unsqueeze(1)  # [batch, seq_len, 1]
+        N = X.size(0)  # number of samples
+        perm = torch.randperm(N) 
         val_idx, tr_idx = perm[:int(0.15 * N)], perm[int(0.15 * N):]
         X_tr, X_val = X[tr_idx].to(self.device), X[val_idx].to(self.device)
 
@@ -166,6 +177,7 @@ class ResNet_classification(Disaggregator):
             loader = DataLoader(TensorDataset(X_tr, y_tr, c_tr),
                                 batch_size=self.batch_size, shuffle=True)
 
+            # training loop
             for ep in range(self.n_epochs):
                 net.train()
                 ep_bar = tqdm(loader,
@@ -220,11 +232,12 @@ class ResNet_classification(Disaggregator):
             for app, net in self.models.items():
                 net.eval()
                 with torch.no_grad():
-                    pr, _ = net(X)
+                    pr, _ = net(X)  # pr: [batch, seq_len]
                     pr = pr.cpu().numpy()
 
                 def overlap(wins):
-                    s, c = np.zeros(len(wins)+L-1), np.zeros(len(wins)+L-1)
+                    # Coverts overlapping windows into continuous sequence
+                    s, c = np.zeros(len(wins)+L-1), np.zeros(len(wins)+L-1)  # sum and count arrays
                     for i in range(len(wins)):
                         s[i:i+L] += wins[i].flatten()
                         c[i:i+L] += 1
@@ -238,6 +251,7 @@ class ResNet_classification(Disaggregator):
         return out
 
     def _make_on_off(self, apps):
+        """Convert appliance data to binary on/off labels."""
         TH, n, pad = 15, self.sequence_length, self.sequence_length//2
         res = []
         for app, dfs in apps:
@@ -252,6 +266,7 @@ class ResNet_classification(Disaggregator):
         return res
 
     def set_appliance_params(self, apps):
+        """Compute mean, std, min, max for each appliance."""
         for app, dfs in apps:
             data = np.concatenate([d.values.flatten() for d in dfs])
             self.appliance_params[app] = {
@@ -262,6 +277,7 @@ class ResNet_classification(Disaggregator):
             }
 
     def _set_mains_params(self, mains):
+        """Compute mean and std for mains data."""
         data = np.concatenate([m.values.flatten() for m in mains])
         self.mains_mean, self.mains_std = data.mean(), data.std()
 
