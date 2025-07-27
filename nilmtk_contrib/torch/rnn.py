@@ -1,28 +1,12 @@
 from collections import OrderedDict
 import numpy as np
 import pandas as pd
+import random
 from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-import random
-import os
-from nilmtk_contrib.torch.preprocessing import preprocess
-
-# Set random seeds for reproducibility across runs
-random.seed(10)
-np.random.seed(10)
-torch.manual_seed(10)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(10)
-    torch.cuda.manual_seed_all(10)
-
-# Use GPU if available, otherwise fall back to CPU
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from torch.utils.data import TensorDataset, DataLoader
 
 class SequenceLengthError(Exception):
     pass
@@ -32,347 +16,268 @@ class ApplianceNotFoundError(Exception):
 
 class RNNModel(nn.Module):
     """
-    Neural network combining CNN feature extraction and bidirectional LSTMs
-    for NILM energy disaggregation.
+    An RNN-based model for NILM, with an architecture designed to mirror the
+    original TensorFlow implementation.
     """
     def __init__(self, sequence_length):
         super(RNNModel, self).__init__()
         self.sequence_length = sequence_length
         
-        # 1D CNN for initial feature extraction from raw power sequence
-        self.conv1d = nn.Conv1d(
-            in_channels=1, 
-            out_channels=16, 
-            kernel_size=4, 
-            stride=1, 
-            padding=2  # Maintain sequence length
-        )
+        # Layers are defined to match the TensorFlow architecture
+        self.conv1d = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=4, 
+                                stride=1, padding=2) # 'same' padding
+        self.lstm1 = nn.LSTM(input_size=16, hidden_size=128, batch_first=True, bidirectional=True)
+        self.lstm2 = nn.LSTM(input_size=256, hidden_size=256, batch_first=True, bidirectional=True)
+        self.fc1 = nn.Linear(512, 128)
+        self.fc2 = nn.Linear(128, 1)
         
-        # First bidirectional LSTM layer
-        self.lstm1 = nn.LSTM(
-            input_size=16,
-            hidden_size=128,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True
-        )
-        
-        # Second bidirectional LSTM layer for deeper feature learning
-        self.lstm2 = nn.LSTM(
-            input_size=256,  # 128 * 2 (bidirectional)
-            hidden_size=256,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True
-        )
-        
-        # Final fully connected layers for prediction
-        self.fc1 = nn.Linear(512, 128)  # 256 * 2 (bidirectional)
-        self.fc2 = nn.Linear(128, 1)   # Output single power value
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout(0.1)
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initializes weights to match TensorFlow's default initializations."""
+        # Use Xavier uniform for Conv, LSTM, and Linear layers by default
+        for m in self.modules():
+            if isinstance(m, (nn.Conv1d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LSTM):
+                for name, param in m.named_parameters():
+                    if 'weight' in name:
+                        nn.init.xavier_uniform_(param)
+                    elif 'bias' in name:
+                        nn.init.zeros_(param)
     
     def forward(self, x):
-        # Input shape: (batch_size, sequence_length, 1)
-        # Rearrange for Conv1D: (batch_size, channels, sequence_length)
-        x = x.permute(0, 2, 1)  # (batch_size, 1, sequence_length)
+        # Input shape: (batch, seq_len, 1) -> permute for Conv1D
+        x = x.permute(0, 2, 1)
         
-        # Extract features using 1D convolution
-        x = self.conv1d(x)  # (batch_size, 16, sequence_length)
+        # Feature extraction
+        x = self.conv1d(x)
         
-        # Rearrange back for LSTM: (batch_size, sequence_length, features)
-        x = x.permute(0, 2, 1)  # (batch_size, sequence_length, 16)
+        # Permute for LSTM layers
+        x = x.permute(0, 2, 1)
         
-        # Process through bidirectional LSTM layers
-        x, _ = self.lstm1(x)  # (batch_size, sequence_length, 256)
-        x = self.dropout(x)
+        # Sequence processing
+        x, _ = self.lstm1(x)
+        x, _ = self.lstm2(x)
         
-        x, _ = self.lstm2(x)  # (batch_size, sequence_length, 512)
-        
-        # Use only the last time step output
-        x = x[:, -1, :]  # (batch_size, 512)
+        # In the original TF model, only the output of the last time step is used.
+        x = x[:, -1, :]
         
         # Final prediction layers
-        x = torch.tanh(self.fc1(x))  # (batch_size, 128)
-        x = self.dropout(x)
-        x = self.fc2(x)  # (batch_size, 1)
+        x = torch.tanh(self.fc1(x))
+        x = self.fc2(x)
         
         return x
 
 class RNN(Disaggregator):
     """
-    NILM disaggregator using RNN without attention mechanism.
-    Inherits from NILMTK's Disaggregator base class.
+    A NILM disaggregator using a Recurrent Neural Network, with an architecture
+    and preprocessing pipeline designed to mirror the original TensorFlow
+    implementation.
     """
-    
     def __init__(self, params):
-        """Initialize the disaggregator with hyperparameters"""
+        """Initializes the disaggregator and its hyperparameters."""
         self.MODEL_NAME = "RNN"
-        self.models = OrderedDict()  # Store separate models for each appliance
-        self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
+        self.models = OrderedDict()
+        self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         
-        # Extract hyperparameters from params dict
         self.chunk_wise_training = params.get('chunk_wise_training', False)
         self.sequence_length = params.get('sequence_length', 19)
         self.n_epochs = params.get('n_epochs', 10)
         self.batch_size = params.get('batch_size', 512)
-        self.appliance_params = params.get('appliance_params', {})  # Normalization stats
+        self.appliance_params = params.get('appliance_params', {})
         self.mains_mean = params.get('mains_mean', 1800)
         self.mains_std = params.get('mains_std', 600)
-        self.device = device
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Sequence length must be odd for proper windowing
         if self.sequence_length % 2 == 0:
-            print("Sequence length should be odd!")
-            raise SequenceLengthError
-    
+            raise SequenceLengthError("Sequence length must be odd for proper windowing.")
+
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
-        """Train models on a chunk of data (supports incremental learning)"""
-        
-        # Compute appliance-specific normalization parameters if not provided
-        if len(self.appliance_params) == 0:
+        """Trains the model on a chunk of data."""
+        if not self.appliance_params:
             self.set_appliance_params(train_appliances)
-        
+
         print("...............RNN partial_fit running...............")
         
-        # Preprocess data: windowing, normalization, etc.
         if do_preprocessing:
-            print("Preprocessing data...")
-            train_main, train_appliances = preprocess(
-                sequence_length=self.sequence_length,
-                mains_std=self.mains_std,
-                mains_mean=self.mains_mean,
-                mains_lst=train_main,
-                submeters_lst=train_appliances,
-                method="train",
-                appliance_params=self.appliance_params,
-                windowing=False
-            )
+            train_main, train_appliances = self.call_preprocessing(
+                train_main, train_appliances, 'train')
+
+        # Prepare data for training
+        train_main = pd.concat(train_main, axis=0).values.reshape((-1, self.sequence_length, 1))
         
-        # Prepare main power data for training
-        train_main = pd.concat(train_main, axis=0)
-        train_main = train_main.values.reshape((-1, self.sequence_length, 1))
-        
-        # Prepare appliance power data
         new_train_appliances = []
-        for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df, axis=0)
-            app_df_values = app_df.values.reshape((-1, 1))
+        for app_name, app_dfs in train_appliances:
+            app_df_values = pd.concat(app_dfs, axis=0).values.reshape((-1, 1))
             new_train_appliances.append((app_name, app_df_values))
         train_appliances = new_train_appliances
-        
-        print(f"Training data shape: {train_main.shape}")
-        
-        # Train a separate model for each appliance
-        appliance_progress = tqdm(train_appliances, desc="Training appliances", unit="appliance")
-        
-        for appliance_name, power in appliance_progress:
-            appliance_progress.set_postfix({"Current": appliance_name})
-            
-            # Create new model if this appliance hasn't been seen before
+
+        for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"\nFirst model training for {appliance_name}")
+                print(f"First time training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"\nStarted Retraining model for {appliance_name}")
-            
+                print(f"Retraining model for {appliance_name}")
+
             model = self.models[appliance_name]
-            
-            # Train only if we have sufficient data
-            if train_main.size > 0:
-                if len(train_main) > 10:
-                    # Convert to PyTorch tensors and move to device
-                    train_x = torch.FloatTensor(train_main).to(self.device)
-                    train_y = torch.FloatTensor(power).to(self.device)
+            if train_main.size > 10:
+                    filepath = f"{self.file_prefix}-{'_'.join(appliance_name.split())}-epoch{current_epoch}.pt"
                     
-                    # Split data into training and validation sets
-                    train_x_split, val_x_split, train_y_split, val_y_split = train_test_split(
-                        train_x.cpu().numpy(), train_y.cpu().numpy(), 
-                        test_size=0.15, random_state=42
-                    )
+                    # Convert to PyTorch Tensors
+                    train_main_tensor = torch.tensor(train_main, dtype=torch.float32)
+                    power_tensor = torch.tensor(power, dtype=torch.float32).squeeze()
                     
-                    # Convert back to tensors and move to device
-                    train_x_split = torch.FloatTensor(train_x_split).to(self.device)
-                    val_x_split = torch.FloatTensor(val_x_split).to(self.device)
-                    train_y_split = torch.FloatTensor(train_y_split).to(self.device)
-                    val_y_split = torch.FloatTensor(val_y_split).to(self.device)
+                    # Use the last 15% of data for validation to mirror TensorFlow's behavior
+                    val_size = int(0.15 * len(train_main_tensor))
+                    train_size = len(train_main_tensor) - val_size
                     
-                    # Create PyTorch DataLoaders for batch processing
-                    train_dataset = TensorDataset(train_x_split, train_y_split)
-                    val_dataset = TensorDataset(val_x_split, val_y_split)
+                    train_x = train_main_tensor[:train_size].to(self.device)
+                    val_x = train_main_tensor[train_size:].to(self.device)
+                    train_y = power_tensor[:train_size].to(self.device)
+                    val_y = power_tensor[train_size:].to(self.device)
+                    
+                    # Optimizer and loss function, with parameters matching TensorFlow
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-07)
+                    criterion = nn.MSELoss()
+                    
+                    best_val_loss = float('inf')
+                    
+                    # Create DataLoader for batching
+                    train_dataset = TensorDataset(train_x, train_y)
                     train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-                    val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False)
                     
-                    # Train the model
-                    self.train_model(model, train_loader, val_loader, appliance_name, current_epoch)
-    
-    def train_model(self, model, train_loader, val_loader, appliance_name, current_epoch):
-        """Train a single appliance model with early stopping based on validation loss"""
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
-        criterion = nn.MSELoss()
-        
-        best_val_loss = float('inf')
-        best_model_state = None
-        
-        epoch_progress = tqdm(range(self.n_epochs), desc=f"Training {appliance_name}", unit="epoch")
-        
-        for epoch in epoch_progress:
-            # Training phase
-            model.train()
-            train_loss = 0.0
-            
-            train_batch_progress = tqdm(train_loader, desc=f"Epoch {epoch+1} Training", 
-                                      leave=False, unit="batch")
-            
-            for batch_x, batch_y in train_batch_progress:
-                optimizer.zero_grad()
-                
-                outputs = model(batch_x)
-                loss = criterion(outputs.squeeze(), batch_y.squeeze())
-                
-                loss.backward()
-                optimizer.step()
-                
-                train_loss += loss.item()
-                train_batch_progress.set_postfix({"Loss": f"{loss.item():.4f}"})
-            
-            # Validation phase
-            model.eval()
-            val_loss = 0.0
-            
-            val_batch_progress = tqdm(val_loader, desc=f"Epoch {epoch+1} Validation", 
-                                    leave=False, unit="batch")
-            
-            with torch.no_grad():
-                for batch_x, batch_y in val_batch_progress:
-                    outputs = model(batch_x)
-                    loss = criterion(outputs.squeeze(), batch_y.squeeze())
-                    val_loss += loss.item()
-                    val_batch_progress.set_postfix({"Loss": f"{loss.item():.4f}"})
-            
-            # Calculate average losses
-            train_loss /= len(train_loader)
-            val_loss /= len(val_loader)
-            
-            epoch_progress.set_postfix({
-                "Train Loss": f"{train_loss:.4f}",
-                "Val Loss": f"{val_loss:.4f}",
-                "Best": f"{best_val_loss:.4f}"
-            })
-            
-            # Save best model based on validation loss
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_model_state = model.state_dict().copy()
-                epoch_progress.write(f'New best model saved with val_loss: {val_loss:.4f}')
-                
-                # Save model checkpoint
-                filepath = f"{self.file_prefix}-{appliance_name.replace(' ', '_')}-epoch{current_epoch}.pth"
-                torch.save(best_model_state, filepath)
-        
-        # Load the best model weights
-        if best_model_state is not None:
-            model.load_state_dict(best_model_state)
-            print(f"\nLoaded best model for {appliance_name} with validation loss: {best_val_loss:.4f}")
-    
+                    for epoch in range(self.n_epochs):
+                        # --- Training Phase ---
+                        model.train()
+                        train_loss = 0.0
+                        
+                        for batch_x, batch_y in train_loader:
+                            optimizer.zero_grad()
+                            outputs = model(batch_x).squeeze(-1)
+                            loss = criterion(outputs, batch_y)
+                            loss.backward()
+                            optimizer.step()
+                            train_loss += loss.item()
+                        
+                        train_loss /= len(train_loader)
+                        
+                        # --- Validation Phase ---
+                        model.eval()
+                        with torch.no_grad():
+                            val_outputs = model(val_x).squeeze(-1)
+                            val_loss = criterion(val_outputs, val_y).item()
+                        
+                        # Save the best model based on validation loss
+                        if val_loss < best_val_loss:
+                            best_val_loss = val_loss
+                            torch.save(model.state_dict(), filepath)
+                            print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
+                        
+                    # Load the best performing model
+                    model.load_state_dict(torch.load(filepath))
+
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        """Disaggregate power consumption for each appliance from aggregate mains data"""
-        
+        """Disaggregates a chunk of mains data."""
         if model is not None:
             self.models = model
-        
-        # Preprocess test data similar to training data
+
         if do_preprocessing:
-            print("Preprocessing test data...")
-            test_main_list = preprocess(
-                sequence_length=self.sequence_length,
-                mains_lst=test_main_list,
-                mains_mean=self.mains_mean,
-                mains_std=self.mains_std,
-                submeters_lst=None,
-                method="test",
-                appliance_params=self.appliance_params,
-                windowing=False
-            )
-        
+            test_main_list = self.call_preprocessing(
+                test_main_list, submeters_lst=None, method='test')
+
         test_predictions = []
-        
-        chunk_progress = tqdm(test_main_list, desc="Processing test chunks", unit="chunk")
-        
-        # Process each chunk of test data
-        for test_main in chunk_progress:
-            test_main = test_main.values
-            test_main = test_main.reshape((-1, self.sequence_length, 1))
-            test_main_tensor = torch.FloatTensor(test_main).to(self.device)
-            
+        for test_mains_df in test_main_list:
+            test_main_array = test_mains_df.values.reshape((-1, self.sequence_length, 1))
             disggregation_dict = {}
             
-            appliance_progress = tqdm(self.models.items(), desc="Disaggregating appliances", 
-                                    leave=False, unit="appliance")
-            
-            # Get predictions from each appliance model
-            for appliance, model in appliance_progress:
-                appliance_progress.set_postfix({"Current": appliance})
+            for appliance, model in self.models.items():
+                test_tensor = torch.tensor(test_main_array, dtype=torch.float32).to(self.device)
                 
                 model.eval()
-                
-                # Create DataLoader for batched inference
-                test_dataset = TensorDataset(test_main_tensor)
-                test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
-                
-                predictions = []
-                
-                pred_progress = tqdm(test_loader, desc=f"Predicting {appliance}", 
-                                   leave=False, unit="batch")
-                
-                # Generate predictions
                 with torch.no_grad():
-                    for batch_x, in pred_progress:
-                        batch_pred = model(batch_x)
-                        predictions.append(batch_pred.cpu().numpy())
+                    # Process in batches to manage memory
+                    predictions = []
+                    for i in range(0, len(test_tensor), self.batch_size):
+                        batch = test_tensor[i:i + self.batch_size]
+                        batch_pred = model(batch).cpu().numpy()
+                        predictions.append(batch_pred)
+                    prediction = np.concatenate(predictions, axis=0)
                 
-                prediction = np.concatenate(predictions, axis=0)
+                # Denormalize the prediction
+                app_mean = self.appliance_params[appliance]['mean']
+                app_std = self.appliance_params[appliance]['std']
+                denormalized_prediction = app_mean + (prediction * app_std)
                 
-                # Denormalize predictions back to original power scale
-                prediction = (self.appliance_params[appliance]['mean'] + 
-                            prediction * self.appliance_params[appliance]['std'])
-                
-                # Ensure non-negative power values
-                valid_predictions = prediction.flatten()
-                valid_predictions = np.where(valid_predictions > 0, valid_predictions, 0)
-                df = pd.Series(valid_predictions)
+                # Set negative values to zero
+                denormalized_prediction[denormalized_prediction < 0] = 0
+                df = pd.Series(denormalized_prediction.flatten())
                 disggregation_dict[appliance] = df
-            
-            # Combine all appliance predictions for this chunk
+                
             results = pd.DataFrame(disggregation_dict, dtype='float32')
             test_predictions.append(results)
-        
         return test_predictions
-    
+
     def return_network(self):
-        """Factory method to create a new RNN model instance"""
+        """Returns a new, initialized RNNModel instance."""
         model = RNNModel(self.sequence_length).to(self.device)
         return model
-    
+
+    def call_preprocessing(self, mains_lst, submeters_lst, method):
+        """
+        Preprocesses data by windowing and normalizing, mirroring the
+        original TensorFlow implementation.
+        """
+        if method == 'train':
+            # Preprocess mains
+            processed_mains_lst = []
+            for mains in mains_lst:
+                new_mains = mains.values.flatten()
+                n = self.sequence_length
+                units_to_pad = n // 2
+                new_mains = np.pad(new_mains, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
+                new_mains = np.array([new_mains[i:i + n] for i in range(len(new_mains) - n + 1)])
+                new_mains = (new_mains - self.mains_mean) / self.mains_std
+                processed_mains_lst.append(pd.DataFrame(new_mains))
+
+            # Preprocess appliances
+            appliance_list = []
+            for app_index, (app_name, app_df_lst) in enumerate(submeters_lst):
+                if app_name not in self.appliance_params:
+                    raise ApplianceNotFoundError(f"Parameters for appliance '{app_name}' not found!")
+                
+                app_mean = self.appliance_params[app_name]['mean']
+                app_std = self.appliance_params[app_name]['std']
+
+                processed_app_dfs = []
+                for app_df in app_df_lst:
+                    new_app_readings = app_df.values.reshape((-1, 1))
+                    new_app_readings = (new_app_readings - app_mean) / app_std
+                    processed_app_dfs.append(pd.DataFrame(new_app_readings))
+                appliance_list.append((app_name, processed_app_dfs))
+            return processed_mains_lst, appliance_list
+
+        else: # method == 'test'
+            processed_mains_lst = []
+            for mains in mains_lst:
+                new_mains = mains.values.flatten()
+                n = self.sequence_length
+                units_to_pad = n // 2
+                new_mains = np.pad(new_mains, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
+                new_mains = np.array([new_mains[i:i + n] for i in range(len(new_mains) - n + 1)])
+                new_mains = (new_mains - self.mains_mean) / self.mains_std
+                processed_mains_lst.append(pd.DataFrame(new_mains))
+            return processed_mains_lst
 
     def set_appliance_params(self, train_appliances):
-        """Compute normalization statistics (mean, std) for each appliance"""
-        print("Setting appliance parameters...")
-        
-        param_progress = tqdm(train_appliances, desc="Computing appliance stats", unit="appliance")
-        
-        for (app_name, df_list) in param_progress:
-            param_progress.set_postfix({"Current": app_name})
-            
-            # Concatenate all data for this appliance and compute statistics
-            l = np.array(pd.concat(df_list, axis=0))
+        """Computes and sets normalization parameters for each appliance."""
+        for (app_name, df_list) in train_appliances:
+            l = np.concatenate([df.values for df in df_list])
             app_mean = np.mean(l)
             app_std = np.std(l)
-            
-            # Prevent division by zero in normalization
             if app_std < 1:
-                app_std = 100
-            self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})
-        
-        print(self.appliance_params)
+                app_std = 100  # Avoid division by zero for flat signals
+            self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
+        print("Appliance parameters set:", self.appliance_params)

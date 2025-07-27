@@ -54,6 +54,7 @@ class DAE(Disaggregator):
             self.load_model()
 
     def return_network(self):
+        """Returns the DAE model."""
         return DAEModel(self.sequence_length).to(self.device)
 
     def set_appliance_params(self, train_appliances):
@@ -67,6 +68,9 @@ class DAE(Disaggregator):
             self.appliance_params[name] = {'mean': m, 'std': s}
 
     def normalize_input(self, data, n, mean, std, overlap):
+        """
+        Normalizes and windows the input data.
+        """
         flat = data.flatten()
         pad  = (n - flat.size % n) % n
         flat = np.concatenate([flat, np.zeros(pad)])
@@ -79,11 +83,14 @@ class DAE(Disaggregator):
         return ((w - mean)/std).reshape(-1, n, 1)  # normalize and reshape for model
 
     def denormalize_output(self, data, mean, std):
+        """
+        Denormalizes the output data.
+        """
         return mean + data*std
 
     def call_preprocessing(self, mains_lst, subs, method):
         """
-        Preprocess the mains and appliances data for training or testing.
+        Preprocesses the mains and appliance data.
         """
         if method == 'train':
             pm, apps = [], []
@@ -119,6 +126,9 @@ class DAE(Disaggregator):
         return pm
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **_):
+        """
+        Trains the model on a chunk of data.
+        """
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
@@ -177,6 +187,9 @@ class DAE(Disaggregator):
             self.save_model()
 
     def save_model(self):
+        """
+        Saves the trained model and parameters.
+        """
         os.makedirs(self.save_model_path, exist_ok=True)
         params = {
             'sequence_length': self.sequence_length,
@@ -191,6 +204,9 @@ class DAE(Disaggregator):
                        os.path.join(self.save_model_path, f"{name}.pt"))
 
     def load_model(self):
+        """
+        Loads a pre-trained model and its parameters.
+        """
         with open(os.path.join(self.load_model_path,'model.json')) as f:
             p = json.load(f)
         self.sequence_length = p['sequence_length']
@@ -206,6 +222,9 @@ class DAE(Disaggregator):
             self.models[name] = m
 
     def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
+        """
+        Disaggregates a chunk of mains data.
+        """
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
                 test_main_list, None, 'test'
