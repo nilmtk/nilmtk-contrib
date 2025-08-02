@@ -286,7 +286,36 @@ class ReformerNet(nn.Module):
 
 class Reformer(Disaggregator):
     """
-    Reformer for NILM disaggregation, using a seq2point structure.
+    Reformer model for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "Reformer: The Efficient Transformer"
+    https://arxiv.org/abs/2001.04451
+    
+    The model adapts the Reformer architecture for energy disaggregation tasks,
+    using locality-sensitive hashing (LSH) attention and reversible layers for
+    memory-efficient processing of long sequences.
+    
+    Architecture Overview:
+    - LSH self-attention for efficient attention computation
+    - Axial positional embeddings for long sequences
+    - Chunk feed-forward layers for memory efficiency
+    - Reversible residual connections (conceptually)
+    - Sequence-to-point prediction for energy disaggregation
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - dim (int): Model dimension (default: 512)
+            - depth (int): Number of transformer layers (default: 6)
+            - heads (int): Number of attention heads (default: 8)
+            - bucket_size (int): LSH bucket size (default: 64)
+            - n_hashes (int): Number of LSH hash functions (default: 4)
+            - ff_mult (int): Feed-forward expansion factor (default: 4)
+            - ff_chunks (int): Number of chunks for feed-forward (default: 1)
+            - dropout (float): Dropout rate (default: 0.1)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
     """
     def __init__(self, params):
         super().__init__()

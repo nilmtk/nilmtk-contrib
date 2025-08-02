@@ -36,6 +36,34 @@ class DAEModel(nn.Module):
         return x
 
 class DAE(Disaggregator):
+    """
+    Denoising Autoencoder for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "Neural NILM: Deep Neural Networks Applied to Energy Disaggregation"
+    https://arxiv.org/abs/1507.06594
+    
+    The model uses a denoising autoencoder architecture for energy disaggregation tasks,
+    learning to reconstruct individual appliance power consumption from aggregate
+    household power measurements.
+    
+    Architecture Overview:
+    - Convolutional encoder layer for feature extraction
+    - Fully connected bottleneck layers for dimensionality reduction
+    - Convolutional decoder layer for sequence reconstruction
+    - Sequence-to-sequence prediction for energy disaggregation
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - mains_mean (float): Mean value for mains normalization (default: 1000)
+            - mains_std (float): Standard deviation for mains normalization (default: 600)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - save-model-path (str): Path to save trained models
+            - pretrained-model-path (str): Path to load pre-trained models
+    """
     def __init__(self, params):
         super().__init__()
         self.MODEL_NAME        = "DAE"

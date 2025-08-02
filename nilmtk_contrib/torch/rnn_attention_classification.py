@@ -156,8 +156,31 @@ class RNNAttentionClassificationNet(nn.Module):
 
 class RNN_attention_classification(Disaggregator):
     """
-    A disaggregator using a dual-subnetwork model (RNN with Attention and CNN)
-    that mirrors the original TensorFlow implementation.
+    RNN with attention and classification for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "ResNet-based Multi-output Regression for NILM: Towards Enhanced Appliance State Detection"
+    https://arxiv.org/abs/2411.15805v1
+    
+    The model combines RNN with attention mechanism and CNN-based classification for 
+    enhanced appliance state detection and power consumption prediction in energy 
+    disaggregation tasks.
+    
+    Architecture Overview:
+    - Classification subnetwork with 1D convolutions for appliance state detection
+    - Regression subnetwork with bidirectional LSTM and attention mechanism
+    - Attention layer for learning relevant temporal features
+    - Element-wise multiplication of classification and regression outputs
+    - Multi-output learning for enhanced appliance state detection
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - mains_params (dict): Mains-specific normalization parameters
     """
     def __init__(self, params):
         self.MODEL_NAME = "RNN_attention_classification"

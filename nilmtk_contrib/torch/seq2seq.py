@@ -82,9 +82,30 @@ class Seq2SeqModel(nn.Module):
 
 class Seq2Seq(Disaggregator):
     """
-    A NILM disaggregator using a Sequence-to-Sequence CNN, with an architecture
-    and preprocessing pipeline designed to mirror the original TensorFlow
-    implementation.
+    Sequence-to-Sequence CNN for Non-Intrusive Load Monitoring (NILM).
+    
+    Based on the foundational sequence-to-sequence learning approach from:
+    "Sequence to Sequence Learning with Neural Networks" by Sutskever et al.
+    https://arxiv.org/abs/1409.3215
+    
+    This implementation adapts the sequence-to-sequence paradigm for energy disaggregation,
+    using a CNN-based encoder-decoder architecture instead of the original LSTM approach.
+    The model learns to map input sequences of aggregate power consumption to output 
+    sequences of individual appliance power consumption.
+    
+    Architecture Overview:
+    - Encoder: Multiple 1D convolutional layers with decreasing stride for feature extraction
+    - Decoder: Fully connected layers that reconstruct the sequence from encoded features
+    - Dropout layers for regularization throughout the network
+    - Sequence-to-sequence learning for temporal power disaggregation
+    
+    Args:
+        params (dict): Dictionary containing model hyperparameters:
+            - sequence_length (int): Length of input/output sequences (default: 99, must be odd)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
         """Initializes the disaggregator and its hyperparameters."""

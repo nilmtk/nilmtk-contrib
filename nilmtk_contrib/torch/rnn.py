@@ -73,9 +73,27 @@ class RNNModel(nn.Module):
 
 class RNN(Disaggregator):
     """
-    A NILM disaggregator using a Recurrent Neural Network, with an architecture
-    and preprocessing pipeline designed to mirror the original TensorFlow
-    implementation.
+    RNN disaggregator for Non-Intrusive Load Monitoring (NILM).
+    
+    Based on "Neural NILM: Deep Neural Networks Applied to Energy Disaggregation"
+    (https://arxiv.org/abs/1507.06594). This implementation uses a convolutional
+    layer followed by bidirectional LSTM layers to learn temporal patterns in
+    aggregate power consumption data and predict individual appliance usage.
+    
+    The model architecture consists of:
+    1. 1D Convolutional layer for feature extraction from power sequences
+    2. Two bidirectional LSTM layers for learning long-term dependencies
+    3. Fully connected layers for final power regression
+    
+    Args:
+        params (dict): Dictionary containing model hyperparameters:
+            - sequence_length (int): Length of input sequences (default: 19)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - appliance_params (dict): Appliance-specific parameters
+            - mains_mean (float): Mean normalization for mains power (default: 1800)
+            - mains_std (float): Standard deviation for mains power (default: 600)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
         """Initializes the disaggregator and its hyperparameters."""

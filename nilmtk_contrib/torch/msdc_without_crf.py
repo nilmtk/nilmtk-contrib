@@ -93,13 +93,29 @@ class MSDCNet(nn.Module):
 
 class MSDC(Disaggregator):
     """
-    Multi-State Dual CNN (MSDC) for Non-intrusive Load Monitoring.
+    Multi-State Dual CNN for non-intrusive load monitoring without CRF layer.
     
-    This implementation is based on the paper "MSDC: Exploiting Multi-State Power 
-    Consumption in Non-intrusive Load Monitoring based on A Dual-CNN Model" (AAAI 2023)
-    and follows the S2S_state model from the official repository.
+    This implementation is based on the paper:
+    "MSDC: Exploiting Multi-State Power Consumption in Non-intrusive Load Monitoring based on A Dual-CNN Model"
+    https://arxiv.org/abs/2302.05565
     
-    It supports both UK-DALE and REDD datasets with specific configurations.
+    The model uses a dual-branch CNN architecture without the CRF layer for joint state 
+    classification and power prediction in energy disaggregation tasks. This version 
+    directly predicts states and power consumption without CRF-based transition modeling.
+    
+    Architecture Overview:
+    - Dual-branch CNN for feature extraction
+    - Branch 1: Power consumption prediction for each state
+    - Branch 2: Direct state classification (without CRF layer)
+    - Multi-state power consumption modeling
+    - Simplified architecture compared to full MSDC model
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences
+            - n_epochs (int): Number of training epochs
+            - batch_size (int): Training batch size
+            - appliance_params (dict): Appliance-specific normalization parameters
     """
     
     # Complete dataset-specific configurations from official MSDC implementation

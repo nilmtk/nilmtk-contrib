@@ -111,6 +111,29 @@ class NILMDataset(Dataset):
 class BERT(Disaggregator):
     """
     BERT-inspired transformer model for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    https://arxiv.org/abs/1810.04805
+    
+    The model adapts the BERT transformer architecture for energy disaggregation tasks,
+    using a sequence-to-sequence approach to predict individual appliance power consumption
+    from aggregate household power measurements.
+    
+    Architecture Overview:
+    - 1D Convolutional layer (16 filters, kernel size 4) for feature extraction
+    - LP pooling (pool size 2) for dimensionality reduction
+    - Token and position embedding layer to convert continuous values to embeddings
+    - Single transformer encoder block with multi-head self-attention
+    - Dense output layer for sequence prediction
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
     """
     def __init__(self, params):
         self.MODEL_NAME = "BERT"

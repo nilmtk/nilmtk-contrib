@@ -504,17 +504,33 @@ class NILMFormerNetwork(nn.Module):
 
 class NILMFormer(Disaggregator):
     """
-    NILMFormer: PyTorch implementation of Transformer-based NILM model
+    NILMFormer: Transformer-based model for non-intrusive load monitoring.
     
-    Official implementation following the NILMFormer paper exactly:
-    - Dilated convolutional feature extractor
-    - Instance normalization with mean/std tokens
-    - Diagonal masked self-attention 
-    - Proper denormalization using projected statistics
-    - Exogenous temporal features via create_exogene (sin/cos of month, day, hour, minute)
+    This implementation is based on the paper:
+    "NILMFormer: Non-Intrusive Load Monitoring that Accounts for Non-Stationarity"
+    https://arxiv.org/abs/2506.05880
     
-    Input format: (B, 1 + c_embedding, L) where main signal and exogenous features
-    are concatenated along the channel dimension for clean, faithful implementation.
+    The model uses a transformer architecture specifically designed for energy disaggregation 
+    tasks that addresses non-stationarity in power consumption data through instance 
+    normalization and temporal feature encoding.
+    
+    Architecture Overview:
+    - Instance normalization for handling non-stationarity
+    - Dilated convolutional feature extractor with residual connections
+    - Exogenous temporal features (month, day-of-week, hour, minute)
+    - Transformer encoder with diagonal masked self-attention
+    - Sequence-to-sequence prediction with denormalization
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Input sequence length (default: 99)
+            - c_in (int): Input channels (default: 1)
+            - c_embedding (int): Exogenous channels (default: 8)
+            - d_model (int): Model dimension (default: 96)
+            - n_heads (int): Number of attention heads (default: 8)
+            - n_layers (int): Number of transformer layers (default: 6)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
     """
 
     def __init__(self, params):

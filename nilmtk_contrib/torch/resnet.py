@@ -159,8 +159,31 @@ class ResNetModel(nn.Module):
 
 class ResNet(Disaggregator):
     """
-    A ResNet-based disaggregator for NILM, with an architecture that mirrors
-    the original TensorFlow implementation.
+    ResNet-based model for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "Deep Residual Learning for Image Recognition"
+    https://arxiv.org/abs/1512.03385
+    
+    The model adapts the ResNet architecture for energy disaggregation tasks,
+    using residual connections to enable training of deep networks for predicting
+    individual appliance power consumption from aggregate household power measurements.
+    
+    Architecture Overview:
+    - 1D convolutional layers adapted for time series data
+    - Identity blocks with residual connections for feature learning
+    - Convolution blocks for changing channel dimensions
+    - Batch normalization and max pooling for regularization
+    - Fully connected layers for sequence prediction
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 299)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - load_model_path (str): Path to load pre-trained models
     """
     def __init__(self, params):
         self.MODEL_NAME = "ResNet"

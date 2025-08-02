@@ -206,8 +206,30 @@ class ResNetClassificationNet(nn.Module):
 
 class ResNet_classification(Disaggregator):
     """
-    A ResNet-based disaggregator that combines classification and regression,
-    mirroring the original TensorFlow implementation.
+    ResNet-based model with classification for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "ResNet-based Multi-output Regression for NILM: Towards Enhanced Appliance State Detection"
+    https://arxiv.org/abs/2411.15805v1
+    
+    The model combines ResNet architecture with dual-output design for both appliance 
+    state classification and power consumption regression in energy disaggregation tasks.
+    
+    Architecture Overview:
+    - Classification subnetwork with 1D convolutions for appliance state detection
+    - Regression subnetwork with ResNet blocks for power prediction
+    - Identity and convolution blocks with residual connections
+    - Element-wise multiplication of classification and regression outputs
+    - Multi-output learning for enhanced appliance state detection
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - mains_params (dict): Mains-specific normalization parameters
     """
     def __init__(self, params):
         self.MODEL_NAME = "ResNet_classification"

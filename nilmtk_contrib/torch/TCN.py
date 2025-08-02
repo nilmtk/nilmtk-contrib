@@ -152,7 +152,37 @@ class Chomp1d(nn.Module):
 
 class TCN(Disaggregator):
     """
-    Temporal Convolutional Network (TCN) for NILM, following a seq2point architecture.
+    Temporal Convolutional Network (TCN) for Non-Intrusive Load Monitoring (NILM).
+    
+    Based on "An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling"
+    by Bai et al., published in arXiv preprint arXiv:1803.01271, 2018.
+    https://arxiv.org/abs/1803.01271
+    
+    This implementation applies the TCN architecture to energy disaggregation, using dilated causal 
+    convolutions to capture long-range temporal dependencies in power consumption sequences. TCNs 
+    have been shown to outperform canonical recurrent networks like LSTMs across diverse sequence 
+    modeling tasks while demonstrating longer effective memory.
+    
+    Architecture Overview:
+    - Multiple temporal blocks with dilated causal convolutions for long-range dependencies
+    - Residual connections within each temporal block for improved gradient flow
+    - Dropout layers for regularization to prevent overfitting
+    - Sequence-to-point learning for appliance power prediction
+    - Exponentially increasing dilation factors to capture patterns at multiple time scales
+    
+    Args:
+        params (dict): Dictionary containing model hyperparameters:
+            - sequence_length (int): Length of input sequences (default: 99, must be odd)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - num_levels (int): Number of temporal blocks (default: 8)
+            - num_filters (int): Number of filters per temporal block (default: 25)
+            - kernel_size (int): Kernel size for convolutions (default: 7)
+            - dropout (float): Dropout rate for regularization (default: 0.2)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - mains_mean (float): Mean normalization for mains power (default: 1800)
+            - mains_std (float): Standard deviation for mains power (default: 600)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
         super().__init__()

@@ -121,9 +121,29 @@ class RNNAttentionModel(nn.Module):
 
 class RNN_attention(Disaggregator):
     """
-    A NILM disaggregator using an RNN with an attention mechanism, with an
-    architecture and preprocessing pipeline designed to mirror the original
-    TensorFlow implementation.
+    RNN with attention mechanism for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "ResNet-based Multi-output Regression for NILM: Towards Enhanced Appliance State Detection"
+    https://arxiv.org/abs/2411.15805v1
+    
+    The model uses bidirectional LSTM layers with attention mechanism for learning 
+    temporal dependencies and focusing on relevant time steps in energy 
+    disaggregation tasks.
+    
+    Architecture Overview:
+    - Bidirectional LSTM layers for sequence modeling
+    - Attention mechanism for learning relevant temporal features
+    - Dense layers for final power consumption prediction
+    - Sequence-to-point prediction for energy disaggregation
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 19)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
     """
     def __init__(self, params):
         """Initializes the disaggregator and its hyperparameters."""

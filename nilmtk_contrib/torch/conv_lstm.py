@@ -17,9 +17,30 @@ class ApplianceNotFoundError(Exception):
 
 class ConvLSTM(Disaggregator):
     """
-    Convolutional LSTM for NILM.
-    This model uses a Conv-LSTM architecture for disaggregation,
-    with preprocessing and training logic matching the seq2point model.
+    Convolutional LSTM for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "Convolutional LSTM Network: A Machine Learning Approach for Precipitation Nowcasting"
+    https://arxiv.org/abs/1506.04214
+    
+    The model adapts the ConvLSTM architecture for energy disaggregation tasks,
+    using spatiotemporal sequence modeling to predict individual appliance power consumption
+    from aggregate household power measurements.
+    
+    Architecture Overview:
+    - Convolutional LSTM layers for spatiotemporal feature learning
+    - Dropout and dense layers for regularization and output prediction
+    - Sequence-to-point prediction for energy disaggregation
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - mains_mean (float): Mean value for mains normalization (default: 1800)
+            - mains_std (float): Standard deviation for mains normalization (default: 600)
     """
     def __init__(self, params):
         super().__init__()

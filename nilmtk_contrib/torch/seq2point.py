@@ -16,9 +16,32 @@ class ApplianceNotFoundError(Exception):
 
 class Seq2PointTorch(Disaggregator):
     """
-    A PyTorch implementation of the Sequence-to-Point (Seq2Point) NILM disaggregator,
-    with an architecture and preprocessing pipeline designed to mirror the original
-    TensorFlow implementation.
+    Sequence-to-Point neural network for Non-Intrusive Load Monitoring (NILM).
+    
+    Based on "Sequence-to-Point Learning With Neural Networks for Non-Intrusive Load Monitoring"
+    by Zhang et al., published in Proceedings of the AAAI Conference on Artificial Intelligence, 2018.
+    DOI: https://doi.org/10.1609/aaai.v32i1.11873
+    
+    This model uses a sequence-to-point learning approach where the input is a window 
+    of mains power consumption and the output is a single point prediction of the target 
+    appliance power. The architecture uses convolutional neural networks that can inherently 
+    learn appliance signatures to reduce the identifiability problem in energy disaggregation.
+    
+    Architecture Overview:
+    - Multiple 1D convolutional layers for feature extraction from power sequences
+    - Dropout layer for regularization
+    - Fully connected layers for final power prediction
+    - Single point output from sequence input (sequence-to-point learning)
+    
+    Args:
+        params (dict): Dictionary containing model hyperparameters:
+            - sequence_length (int): Length of input sequences (default: 99, must be odd)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - mains_mean (float): Mean normalization for mains power (default: 1800)
+            - mains_std (float): Standard deviation for mains power (default: 600)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
         """Initializes the disaggregator and its hyperparameters."""

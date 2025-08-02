@@ -134,7 +134,31 @@ class GRUNet(nn.Module):
 
 class WindowGRU(Disaggregator):
     """
-    NILM disaggregator using windowed GRU approach matching TensorFlow implementation exactly.
+    Window-based GRU neural network for Non-Intrusive Load Monitoring (NILM).
+    
+    Based on "Sliding window approach for online energy disaggregation using artificial neural networks"
+    by Krystalakos et al., published in Proceedings of the 10th Hellenic Conference on Artificial Intelligence, 2018.
+    DOI: https://doi.org/10.1145/3200947.3201011
+    
+    This implementation uses a sliding window approach for real-time energy disaggregation,
+    employing recurrent neural networks with Gated Recurrent Units (GRUs) for temporal 
+    pattern recognition in power consumption data.
+    
+    Architecture Overview:
+    - 1D convolutional layer for initial feature extraction from power sequences
+    - Two bidirectional GRU layers with ReLU activation for temporal sequence modeling
+    - Dropout layers for regularization to prevent overfitting
+    - Fully connected layers for final power consumption prediction
+    - Sliding window approach for online, real-time energy disaggregation
+    
+    Args:
+        params (dict): Dictionary containing model hyperparameters:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - save-model-path (str): Path to save trained models (optional)
+            - pretrained-model-path (str): Path to load pre-trained models (optional)
+            - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
         self.MODEL_NAME = "WindowGRU"
