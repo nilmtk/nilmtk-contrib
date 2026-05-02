@@ -11,7 +11,7 @@ version = "0.1.2"
 description = "State-of-the-art algorithms for energy disaggregation using NILMTK’s Rapid Experimentation API"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = "==3.11.5"
+requires-python = ">=3.11,<3.12"
 authors = [
   { name = "NILMTK-contrib developers" }
 ]
@@ -26,29 +26,70 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Topic :: Scientific/Engineering :: Mathematics"
 ]
-dependencies = [
-  "tensorflow-io-gcs-filesystem==0.31.0",
+dependencies = []
+
+[project.optional-dependencies]
+tensorflow = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "matplotlib",
   "tensorflow>=2.12.0,<2.16.0",
-  "cvxpy>=1.0.0", 
+  "tensorflow-io-gcs-filesystem==0.31.0"
+]
+torch = [
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "matplotlib",
   "torch>=2.0,<2.7",
   "tqdm>=4.66"
 ]
-
-[project.optional-dependencies]
+classical = [
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "scikit-learn",
+  "scipy",
+  "cvxpy>=1.0.0",
+  "hmmlearn"
+]
+nilm = [
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git"
+]
+all = [
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "scipy",
+  "matplotlib",
+  "tensorflow>=2.12.0,<2.16.0",
+  "tensorflow-io-gcs-filesystem==0.31.0",
+  "torch>=2.0,<2.7",
+  "tqdm>=4.66",
+  "cvxpy>=1.0.0",
+  "hmmlearn"
+]
 dev = [
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
   "black>=23.0.0",
-  "ruff>=0.0.280"
+  "ruff>=0.0.280",
+  "build>=1.0.0"
 ]
 
 [tool.hatch.version]
 path = "nilmtk_contrib/version.py"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
   "pytest>=7.4.0",
+  "pytest-cov>=4.1.0",
   "black>=23.0.0",
-  "ruff>=0.0.280"
+  "ruff>=0.0.280",
+  "build>=1.0.0"
 ]
