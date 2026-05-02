@@ -22,12 +22,13 @@ RUN pip install --no-cache-dir uv
 # Copy project files (assumes everything is in one dir)
 COPY . .
 
-# Sync dependencies using uv (installs from pyproject.toml)
-RUN uv pip install --system .
+# Install the package with all optional backends. Use a narrower extra such as
+# .[torch], .[tensorflow], or .[classical] for backend-specific production images.
+RUN uv pip install --system ".[all]"
 
 
 # Optional: install dev dependencies too
-# RUN uv pip install .[dev]
+# RUN uv pip install --system ".[dev]"
 
 # Set env vars
 ENV PYTHONUNBUFFERED=1

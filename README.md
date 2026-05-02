@@ -1,6 +1,6 @@
 # NILMTK-Contrib
 
-(Note - This package only works on Python versions <= 3.11)
+(Note - This package currently supports Python >=3.11,<3.12. Python 3.12+ is unsupported until TensorFlow and NILMTK compatibility is verified.)
 
 This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://doi.org/10.1145/3360322.3360844). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
 
@@ -55,11 +55,38 @@ For any enquiries, please contact the main authors.
 ## Installation Details
 
 ## UV Support
-This Python package uses uv for installation. uv is a fast and modern Python package manager that replaces tools like pip and virtualenv, with support for pyproject.toml and ultra-fast dependency resolution. 
+This Python package uses uv for installation. uv is a fast and modern Python package manager that replaces tools like pip and virtualenv, with support for pyproject.toml and ultra-fast dependency resolution.
 
-To install nilmtk_contrib, first install [uv](https://docs.astral.sh/uv/getting-started/installation/) and then run:<br>
+Install the minimal package when you only need package metadata or lightweight imports:
+
 ```
 uv pip install git+https://github.com/nilmtk/nilmtk-contrib.git
+```
+
+Install a backend-specific extra for model use:
+
+```
+uv pip install "nilmtk-contrib[tensorflow] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+uv pip install "nilmtk-contrib[torch] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+uv pip install "nilmtk-contrib[classical] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+```
+
+Install all model backends:
+
+```
+uv pip install "nilmtk-contrib[all] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+```
+
+For development:
+
+```
+uv sync --extra dev
+```
+
+For backend development, include the relevant backend extra, for example:
+
+```
+uv sync --extra dev --extra torch
 ```
 
 ## Docker Support
@@ -71,6 +98,8 @@ Build and run locally
 docker build -t nilmtk-contrib .
 docker run --rm -it nilmtk-contrib bash
 ```
+The default Dockerfile installs `.[all]`. Edit the Dockerfile to use `.[torch]`, `.[tensorflow]`, or `.[classical]` for a narrower backend image.
+
 Pull the pre-built image
 ```
 docker pull ghcr.io/enfuego27826/nilmtk-contrib:latest
@@ -81,10 +110,12 @@ Refer to this [notebook](https://github.com/nilmtk/nilmtk-contrib/tree/master/sa
 
 ## Dependencies
 
-- NILMTK>=0.4
-- scikit-learn>=0.21 (already required by NILMTK)
-- Tensorflow >= 2.12.0 < 2.16.0 
-- cvxpy>=1.0.0
+- Minimal install: no required runtime dependencies for top-level import.
+- `tensorflow` extra: NILMTK, NumPy, pandas, scikit-learn, matplotlib, TensorFlow, and `tensorflow-io-gcs-filesystem`.
+- `torch` extra: NILMTK, NumPy, pandas, scikit-learn, matplotlib, PyTorch, and tqdm.
+- `classical` extra: NILMTK, NumPy, pandas, matplotlib, scikit-learn, SciPy, cvxpy, and hmmlearn.
+- `all` extra: union of TensorFlow, PyTorch, classical, and NILMTK dependencies.
+- `dev` extra: pytest, pytest-cov, black, ruff, and build.
 
 **Note: For faster computation of neural networks, it is suggested that you install keras-gpu, since it can take advantage of GPUs. The algorithms AFHMM, AFHMM_SAC and DSC are CPU intensive, use a system with good CPU for these algorithms.**
 
