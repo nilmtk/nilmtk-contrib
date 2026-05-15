@@ -6,6 +6,7 @@ from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
 from nilmtk_contrib.utils.params import normalize_common_params
+from nilmtk_contrib.utils.validation import train_validation_split
 
 class DAEModel(nn.Module):
     """
@@ -200,11 +201,24 @@ class DAE(Disaggregator):
 
             X = torch.tensor(mains_arr, dtype=torch.float32)  # mains input
             Y = torch.tensor(arr, dtype=torch.float32)  # appliance output
-            split = int(len(X)*0.85)
-            tr_ds = TensorDataset(X[:split], Y[:split])  # train set
-            va_ds = TensorDataset(X[split:], Y[split:])  # validation set
+            split = train_validation_split(
+                X,
+                Y,
+                validation_fraction=0.15,
+                strategy="tail",
+                min_train=1,
+                min_val=1,
+                allow_no_validation=True,
+            )
+            if not split.metadata.should_train:
+                continue
+
+            tr_ds = TensorDataset(split.X_train, split.y_train)  # train set
             tr = DataLoader(tr_ds, batch_size=self.batch_size, shuffle=True)  # train loader
-            va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
+            va = None
+            if split.metadata.validation_enabled:
+                va_ds = TensorDataset(split.X_val, split.y_val)  # validation set
+                va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
 
             opt     = optim.Adam(model.parameters())
             loss_fn = nn.MSELoss()
@@ -220,18 +234,23 @@ class DAE(Disaggregator):
                     loss_fn(out, yb).backward()
                     opt.step()
 
-                model.eval()
-                vl = []
-                with torch.no_grad():
-                    for xb, yb in va:
-                        xb, yb = xb.to(self.device), yb.to(self.device)
-                        vl.append(loss_fn(model(xb), yb).item())
-                val_loss = sum(vl)/len(vl)
-                if val_loss < best:
-                    best = val_loss
+                if va is None:
                     torch.save(model.state_dict(), ckpt)
+                else:
+                    model.eval()
+                    vl = []
+                    with torch.no_grad():
+                        for xb, yb in va:
+                            xb, yb = xb.to(self.device), yb.to(self.device)
+                            vl.append(loss_fn(model(xb), yb).item())
+                    if vl:
+                        val_loss = sum(vl)/len(vl)
+                        if val_loss < best:
+                            best = val_loss
+                            torch.save(model.state_dict(), ckpt)
 
-            model.load_state_dict(torch.load(ckpt, map_location=self.device))
+            if os.path.exists(ckpt):
+                model.load_state_dict(torch.load(ckpt, map_location=self.device))
 
         if self.save_model_path:
             self.save_model()
