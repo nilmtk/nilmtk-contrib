@@ -6,6 +6,10 @@ from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -108,6 +112,7 @@ class Seq2Seq(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         """Initializes the disaggregator and its hyperparameters."""
         self.MODEL_NAME = "Seq2Seq"
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
@@ -140,7 +145,7 @@ class Seq2Seq(Disaggregator):
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """Trains the model on a chunk of data."""
-        print("...............Seq2Seq partial_fit running...............")
+        _log_print("...............Seq2Seq partial_fit running...............")
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
@@ -159,14 +164,14 @@ class Seq2Seq(Disaggregator):
 
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"First time training for {appliance_name}")
+                _log_print(f"First time training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"Retraining model for {appliance_name}")
+                _log_print(f"Retraining model for {appliance_name}")
 
             model = self.models[appliance_name]
             if train_main.size > 10:
-                    filepath = f"{self.file_prefix}-{'_'.join(appliance_name.split())}-epoch{current_epoch}.pt"
+                    filepath = checkpoint_path(".pt")
                     
                     # Convert to PyTorch Tensors
                     train_main_tensor = torch.tensor(train_main, dtype=torch.float32)
@@ -174,7 +179,7 @@ class Seq2Seq(Disaggregator):
                     
                     # Use the last 15% of data for validation to mirror TensorFlow's behavior
                     n_total = len(train_main_tensor)
-                    val_size = int(0.15 * n_total)
+                    val_size = max(1, int(0.15 * n_total)) if n_total > 1 else 0
                     
                     train_x = train_main_tensor[:-val_size].to(self.device)
                     val_x = train_main_tensor[-val_size:].to(self.device)
@@ -216,7 +221,7 @@ class Seq2Seq(Disaggregator):
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
-                            print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
+                            _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
                         
                     # Load the best performing model
                     model.load_state_dict(torch.load(filepath))

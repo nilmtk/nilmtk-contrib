@@ -12,12 +12,16 @@ import numpy as np
 import pickle
 from collections import OrderedDict
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tqdm import tqdm
 import random
 import copy
 
 # Set device
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class SequenceLengthError(Exception):
@@ -183,6 +187,7 @@ class RNN_attention_classification(Disaggregator):
             - mains_params (dict): Mains-specific normalization parameters
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         self.MODEL_NAME = "RNN_attention_classification"
         self.chunk_wise_training = params.get('chunk_wise_training', False)
         self.sequence_length = params.get('sequence_length', 99)
@@ -324,7 +329,7 @@ class RNN_attention_classification(Disaggregator):
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         """Trains the model on a chunk of data."""
-        print("...............RNN_attention_classification partial_fit running...............")
+        _log_print("...............RNN_attention_classification partial_fit running...............")
         
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
@@ -359,10 +364,10 @@ class RNN_attention_classification(Disaggregator):
         self.att_models = {}
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"First time training for {appliance_name}")
+                _log_print(f"First time training for {appliance_name}")
                 self.models[appliance_name], self.att_models[appliance_name] = self.return_network()
             else:
-                print(f"Retraining model for {appliance_name}")
+                _log_print(f"Retraining model for {appliance_name}")
 
             model = self.models[appliance_name]
             if train_main.size > 10:
@@ -394,7 +399,7 @@ class RNN_attention_classification(Disaggregator):
                     bce_loss = nn.BCELoss()
 
                     best_val_loss = float('inf')
-                    filepath = f'RNN_attention_classification-temp-weights-{random.randint(0, 100000)}.pth'
+                    filepath = checkpoint_path(".pth")
 
                     # Training loop
                     for epoch in range(self.n_epochs):
@@ -421,13 +426,13 @@ class RNN_attention_classification(Disaggregator):
                             val_loss = mse_loss(val_output, v_y) + bce_loss(val_classification, v_c)
 
                         avg_train_loss = np.mean(epoch_losses)
-                        print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
+                        _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
 
                         # Save the best model based on validation loss
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
-                            print(f"Validation loss improved, saving model to {filepath}")
+                            _log_print(f"Validation loss improved, saving model to {filepath}")
 
                     # Load the best performing model
                     model.load_state_dict(torch.load(filepath, map_location=self.device))

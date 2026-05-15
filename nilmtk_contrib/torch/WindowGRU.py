@@ -9,6 +9,10 @@ import random
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class FastReLUGRU(nn.Module):
     """
     Fast implementation using standard PyTorch GRU with post-processing to approximate
@@ -161,6 +165,7 @@ class WindowGRU(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         self.MODEL_NAME = "WindowGRU"
         self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
         self.save_model_path = params.get('save-model-path', None)
@@ -192,19 +197,16 @@ class WindowGRU(Disaggregator):
         train_appliances = new_train_appliances
         for app_name, app_df in train_appliances:
             if app_name not in self.models:
-                print("First model training for", app_name)
+                _log_print("First model training for", app_name)
                 self.models[app_name] = self.return_network()
             else:
-                print("Started re-training model for", app_name)
+                _log_print("Started re-training model for", app_name)
 
             model = self.models[app_name]
             mains = train_main.reshape((-1, self.sequence_length, 1))
             app_reading = app_df.reshape((-1, 1))
             
-            filepath = self.file_prefix + "-{}-epoch{}.pt".format(
-                "_".join(app_name.split()),
-                current_epoch,
-            )
+            filepath = checkpoint_path(".pt")
             
             # Convert to PyTorch tensors
             mains_tensor = torch.tensor(mains, dtype=torch.float32).permute(0, 2, 1)  # [B, 1, seq]
@@ -213,7 +215,7 @@ class WindowGRU(Disaggregator):
             # Use validation split like TF (last 15% instead of random split)
             # This matches TF's validation_split=0.15 behavior exactly
             n_total = len(mains_tensor)
-            val_size = int(0.15 * n_total)
+            val_size = max(1, int(0.15 * n_total)) if n_total > 1 else 0
             train_size = n_total - val_size
             
             train_x = mains_tensor[:train_size].to(self.device)
@@ -258,7 +260,7 @@ class WindowGRU(Disaggregator):
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     torch.save(model.state_dict(), filepath)
-                    print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
+                    _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
                 
             # Load best weights (like TF version)
             model.load_state_dict(torch.load(filepath))
@@ -302,7 +304,7 @@ class WindowGRU(Disaggregator):
     def call_preprocessing(self, mains_lst, submeters_lst, method):
         max_val = self.max_val
         if method == 'train':
-            print("Training processing")
+            _log_print("Training processing")
             processed_mains = []
 
             for mains in mains_lst:

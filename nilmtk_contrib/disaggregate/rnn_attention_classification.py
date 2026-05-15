@@ -16,17 +16,18 @@ from tensorflow.keras.losses import BinaryCrossentropy,MeanSquaredError
 from tensorflow.keras.models import Sequential, load_model
 import matplotlib.pyplot as plt
 import matplotlib as mlp
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import tensorflow as tf
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu,True)
-import random
 import sys
-random.seed(10)
-np.random.seed(10)
 
 import copy
 
@@ -161,6 +162,7 @@ class AttentionLayer(Layer):
 class RNN_attention_classification(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
 
         #self.MODEL_NAME = "RNNattention"
         self.MODEL_NAME = "RNN_attention_classification"
@@ -174,12 +176,12 @@ class RNN_attention_classification(Disaggregator):
         self.appliance_params = params.get('appliance_params',{})
         self.mains_params=params.get('mains_params',{})
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
 
-        print("...............RNN_attention_classification partial_fit running...............")
+        _log_print("...............RNN_attention_classification partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
         self.set_mains_params(train_main)  
@@ -209,17 +211,17 @@ class RNN_attention_classification(Disaggregator):
         self.att_models={}
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name],self.att_models[appliance_name] = self.return_network()
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'RNN_attention_classification-temp-weights-'+str(random.randint(0,100000))+'.h5'
+                    filepath = checkpoint_path(".h5")
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
 
                     power=pd.DataFrame(power)
@@ -389,7 +391,7 @@ class RNN_attention_classification(Disaggregator):
                     app_min=self.appliance_params[app_name]['min']
                     app_max=self.appliance_params[app_name]['max']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
 
@@ -405,7 +407,7 @@ class RNN_attention_classification(Disaggregator):
                     
                 appliance_list.append((app_name, processed_app_dfs))
                 #new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
-                #print (new_mains.shape, new_app_readings.shape, app_name)
+                #_log_print(new_mains.shape, new_app_readings.shape, app_name)
 
             return processed_mains_lst, appliance_list
 

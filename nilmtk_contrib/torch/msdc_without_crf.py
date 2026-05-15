@@ -10,6 +10,10 @@ from nilmtk.disaggregate import Disaggregator
 import os
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -242,6 +246,7 @@ class MSDC(Disaggregator):
     }
     
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         super().__init__()
         
         self.MODEL_NAME = "MSDC"
@@ -253,7 +258,7 @@ class MSDC(Disaggregator):
         
         # Validate dataset
         if self.dataset not in ['uk_dale', 'redd']:
-            print(f"Warning: Unknown dataset '{self.dataset}'. Defaulting to 'uk_dale'.")
+            _log_print(f"Warning: Unknown dataset '{self.dataset}'. Defaulting to 'uk_dale'.")
             self.dataset = 'uk_dale'
         
         # Build dataset key for configuration lookup
@@ -286,11 +291,11 @@ class MSDC(Disaggregator):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Display configuration
-        print(f"MSDC initialized for dataset: {self.dataset.upper()}")
+        _log_print(f"MSDC initialized for dataset: {self.dataset.upper()}")
         if self.house:
-            print(f"House: {self.house}")
-        print(f"Configuration key: {self.dataset_key}")
-        print(f"Mains normalization - mean: {self.mains_mean}, std: {self.mains_std}")
+            _log_print(f"House: {self.house}")
+        _log_print(f"Configuration key: {self.dataset_key}")
+        _log_print(f"Mains normalization - mean: {self.mains_mean}, std: {self.mains_std}")
     
     def _get_appliance_config(self, appliance_name):
         """Get the best available configuration for an appliance"""
@@ -309,7 +314,7 @@ class MSDC(Disaggregator):
             available_configs = list(appliance_configs.keys())
             if available_configs:
                 fallback_key = available_configs[0]
-                print(f"Warning: No {self.dataset_key} config for {appliance_name}, using {fallback_key}")
+                _log_print(f"Warning: No {self.dataset_key} config for {appliance_name}, using {fallback_key}")
                 return appliance_configs[fallback_key]
         
         return None
@@ -319,10 +324,10 @@ class MSDC(Disaggregator):
         config = self._get_appliance_config(appliance_name)
         if config:
             num_states = config['num_states']
-            print(f"Creating network for {appliance_name} with {num_states} states ({self.dataset_key})")
+            _log_print(f"Creating network for {appliance_name} with {num_states} states ({self.dataset_key})")
         else:
             num_states = self.num_states  # fallback to default
-            print(f"Warning: No config found for {appliance_name}, using default {num_states} states")
+            _log_print(f"Warning: No config found for {appliance_name}, using default {num_states} states")
         
         return MSDCNet(self.sequence_length, self.out_len, num_states).to(self.device)
     
@@ -335,7 +340,7 @@ class MSDC(Disaggregator):
             # Prevent division by zero
             if s < 1:
                 s = 100
-            print(f"Computed normalization for {name}: mean={m:.2f}, std={s:.2f}")
+            _log_print(f"Computed normalization for {name}: mean={m:.2f}, std={s:.2f}")
             
             self.appliance_params[name] = {'mean': m, 'std': s}
     
@@ -423,19 +428,19 @@ class MSDC(Disaggregator):
                     do_preprocessing=True, current_epoch=0, **_):
         """Train MSDC models on a chunk of data"""
 
-        print("Started Partial Fit")
+        _log_print("Started Partial Fit")
         
         # Compute appliance parameters if not provided
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
         
-        print("Preprocessing called")
+        _log_print("Preprocessing called")
         # Preprocess data using NILMTK-compatible method
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
                 train_main, train_appliances, 'train')
             
-        print("Preprocessing done")
+        _log_print("Preprocessing done")
         
         # Prepare main power data
         mains_arr = pd.concat(train_main, axis=0).values
@@ -459,7 +464,7 @@ class MSDC(Disaggregator):
         
         # Train a separate model for each appliance
         for appliance_name, app_data in train_appliances:
-            print(f"\nTraining {appliance_name} for {self.dataset_key}...")
+            _log_print(f"\nTraining {appliance_name} for {self.dataset_key}...")
             
             # Check if the appliance was already trained
             if appliance_name not in self.models:
@@ -486,9 +491,9 @@ class MSDC(Disaggregator):
             
             # Training loop
             model.train()
-            print("Training loop started")
+            _log_print("Training loop started")
             for epoch in range(self.n_epochs):
-                print(f"Epoch {epoch + 1}/{self.n_epochs} for {appliance_name}")
+                _log_print(f"Epoch {epoch + 1}/{self.n_epochs} for {appliance_name}")
                 total_loss = 0
                 batch_count = 0
                 for batch_mains, batch_app, batch_states in dataloader:
@@ -511,7 +516,7 @@ class MSDC(Disaggregator):
                 
                 if epoch % 10 == 0:
                     avg_loss = total_loss / batch_count
-                    print(f"Epoch {epoch}/{self.n_epochs}, Avg Loss: {avg_loss:.4f}")
+                    _log_print(f"Epoch {epoch}/{self.n_epochs}, Avg Loss: {avg_loss:.4f}")
     
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregate power consumption using the trained MSDC model."""

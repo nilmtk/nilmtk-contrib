@@ -8,11 +8,15 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from collections import OrderedDict
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 from tqdm import tqdm  # Added for progress bars
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -136,6 +140,7 @@ class BERT(Disaggregator):
             - appliance_params (dict): Appliance-specific normalization parameters
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         self.MODEL_NAME = "BERT"
         self.chunk_wise_training = params.get('chunk_wise_training', False)
         self.sequence_length = params.get('sequence_length', 99)
@@ -147,7 +152,7 @@ class BERT(Disaggregator):
         self.appliance_params = params.get('appliance_params', {})
         
         if self.sequence_length % 2 == 0:
-            print("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise SequenceLengthError
             
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -199,7 +204,7 @@ class BERT(Disaggregator):
         return model
     
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
-        print("...............BERT partial_fit running...............")
+        _log_print("...............BERT partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
             
@@ -219,10 +224,10 @@ class BERT(Disaggregator):
         
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
                 
             model = self.models[appliance_name]
             # Use default Adam parameters to match TF's 'adam'
@@ -232,7 +237,7 @@ class BERT(Disaggregator):
             if train_main.size > 0:
                 if len(train_main) > 10:
                     # Create unique filename for model weights like TF version
-                    filepath = f'BERT-temp-weights-{random.randint(0,100000)}.pt'
+                    filepath = checkpoint_path(".pt")
                     
                     train_x, v_x, train_y, v_y = train_test_split(
                         train_main, power, test_size=.15, random_state=10)
@@ -285,9 +290,9 @@ class BERT(Disaggregator):
                             if val_loss < best_val_loss:
                                 best_val_loss = val_loss
                                 torch.save(model.state_dict(), filepath)
-                                print(f'Epoch {epoch+1}/{self.n_epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f} - Model saved')
+                                _log_print(f'Epoch {epoch+1}/{self.n_epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f} - Model saved')
                             else:
-                                print(f'Epoch {epoch+1}/{self.n_epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                                _log_print(f'Epoch {epoch+1}/{self.n_epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
                     
                     # Load best weights (like TF version)
                     model.load_state_dict(torch.load(filepath))
@@ -365,7 +370,7 @@ class BERT(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print("Parameters for ", app_name, " were not found!")
+                    _log_print("Parameters for ", app_name, " were not found!")
                     raise ApplianceNotFoundError()
                     
                 processed_app_dfs = []

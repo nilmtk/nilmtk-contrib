@@ -1,7 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from nilmtk_contrib.utils.validation import should_train, train_validation_split
+from nilmtk_contrib.utils.validation import (
+    safe_train_test_split,
+    should_train,
+    train_validation_split,
+)
 
 
 def test_should_train_reports_skip_reason():
@@ -154,3 +158,24 @@ def test_split_rejects_length_mismatch():
         assert "same number of samples" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_safe_train_test_split_guarantees_validation_when_possible():
+    train_x, val_x, train_y, val_y = safe_train_test_split(
+        np.arange(3),
+        np.arange(3) + 10,
+        test_size=0.15,
+        random_state=1,
+    )
+
+    assert len(train_x) == 2
+    assert len(val_x) == 1
+    assert len(train_y) == 2
+    assert len(val_y) == 1
+
+
+def test_safe_train_test_split_handles_single_sample():
+    train_x, val_x = safe_train_test_split(np.asarray([1]), test_size=0.15)
+
+    assert train_x.tolist() == [1]
+    assert val_x.size == 0

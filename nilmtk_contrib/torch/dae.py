@@ -1,12 +1,28 @@
 import os, json
+from pathlib import Path
 import torch, torch.nn as nn, torch.optim as optim
 import numpy as np, pandas as pd
 from tqdm import tqdm
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.utils.checkpoints import (
+    build_metadata,
+    collect_dependencies,
+    load_metadata,
+    load_torch_state,
+    save_metadata,
+    save_torch_state,
+    temporary_checkpoint,
+)
+from nilmtk_contrib.utils.logging import get_logger
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 from nilmtk_contrib.utils.params import normalize_common_params
+from nilmtk_contrib.utils.random import set_random_seed
 from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = get_logger(__name__)
+_log_print = legacy_print(logger)
 
 class DAEModel(nn.Module):
     """
@@ -67,6 +83,7 @@ class DAE(Disaggregator):
             - pretrained-model-path (str): Path to load pre-trained models
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         super().__init__()
         common = normalize_common_params(
             params,
@@ -101,6 +118,7 @@ class DAE(Disaggregator):
         self.models            = OrderedDict()
         device = common.device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.device            = torch.device(device)
+        set_random_seed(self.seed, backends=("python", "numpy", "torch"))
         if self.load_model_path:
             self.load_model()
 
@@ -222,35 +240,35 @@ class DAE(Disaggregator):
 
             opt     = optim.Adam(model.parameters())
             loss_fn = nn.MSELoss()
-            best    = float('inf')
-            ckpt    = f"{self.file_prefix}-{name.replace(' ','_')}-epoch{current_epoch}.pt"
+            best = float('inf')
+            with temporary_checkpoint(".pt") as ckpt:
+                epochs = tqdm(range(self.n_epochs), desc=name, disable=not self.verbose)
+                for _ in epochs:
+                    model.train()
+                    for xb, yb in tr:
+                        xb, yb = xb.to(self.device), yb.to(self.device)
+                        opt.zero_grad()
+                        out = model(xb)
+                        loss_fn(out, yb).backward()
+                        opt.step()
 
-            for _ in tqdm(range(self.n_epochs), desc=name):
-                model.train()
-                for xb, yb in tr:
-                    xb, yb = xb.to(self.device), yb.to(self.device)
-                    opt.zero_grad()
-                    out = model(xb)
-                    loss_fn(out, yb).backward()
-                    opt.step()
+                    if va is None:
+                        save_torch_state(model, ckpt)
+                    else:
+                        model.eval()
+                        vl = []
+                        with torch.no_grad():
+                            for xb, yb in va:
+                                xb, yb = xb.to(self.device), yb.to(self.device)
+                                vl.append(loss_fn(model(xb), yb).item())
+                        if vl:
+                            val_loss = sum(vl)/len(vl)
+                            if val_loss < best:
+                                best = val_loss
+                                save_torch_state(model, ckpt)
 
-                if va is None:
-                    torch.save(model.state_dict(), ckpt)
-                else:
-                    model.eval()
-                    vl = []
-                    with torch.no_grad():
-                        for xb, yb in va:
-                            xb, yb = xb.to(self.device), yb.to(self.device)
-                            vl.append(loss_fn(model(xb), yb).item())
-                    if vl:
-                        val_loss = sum(vl)/len(vl)
-                        if val_loss < best:
-                            best = val_loss
-                            torch.save(model.state_dict(), ckpt)
-
-            if os.path.exists(ckpt):
-                model.load_state_dict(torch.load(ckpt, map_location=self.device))
+                if ckpt.exists():
+                    load_torch_state(model, ckpt, self.device)
 
         if self.save_model_path:
             self.save_model()
@@ -259,35 +277,47 @@ class DAE(Disaggregator):
         """
         Saves the trained model and parameters.
         """
-        os.makedirs(self.save_model_path, exist_ok=True)
-        params = {
-            'sequence_length': self.sequence_length,
-            'mains_mean':      self.mains_mean,
-            'mains_std':       self.mains_std,
-            'appliance_params':self.appliance_params
-        }
-        with open(os.path.join(self.save_model_path,'model.json'),'w') as f:
-            json.dump(params, f)
+        model_folder = Path(self.save_model_path)
+        model_folder.mkdir(parents=True, exist_ok=True)
+        metadata = build_metadata(
+            model_class=self.MODEL_NAME,
+            backend="torch",
+            sequence_length=self.sequence_length,
+            appliance_params=self.appliance_params,
+            mains_mean=self.mains_mean,
+            mains_std=self.mains_std,
+            dependencies=collect_dependencies(["nilmtk-contrib", "torch", "numpy", "pandas"]),
+        )
+        save_metadata(model_folder, metadata)
         for name, m in self.models.items():
-            torch.save(m.state_dict(),
-                       os.path.join(self.save_model_path, f"{name}.pt"))
+            logger.info("Saving %s model for %s.", self.MODEL_NAME, name)
+            save_torch_state(m, model_folder / f"{name}.pt")
 
     def load_model(self):
         """
         Loads a pre-trained model and its parameters.
         """
-        with open(os.path.join(self.load_model_path,'model.json')) as f:
-            p = json.load(f)
+        model_folder = Path(self.load_model_path)
+        metadata_path = model_folder / "metadata.json"
+        if metadata_path.exists():
+            p = load_metadata(
+                model_folder,
+                expected_model_class=self.MODEL_NAME,
+                expected_backend="torch",
+            )
+        else:
+            logger.warning(
+                "Loading legacy %s model metadata from model.json.", self.MODEL_NAME
+            )
+            with open(model_folder / 'model.json') as f:
+                p = json.load(f)
         self.sequence_length = p['sequence_length']
         self.mains_mean      = p['mains_mean']
         self.mains_std       = p['mains_std']
         self.appliance_params= p['appliance_params']
         for name in self.appliance_params:
             m = self.return_network()
-            m.load_state_dict(torch.load(
-                os.path.join(self.load_model_path, f"{name}.pt"),
-                map_location=self.device
-            ))
+            load_torch_state(m, model_folder / f"{name}.pt", self.device)
             self.models[name] = m
 
     def disaggregate_chunk(self, test_main_list, do_preprocessing=True):

@@ -7,10 +7,15 @@ import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class AFHMM_SAC(Disaggregator):
     """1 dimensional baseline Mean algorithm."""
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy"))
         self.model = []
         self.MIN_CHUNK_LENGTH = 100
         self.MODEL_NAME = 'AFHMM_SAC'
@@ -64,7 +69,7 @@ class AFHMM_SAC(Disaggregator):
         train_main = train_main.values.flatten().reshape((-1,1))
         
         for appliance_name, power in train_appliances:
-            #print (appliance_name)
+            #_log_print(appliance_name)
             self.appliances.append(appliance_name)
             
             X = power.values.reshape((-1,1))
@@ -107,27 +112,27 @@ class AFHMM_SAC(Disaggregator):
         self.transmat_vector = transmat_vector
 
 #         print(transmat_vector)
-#         print (means_vector)
-#         print (states_vector)
-#         print (pi_s_vector)
-        print ("Finished Training")
-#         print (self.signal_aggregates)
-#        print (np.log(transmat))
+#         _log_print(means_vector)
+#         _log_print(states_vector)
+#         _log_print(pi_s_vector)
+        _log_print("Finished Training")
+#         _log_print(self.signal_aggregates)
+#        _log_print(np.log(transmat))
 #        print(pi)
-#        print (np.log(pi))
-        #print (np.sum(transmat_vector[0],axis=1))
-        #print (np.sum(transmat_vector[0],axis=0))
-            #print (states.shape)
-            #print (one_hot_targets.shape)
+#        _log_print(np.log(pi))
+        #_log_print(np.sum(transmat_vector[0],axis=1))
+        #_log_print(np.sum(transmat_vector[0],axis=0))
+            #_log_print(states.shape)
+            #_log_print(one_hot_targets.shape)
 
         # one_hot_states_vector = np.array(one_hot_states_vector)
 
-        # # print (transmat_vector[0])
-        # # print (np.sum(transmat_vector[0],axis=0))
-        # # print (np.sum(transmat_vector[0],axis=1))
+        # # _log_print(transmat_vector[0])
+        # # _log_print(np.sum(transmat_vector[0],axis=0))
+        # # _log_print(np.sum(transmat_vector[0],axis=1))
         # appliance_variable_matrix = []
 
-        # #print (len(states_vector))
+        # #_log_print(len(states_vector))
         # #variable_matrix = np.zeros((len(appliance_states),self.default_num_states,self.default_num_states))
 
         # for appliance_states in states_vector:
@@ -208,7 +213,7 @@ class AFHMM_SAC(Disaggregator):
                     # Second order cone constraints
                     
                     total_observed_reading = np.zeros((test_mains.shape))
-                        #print (len(cvx_state_vectors))
+                        #_log_print(len(cvx_state_vectors))
                     for appliance_id in range(self.num_appliances):
                                 total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
                     flag=1

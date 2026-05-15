@@ -14,12 +14,13 @@ from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Layer,MultiHeadAttention,LayerNormalization,Embedding
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
-import random
-random.seed(10)
-np.random.seed(10)
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 import tensorflow as tf
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
@@ -109,6 +110,7 @@ class LPpool(Layer):
 class BERT(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
 
         self.MODEL_NAME = "BERT"
         self.chunk_wise_training = params.get('chunk_wise_training',False)
@@ -120,12 +122,12 @@ class BERT(Disaggregator):
         self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self,train_main,train_appliances,do_preprocessing=True,**load_kwargs):
 
-        print("...............BERT partial_fit running...............")
+        _log_print("...............BERT partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
@@ -144,17 +146,17 @@ class BERT(Disaggregator):
 
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'BERT-temp-weights-'+str(random.randint(0,100000))+'.h5'
+                    filepath = checkpoint_path(".h5")
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
                     model.fit(train_x,train_y,validation_data=(v_x,v_y),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
@@ -253,7 +255,7 @@ class BERT(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
 

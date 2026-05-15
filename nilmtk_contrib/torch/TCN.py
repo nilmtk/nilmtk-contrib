@@ -8,6 +8,10 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -185,6 +189,7 @@ class TCN(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         super().__init__()
         self.MODEL_NAME = "TCN"
         self.models = OrderedDict()
@@ -209,12 +214,12 @@ class TCN(Disaggregator):
         
         # Sequence length must be odd for centered windowing.
         if self.sequence_length % 2 == 0:
-            print("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise SequenceLengthError
 
-        print(f"TCN initialized with sequence_length={self.sequence_length}")
-        print(f"TCN params: levels={self.num_levels}, filters={self.num_filters}, kernel_size={self.kernel_size}")
-        print(f"Using device: {self.device}")
+        _log_print(f"TCN initialized with sequence_length={self.sequence_length}")
+        _log_print(f"TCN params: levels={self.num_levels}, filters={self.num_filters}, kernel_size={self.kernel_size}")
+        _log_print(f"Using device: {self.device}")
 
     def return_network(self):
         """Builds and returns the TCN network."""
@@ -228,7 +233,7 @@ class TCN(Disaggregator):
         
         # Count parameters
         total_params = sum(p.numel() for p in model.parameters())
-        print(f"TCN model created with {total_params:,} parameters")
+        _log_print(f"TCN model created with {total_params:,} parameters")
         
         return model
 
@@ -284,7 +289,7 @@ class TCN(Disaggregator):
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})
-        print("Appliance parameters set:", self.appliance_params)
+        _log_print("Appliance parameters set:", self.appliance_params)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """Trains the model on a chunk of data."""
@@ -292,7 +297,7 @@ class TCN(Disaggregator):
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
-        print("...............TCN partial_fit running...............")
+        _log_print("...............TCN partial_fit running...............")
         # Preprocess data
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -310,10 +315,10 @@ class TCN(Disaggregator):
         for appliance_name, power in train_appliances:
             # Create a new model for the appliance if it's the first time training
             if appliance_name not in self.models:
-                print("First time training for", appliance_name)
+                _log_print("First time training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
             else:
-                print("Retraining model for", appliance_name)
+                _log_print("Retraining model for", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0 and len(train_main) > 10:
@@ -324,7 +329,7 @@ class TCN(Disaggregator):
                     
                     # Create validation split (15%)
                     n_samples = train_main_tensor.size(0)
-                    val_size = int(0.15 * n_samples)
+                    val_size = max(1, int(0.15 * n_samples)) if n_samples > 1 else 0
                     indices = torch.randperm(n_samples)
                     train_idx, val_idx = indices[val_size:], indices[:val_size]
                     
@@ -338,10 +343,7 @@ class TCN(Disaggregator):
                     criterion = nn.MSELoss()
                     
                     best_val_loss = float('inf')
-                    filepath = self.file_prefix + "-{}-epoch{}.pth".format(
-                        "_".join(appliance_name.split()),
-                        current_epoch,
-                    )
+                    filepath = checkpoint_path(".pth")
                     
                     # Training loop
                     for epoch in range(self.n_epochs):
@@ -371,13 +373,13 @@ class TCN(Disaggregator):
                             val_loss = criterion(val_predictions, val_y).item()
                         
                         avg_train_loss = np.mean(epoch_losses)
-                        print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
+                        _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
                         
                         # Save the best model based on validation loss
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
-                            print(f"Validation loss improved, saving model to {filepath}")
+                            _log_print(f"Validation loss improved, saving model to {filepath}")
                     
                     # Load the best weights after training
                     model.load_state_dict(torch.load(filepath, map_location=self.device))

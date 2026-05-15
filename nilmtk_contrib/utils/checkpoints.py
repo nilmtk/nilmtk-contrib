@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import atexit
 import importlib.metadata
 import inspect
 import json
@@ -12,6 +13,7 @@ import tempfile
 
 METADATA_FILENAME = "metadata.json"
 SCHEMA_VERSION = 1
+_MANAGED_TEMP_DIRS = []
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,21 @@ def temporary_checkpoint(suffix):
     """Create a temporary checkpoint path that is removed on context exit."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir) / f"checkpoint{suffix}"
+
+
+def managed_checkpoint_path(suffix):
+    """Return a process-managed temporary checkpoint path."""
+    temp_dir = tempfile.TemporaryDirectory()
+    _MANAGED_TEMP_DIRS.append(temp_dir)
+    return Path(temp_dir.name) / f"checkpoint{suffix}"
+
+
+def _cleanup_managed_temp_dirs():
+    for temp_dir in _MANAGED_TEMP_DIRS:
+        temp_dir.cleanup()
+
+
+atexit.register(_cleanup_managed_temp_dirs)
 
 
 def collect_dependencies(packages):

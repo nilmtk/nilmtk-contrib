@@ -1,3 +1,7 @@
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 """
 NILMFormer: PyTorch Implementation for NILMTK-Contrib
 
@@ -41,7 +45,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 import random
@@ -534,6 +538,7 @@ class NILMFormer(Disaggregator):
     """
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         """
         Initialize NILMFormer model with specified parameters following the paper
         
@@ -592,10 +597,10 @@ class NILMFormer(Disaggregator):
         
         # Device configuration
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"NILMFormer using device: {self.device}")
+        _log_print(f"NILMFormer using device: {self.device}")
         
         if self.sequence_length % 2 == 0:
-            print("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise SequenceLengthError()
 
     def return_network(self):
@@ -675,7 +680,7 @@ class NILMFormer(Disaggregator):
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
-        print("...............NILMFormer partial_fit running...............")
+        _log_print("...............NILMFormer partial_fit running...............")
         
         # Preprocess data
         if do_preprocessing:
@@ -707,10 +712,10 @@ class NILMFormer(Disaggregator):
         # Train models for each appliance
         for appliance_name, power_tensor in train_appliances:
             if appliance_name not in self.models:
-                print(f"First model training for {appliance_name}")
+                _log_print(f"First model training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"Started Retraining model for {appliance_name}")
+                _log_print(f"Started Retraining model for {appliance_name}")
 
             model = self.models[appliance_name]
             
@@ -767,11 +772,11 @@ class NILMFormer(Disaggregator):
         
         criterion = nn.MSELoss()
         best_val_loss = float('inf')
-        best_model_path = f"{self.file_prefix}-{appliance_name.replace(' ', '_')}-epoch{current_epoch}.pth"
+        best_model_path = checkpoint_path(".pth")
         patience = 10
         patience_counter = 0
         
-        print(f"Training {appliance_name} with {total_steps} total steps using integrated exogenous features")
+        _log_print(f"Training {appliance_name} with {total_steps} total steps using integrated exogenous features")
         
         # Training loop
         for epoch in range(self.n_epochs):
@@ -814,25 +819,25 @@ class NILMFormer(Disaggregator):
             avg_train_loss = np.mean(train_losses)
             avg_val_loss = np.mean(val_losses)
             
-            print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.6f}, "
+            _log_print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.6f}, "
                   f"Val Loss: {avg_val_loss:.6f}, LR: {scheduler.get_last_lr()[0]:.2e}")
             
             # Save best model and early stopping
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
                 torch.save(model.state_dict(), best_model_path)
-                print(f"Saved best model for {appliance_name}")
+                _log_print(f"Saved best model for {appliance_name}")
                 patience_counter = 0
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
-                    print(f"Early stopping triggered for {appliance_name}")
+                    _log_print(f"Early stopping triggered for {appliance_name}")
                     break
         
         # Load best model
         model.load_state_dict(torch.load(best_model_path))
         model.eval()
-        print(f"Training completed for {appliance_name}")
+        _log_print(f"Training completed for {appliance_name}")
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """
@@ -968,8 +973,8 @@ class NILMFormer(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print(self.appliance_params)
-                    print(f"Parameters for {app_name} were not found!")
+                    _log_print(self.appliance_params)
+                    _log_print(f"Parameters for {app_name} were not found!")
                     raise ApplianceNotFoundError()
 
                 processed_appliance_dfs = []
@@ -1033,4 +1038,4 @@ class NILMFormer(Disaggregator):
                 app_name: {'mean': app_mean, 'std': app_std}
             })
         
-        print("Appliance parameters:", self.appliance_params)
+        _log_print("Appliance parameters:", self.appliance_params)

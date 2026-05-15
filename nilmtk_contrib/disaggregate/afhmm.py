@@ -7,9 +7,14 @@ import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class AFHMM(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy"))
         self.model = []
         self.MODEL_NAME = 'AFHMM'        
         self.models = []
@@ -48,7 +53,7 @@ class AFHMM(Disaggregator):
         train_main = train_main.values.flatten().reshape((-1,1))
 
         for appliance_name, power in train_appliances:
-            #print (appliance_name)
+            #_log_print(appliance_name)
             # Learning the pi's and transistion probabliites  for each appliance using a simple HMM
             self.appliances.append(appliance_name)    
             X = power.values.reshape((-1,1))
@@ -83,7 +88,7 @@ class AFHMM(Disaggregator):
         self.pi_s_vector = pi_s_vector
         self.means_vector = means_vector
         self.transmat_vector = transmat_vector
-        print ("Finished Training")
+        _log_print("Finished Training")
 
     def disaggregate_thread(self, test_mains,index,d):
 

@@ -9,6 +9,10 @@ from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -43,6 +47,7 @@ class ConvLSTM(Disaggregator):
             - mains_std (float): Standard deviation for mains normalization (default: 600)
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         super().__init__()
         self.MODEL_NAME = "ConvLSTM"
         self.models = OrderedDict()
@@ -60,7 +65,7 @@ class ConvLSTM(Disaggregator):
         
         # Sequence length must be odd for proper windowing
         if self.sequence_length % 2 == 0:
-            print("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise SequenceLengthError
 
     def return_network(self):
@@ -185,7 +190,7 @@ class ConvLSTM(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print("Parameters for", app_name, "were not found!")
+                    _log_print("Parameters for", app_name, "were not found!")
                     raise ApplianceNotFoundError()
 
                 processed_appliance_dfs = []
@@ -222,7 +227,7 @@ class ConvLSTM(Disaggregator):
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})
-        print(self.appliance_params)
+        _log_print(self.appliance_params)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """
@@ -232,7 +237,7 @@ class ConvLSTM(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
-        print("...............ConvLSTM partial_fit running...............")
+        _log_print("...............ConvLSTM partial_fit running...............")
         # Do the pre-processing, such as windowing and normalizing
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -250,11 +255,11 @@ class ConvLSTM(Disaggregator):
         for appliance_name, power in train_appliances:
             # Check if the appliance was already trained. If not then create a new model for it
             if appliance_name not in self.models:
-                print("First model training for", appliance_name)
+                _log_print("First model training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
             # Retrain the particular appliance
             else:
-                print("Started Retraining model for", appliance_name)
+                _log_print("Started Retraining model for", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
@@ -267,7 +272,7 @@ class ConvLSTM(Disaggregator):
                     
                     # Create validation split
                     n_samples = train_main_tensor.size(0)
-                    val_size = int(0.15 * n_samples)
+                    val_size = max(1, int(0.15 * n_samples)) if n_samples > 1 else 0
                     indices = torch.randperm(n_samples)
                     train_idx, val_idx = indices[val_size:], indices[:val_size]
                     
@@ -281,10 +286,7 @@ class ConvLSTM(Disaggregator):
                     criterion = nn.MSELoss()
                     
                     best_val_loss = float('inf')
-                    filepath = self.file_prefix + "-{}-epoch{}.pth".format(
-                        "_".join(appliance_name.split()),
-                        current_epoch,
-                    )
+                    filepath = checkpoint_path(".pth")
                     
                     # Training loop matching seq2point_new behavior
                     for epoch in range(self.n_epochs):
@@ -314,13 +316,13 @@ class ConvLSTM(Disaggregator):
                             val_loss = criterion(val_predictions, val_y).item()
                         
                         avg_train_loss = np.mean(epoch_losses)
-                        print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
+                        _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
                         
                         # Save best model (matching seq2point_new's ModelCheckpoint behavior)
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
-                            print(f"Validation loss improved, saving model to {filepath}")
+                            _log_print(f"Validation loss improved, saving model to {filepath}")
                     
                     # Load best weights
                     model.load_state_dict(torch.load(filepath, map_location=self.device))

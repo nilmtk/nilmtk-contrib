@@ -7,6 +7,7 @@ from nilmtk_contrib.utils.checkpoints import (
     build_metadata,
     collect_dependencies,
     load_metadata,
+    managed_checkpoint_path,
     save_metadata,
     temporary_checkpoint,
     unsupported_persistence,
@@ -20,6 +21,13 @@ def test_temporary_checkpoint_removes_parent_directory_after_exit():
         assert path.exists()
 
     assert not parent.exists()
+
+
+def test_managed_checkpoint_path_uses_existing_temp_parent():
+    path = managed_checkpoint_path(".pt")
+
+    assert path.name == "checkpoint.pt"
+    assert path.parent.exists()
 
 
 def test_build_save_and_load_metadata(tmp_path):

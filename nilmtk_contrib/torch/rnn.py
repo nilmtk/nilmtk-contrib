@@ -8,6 +8,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -96,6 +100,7 @@ class RNN(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         """Initializes the disaggregator and its hyperparameters."""
         self.MODEL_NAME = "RNN"
         self.models = OrderedDict()
@@ -118,7 +123,7 @@ class RNN(Disaggregator):
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
-        print("...............RNN partial_fit running...............")
+        _log_print("...............RNN partial_fit running...............")
         
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -135,21 +140,21 @@ class RNN(Disaggregator):
 
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"First time training for {appliance_name}")
+                _log_print(f"First time training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"Retraining model for {appliance_name}")
+                _log_print(f"Retraining model for {appliance_name}")
 
             model = self.models[appliance_name]
             if train_main.size > 10:
-                    filepath = f"{self.file_prefix}-{'_'.join(appliance_name.split())}-epoch{current_epoch}.pt"
+                    filepath = checkpoint_path(".pt")
                     
                     # Convert to PyTorch Tensors
                     train_main_tensor = torch.tensor(train_main, dtype=torch.float32)
                     power_tensor = torch.tensor(power, dtype=torch.float32).squeeze()
                     
                     # Use the last 15% of data for validation to mirror TensorFlow's behavior
-                    val_size = int(0.15 * len(train_main_tensor))
+                    val_size = max(1, int(0.15 * len(train_main_tensor))) if len(train_main_tensor) > 1 else 0
                     train_size = len(train_main_tensor) - val_size
                     
                     train_x = train_main_tensor[:train_size].to(self.device)
@@ -192,7 +197,7 @@ class RNN(Disaggregator):
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
-                            print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
+                            _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
                         
                     # Load the best performing model
                     model.load_state_dict(torch.load(filepath))
@@ -298,4 +303,4 @@ class RNN(Disaggregator):
             if app_std < 1:
                 app_std = 100  # Avoid division by zero for flat signals
             self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
-        print("Appliance parameters set:", self.appliance_params)
+        _log_print("Appliance parameters set:", self.appliance_params)

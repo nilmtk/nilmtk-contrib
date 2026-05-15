@@ -12,11 +12,27 @@ import tensorflow.keras.backend as K
 from statistics import mean
 import os
 import json
+from nilmtk_contrib.utils.checkpoints import (
+    build_metadata,
+    collect_dependencies,
+    load_keras_weights,
+    load_metadata,
+    save_keras_weights,
+    save_metadata,
+    temporary_checkpoint,
+)
+from nilmtk_contrib.utils.logging import get_logger
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.random import set_random_seed
+from nilmtk_contrib.utils.validation import train_validation_split
 
+logger = get_logger(__name__)
+_log_print = legacy_print(logger)
 
 class DAE(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
         """
         Iniititalize the moel with the given parameters
         """
@@ -31,7 +47,10 @@ class DAE(Disaggregator):
         self.appliance_params = params.get('appliance_params',{})
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
+        self.seed = params.get('seed', None)
+        self.verbose = params.get('verbose', False)
         self.models = OrderedDict()
+        set_random_seed(self.seed, backends=("python", "numpy", "tensorflow"))
         if self.load_model_path:
             self.load_model()
 
@@ -47,7 +66,7 @@ class DAE(Disaggregator):
 
         # To preprocess the data and bring it to a valid shape
         if do_preprocessing:
-            print ("Preprocessing")
+            logger.info("Preprocessing")
             train_main, train_appliances = self.call_preprocessing(train_main, train_appliances, 'train')
         train_main = pd.concat(train_main, axis=0).values
         train_main = train_main.reshape((-1, self.sequence_length, 1))
@@ -60,36 +79,73 @@ class DAE(Disaggregator):
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for", appliance_name)
+                logger.info("First model training for %s.", appliance_name)
                 self.models[appliance_name] = self.return_network()
-                print(self.models[appliance_name].summary())
+                if self.verbose:
+                    self.models[appliance_name].summary()
 
-            print("Started Retraining model for", appliance_name)
+            logger.info("Started retraining model for %s.", appliance_name)
             model = self.models[appliance_name]
-            filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                    "_".join(appliance_name.split()),
-                    current_epoch,
+            split = train_validation_split(
+                    train_main,
+                    power,
+                    validation_fraction=0.15,
+                    strategy="tail",
+                    min_train=1,
+                    min_val=1,
+                    allow_no_validation=True,
             )
-            checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
-            model.fit(
-                    train_main, power,
-                    validation_split=.15,
+            if not split.metadata.should_train:
+                continue
+
+            with temporary_checkpoint(".h5") as filepath:
+                callbacks = []
+                validation_data = None
+                if split.metadata.validation_enabled:
+                    checkpoint = ModelCheckpoint(
+                            str(filepath),
+                            monitor='val_loss',
+                            verbose=1 if self.verbose else 0,
+                            save_best_only=True,
+                            mode='min',
+                    )
+                    callbacks.append(checkpoint)
+                    validation_data = (split.X_val, split.y_val)
+
+                model.fit(
+                    split.X_train,
+                    split.y_train,
+                    validation_data=validation_data,
                     batch_size=self.batch_size,
                     epochs=self.n_epochs,
-                    callbacks=[ checkpoint ],
+                    callbacks=callbacks,
                     shuffle=True,
-            )
-            model.load_weights(filepath)
+                    verbose=1 if self.verbose else 0,
+                )
+                if split.metadata.validation_enabled and filepath.exists():
+                    load_keras_weights(model, str(filepath))
+                elif not split.metadata.validation_enabled:
+                    save_keras_weights(model, str(filepath))
+                    load_keras_weights(model, str(filepath))
 
         if self.save_model_path:
             self.save_model()
 
     def load_model(self):
-        print ("Loading the model using the pretrained-weights")        
+        logger.info("Loading the model using pretrained weights.")
         model_folder = self.load_model_path
-        with open(os.path.join(model_folder, "model.json"), "r") as f:
-            model_string = f.read().strip()
-            params_to_load = json.loads(model_string)
+        metadata_path = os.path.join(model_folder, "metadata.json")
+        if os.path.exists(metadata_path):
+            params_to_load = load_metadata(
+                    model_folder,
+                    expected_model_class=self.MODEL_NAME,
+                    expected_backend="tensorflow",
+            )
+        else:
+            logger.warning("Loading legacy %s model metadata from model.json.", self.MODEL_NAME)
+            with open(os.path.join(model_folder, "model.json"), "r") as f:
+                model_string = f.read().strip()
+                params_to_load = json.loads(model_string)
 
 
         self.sequence_length = int(params_to_load['sequence_length'])
@@ -99,23 +155,36 @@ class DAE(Disaggregator):
 
         for appliance_name in self.appliance_params:
             self.models[appliance_name] = self.return_network()
-            self.models[appliance_name].load_weights(os.path.join(model_folder,appliance_name+".h5"))
+            load_keras_weights(
+                    self.models[appliance_name],
+                    os.path.join(model_folder,appliance_name+".h5"),
+            )
 
 
     def save_model(self):
         
-        os.makedirs(self.save_model_path)    
-        params_to_save = {}
-        params_to_save['appliance_params'] = self.appliance_params
-        params_to_save['sequence_length'] = self.sequence_length
-        params_to_save['mains_mean'] = self.mains_mean
-        params_to_save['mains_std'] = self.mains_std
+        os.makedirs(self.save_model_path, exist_ok=True)
+        metadata = build_metadata(
+                model_class=self.MODEL_NAME,
+                backend="tensorflow",
+                sequence_length=self.sequence_length,
+                appliance_params=self.appliance_params,
+                mains_mean=self.mains_mean,
+                mains_std=self.mains_std,
+                dependencies=collect_dependencies([
+                    "nilmtk-contrib",
+                    "tensorflow",
+                    "numpy",
+                    "pandas",
+                ]),
+        )
+        save_metadata(self.save_model_path, metadata)
         for appliance_name in self.models:
-            print ("Saving model for ", appliance_name)
-            self.models[appliance_name].save_weights(os.path.join(self.save_model_path,appliance_name+".h5"))
-
-        with open(os.path.join(self.save_model_path,'model.json'),'w') as file:
-            file.write(json.dumps(params_to_save))
+            logger.info("Saving %s model for %s.", self.MODEL_NAME, appliance_name)
+            save_keras_weights(
+                    self.models[appliance_name],
+                    os.path.join(self.save_model_path,appliance_name+".h5"),
+            )
 
 
 

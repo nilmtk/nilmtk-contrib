@@ -178,3 +178,39 @@ def train_validation_split(
         _take(y, validation_indices),
         metadata,
     )
+
+
+def safe_train_test_split(*arrays, test_size=0.15, random_state=None, shuffle=True, **_):
+    """Small sklearn-compatible split wrapper with non-empty validation when possible."""
+    if not arrays:
+        raise ValueError("At least one array is required.")
+    num_samples = _length(arrays[0])
+    for array in arrays[1:]:
+        if _length(array) != num_samples:
+            raise ValueError("All arrays must contain the same number of samples.")
+
+    if num_samples < 2:
+        train_indices = np.arange(num_samples)
+        validation_indices = np.asarray([], dtype=int)
+    else:
+        if isinstance(test_size, float):
+            validation_size = max(1, int(round(num_samples * test_size)))
+        else:
+            validation_size = int(test_size)
+        validation_size = min(validation_size, num_samples - 1)
+
+        if shuffle:
+            rng = np.random.default_rng(random_state)
+            indices = rng.permutation(num_samples)
+            validation_indices = np.sort(indices[:validation_size])
+            train_indices = np.sort(indices[validation_size:])
+        else:
+            train_size = num_samples - validation_size
+            train_indices = np.arange(train_size)
+            validation_indices = np.arange(train_size, num_samples)
+
+    split_arrays = []
+    for array in arrays:
+        split_arrays.append(_take(array, train_indices))
+        split_arrays.append(_take(array, validation_indices))
+    return tuple(split_arrays)

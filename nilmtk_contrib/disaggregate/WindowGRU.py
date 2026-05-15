@@ -7,9 +7,15 @@ from tensorflow.keras.layers import Dense, Conv1D, GRU, Bidirectional, Dropout
 from tensorflow.keras.models import Sequential
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class WindowGRU(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
 
         self.MODEL_NAME = "WindowGRU"
         self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
@@ -37,28 +43,30 @@ class WindowGRU(Disaggregator):
         train_appliances = new_train_appliances
         for app_name, app_df in train_appliances:
             if app_name not in self.models:
-                print("First model training for", app_name)
+                _log_print("First model training for", app_name)
                 self.models[app_name] = self.return_network()
             else:
-                print("Started re-training model for", app_name)
+                _log_print("Started re-training model for", app_name)
 
             model = self.models[app_name]
             mains = train_main.reshape((-1,self.sequence_length,1))
             app_reading = app_df.reshape((-1,1))
-            filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                    "_".join(app_name.split()),
-                    current_epoch,
-            )
-            checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
+            filepath = checkpoint_path(".h5")
+            checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1 if self.verbose else 0,save_best_only=True,mode='min')
+            split = train_validation_split(mains, app_reading, validation_fraction=0.15, strategy='tail', allow_no_validation=True)
+            if not split.metadata.should_train:
+                continue
             model.fit(
-                    mains, app_reading,
-                    validation_split=.15,
+                    split.X_train, split.y_train,
+                    validation_data=(split.X_val, split.y_val) if split.metadata.validation_enabled else None,
                     epochs=self.n_epochs,
                     batch_size=self.batch_size,
-                    callbacks=[ checkpoint ],
+                    callbacks=[checkpoint] if split.metadata.validation_enabled else [],
                     shuffle=True,
+                    verbose=1 if self.verbose else 0,
             )
-            model.load_weights(filepath)
+            if split.metadata.validation_enabled and filepath.exists():
+                model.load_weights(filepath)
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
 
@@ -88,7 +96,7 @@ class WindowGRU(Disaggregator):
     def call_preprocessing(self, mains_lst, submeters_lst, method):
         max_val = self.max_val
         if method == 'train':
-            print("Training processing")
+            _log_print("Training processing")
             processed_mains = []
 
             for mains in mains_lst:

@@ -12,12 +12,16 @@ import pandas as pd
 import numpy as np
 from collections import OrderedDict
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tqdm import tqdm
 import random
 import sys
 
 # Use GPU if available, otherwise fall back to CPU
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class SequenceLengthError(Exception):
@@ -146,6 +150,7 @@ class RNN_attention(Disaggregator):
             - appliance_params (dict): Appliance-specific normalization parameters
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         """Initializes the disaggregator and its hyperparameters."""
         self.MODEL_NAME = "RNN_attention"
         self.models = OrderedDict()
@@ -168,7 +173,7 @@ class RNN_attention(Disaggregator):
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
         
-        print("...............RNN_attention partial_fit running...............")
+        _log_print("...............RNN_attention partial_fit running...............")
         
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -186,10 +191,10 @@ class RNN_attention(Disaggregator):
         # Train a model for each appliance
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"First time training for {appliance_name}")
+                _log_print(f"First time training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"Retraining model for {appliance_name}")
+                _log_print(f"Retraining model for {appliance_name}")
             
             model = self.models[appliance_name]
             
@@ -251,9 +256,9 @@ class RNN_attention(Disaggregator):
                 best_val_loss = val_loss
                 best_model_state = model.state_dict().copy()
                 
-                filepath = f'RNN_attention-temp-weights-{random.randint(0,100000)}.pth'
+                filepath = checkpoint_path(".pth")
                 torch.save(best_model_state, filepath)
-                print(f'Epoch {epoch+1}: val_loss improved to {val_loss:.6f}, saving model to {filepath}')
+                _log_print(f'Epoch {epoch+1}: val_loss improved to {val_loss:.6f}, saving model to {filepath}')
         
         # Load the best performing model
         if best_model_state is not None:
@@ -366,4 +371,4 @@ class RNN_attention(Disaggregator):
             if app_std < 1:
                 app_std = 100  # Avoid division by zero for flat signals
             self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
-        print("Appliance parameters set:", self.appliance_params)
+        _log_print("Appliance parameters set:", self.appliance_params)

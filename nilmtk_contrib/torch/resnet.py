@@ -13,11 +13,15 @@ import numpy as np
 import pickle
 from collections import OrderedDict
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tqdm import tqdm
 import random
 
 # Set device
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class SequenceLengthError(Exception):
@@ -186,6 +190,7 @@ class ResNet(Disaggregator):
             - load_model_path (str): Path to load pre-trained models
     """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         self.MODEL_NAME = "ResNet"
         self.chunk_wise_training = params.get('chunk_wise_training', False)
         self.sequence_length = params.get('sequence_length', 299)
@@ -203,13 +208,13 @@ class ResNet(Disaggregator):
     
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         """Trains the model on a chunk of data."""
-        print("...............ResNet partial_fit running...............")
+        _log_print("...............ResNet partial_fit running...............")
         
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
         
         if do_preprocessing:
-            print("Preprocessing data...")
+            _log_print("Preprocessing data...")
             train_main, train_appliances = self.call_preprocessing(
                 train_main, train_appliances, 'train')
         
@@ -221,14 +226,14 @@ class ResNet(Disaggregator):
             new_train_appliances.append((app_name, app_df_values))
         train_appliances = new_train_appliances
         
-        print(f"Training data shape: {train_main.shape}")
+        _log_print(f"Training data shape: {train_main.shape}")
         
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print(f"First time training for {appliance_name}")
+                _log_print(f"First time training for {appliance_name}")
                 self.models[appliance_name] = self.return_network()
             else:
-                print(f"Retraining model for {appliance_name}")
+                _log_print(f"Retraining model for {appliance_name}")
             
             model = self.models[appliance_name]
             if train_main.size > 10:
@@ -312,7 +317,7 @@ class ResNet(Disaggregator):
         patience = 10
         patience_counter = 0
         
-        print(f"Training {appliance_name} for {self.n_epochs} epochs...")
+        _log_print(f"Training {appliance_name} for {self.n_epochs} epochs...")
         
         for epoch in range(self.n_epochs):
             # --- Training Phase ---
@@ -349,22 +354,22 @@ class ResNet(Disaggregator):
                 best_val_loss = val_loss
                 best_model_state = model.state_dict().copy()
                 patience_counter = 0
-                print(f'Epoch {epoch+1}: New best model found with validation loss: {val_loss:.6f}')
+                _log_print(f'Epoch {epoch+1}: New best model found with validation loss: {val_loss:.6f}')
             else:
                 patience_counter += 1
             
             if (epoch + 1) % 5 == 0:
-                print(f'Epoch {epoch+1}/{self.n_epochs}: Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}')
+                _log_print(f'Epoch {epoch+1}/{self.n_epochs}: Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}')
             
             # Check for early stopping
             if patience_counter >= patience and epoch >= 20:
-                print(f"Stopping early at epoch {epoch+1} due to no improvement.")
+                _log_print(f"Stopping early at epoch {epoch+1} due to no improvement.")
                 break
         
         # Load the best model state after training is complete
         if best_model_state is not None:
             model.load_state_dict(best_model_state)
-            print(f"Finished training. Loaded best model for {appliance_name} with validation loss: {best_val_loss:.6f}")
+            _log_print(f"Finished training. Loaded best model for {appliance_name} with validation loss: {best_val_loss:.6f}")
     
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
@@ -372,7 +377,7 @@ class ResNet(Disaggregator):
             self.models = model
         
         if do_preprocessing:
-            print("Preprocessing test data...")
+            _log_print("Preprocessing test data...")
             test_main_list = self.call_preprocessing(
                 test_main_list, submeters_lst=None, method='test')
         
@@ -446,7 +451,7 @@ class ResNet(Disaggregator):
         
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
-        print("Setting appliance parameters...")
+        _log_print("Setting appliance parameters...")
         
         for (app_name, df_list) in train_appliances:
             l = np.concatenate([df.values for df in df_list])
@@ -460,4 +465,4 @@ class ResNet(Disaggregator):
                 'mean': app_mean, 'std': app_std, 
                 'max': app_max, 'min': app_min
             }
-            print(f"  {app_name}: mean={app_mean:.2f}, std={app_std:.2f}")
+            _log_print(f"  {app_name}: mean={app_mean:.2f}, std={app_std:.2f}")

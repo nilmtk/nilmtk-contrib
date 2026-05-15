@@ -7,6 +7,11 @@ from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Sequential
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -18,6 +23,7 @@ class ApplianceNotFoundError(Exception):
 class Seq2Seq(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
 
         self.MODEL_NAME = "Seq2Seq"
         self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
@@ -30,11 +36,11 @@ class Seq2Seq(Disaggregator):
         self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
-        print("...............Seq2Seq partial_fit running...............")
+        _log_print("...............Seq2Seq partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
@@ -53,29 +59,31 @@ class Seq2Seq(Disaggregator):
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                            "_".join(appliance_name.split()),
-                            current_epoch,
-                    )
-                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
+                    filepath = checkpoint_path(".h5")
+                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1 if self.verbose else 0,save_best_only=True,mode='min')
+                    split = train_validation_split(train_main, power, validation_fraction=0.15, strategy='tail', allow_no_validation=True)
+                    if not split.metadata.should_train:
+                        continue
                     model.fit(
-                            train_main, power,
-                            validation_split=.15,
+                            split.X_train, split.y_train,
+                            validation_data=(split.X_val, split.y_val) if split.metadata.validation_enabled else None,
                             epochs=self.n_epochs,
                             batch_size=self.batch_size,
-                            callbacks=[ checkpoint ],
+                            callbacks=[checkpoint] if split.metadata.validation_enabled else [],
+                            verbose=1 if self.verbose else 0,
                     )
-                    model.load_weights(filepath)
+                    if split.metadata.validation_enabled and filepath.exists():
+                        model.load_weights(filepath)
 
                     
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
@@ -165,7 +173,7 @@ class Seq2Seq(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
 
@@ -180,7 +188,7 @@ class Seq2Seq(Disaggregator):
                     
                 appliance_list.append((app_name, processed_app_dfs))
                 #new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
-                #print (new_mains.shape, new_app_readings.shape, app_name)
+                #_log_print(new_mains.shape, new_app_readings.shape, app_name)
 
             return processed_mains_lst, appliance_list
 
