@@ -5,6 +5,7 @@ from tqdm import tqdm
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.utils.params import normalize_common_params
 
 class DAEModel(nn.Module):
     """
@@ -66,18 +67,39 @@ class DAE(Disaggregator):
     """
     def __init__(self, params):
         super().__init__()
+        common = normalize_common_params(
+            params,
+            defaults={
+                "sequence_length": 99,
+                "n_epochs": 10,
+                "batch_size": 512,
+                "mains_mean": 1000,
+                "mains_std": 600,
+                "appliance_params": {},
+                "save_model_path": None,
+                "pretrained_model_path": None,
+                "chunk_wise_training": False,
+                "seed": None,
+                "verbose": False,
+                "device": None,
+            },
+        )
         self.MODEL_NAME        = "DAE"
         self.file_prefix       = f"{self.MODEL_NAME.lower()}-temp-weights"
-        self.sequence_length   = params.get('sequence_length', 99)
-        self.n_epochs          = params.get('n_epochs', 10)
-        self.batch_size        = params.get('batch_size', 512)
-        self.mains_mean        = params.get('mains_mean', 1000)
-        self.mains_std         = params.get('mains_std', 600)
-        self.appliance_params  = params.get('appliance_params', {})
-        self.save_model_path   = params.get('save-model-path', None)
-        self.load_model_path   = params.get('pretrained-model-path', None)
+        self.sequence_length   = common.sequence_length
+        self.n_epochs          = common.n_epochs
+        self.batch_size        = common.batch_size
+        self.mains_mean        = common.mains_mean
+        self.mains_std         = common.mains_std
+        self.appliance_params  = common.appliance_params
+        self.save_model_path   = common.save_model_path
+        self.load_model_path   = common.pretrained_model_path
+        self.chunk_wise_training = common.chunk_wise_training
+        self.seed              = common.seed
+        self.verbose           = common.verbose
         self.models            = OrderedDict()
-        self.device            = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = common.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device            = torch.device(device)
         if self.load_model_path:
             self.load_model()
 

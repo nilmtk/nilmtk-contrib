@@ -75,6 +75,8 @@ all = [
   "hmmlearn"
 ]
 dev = [
+  "numpy",
+  "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
   "black>=23.0.0",
@@ -87,6 +89,8 @@ path = "nilmtk_contrib/version.py"
 
 [dependency-groups]
 dev = [
+  "numpy",
+  "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
   "black>=23.0.0",
