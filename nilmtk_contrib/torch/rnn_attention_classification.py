@@ -19,6 +19,11 @@ import copy
 
 # Set device
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.preprocessing.classification import (
+    appliance_threshold,
+    classification_metadata,
+    loss_weight_metadata,
+)
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -200,6 +205,17 @@ class RNN_attention_classification(Disaggregator):
         self.appliance_params = params.get('appliance_params', {})
         self.mains_params = params.get('mains_params', {})
         self.device = device
+        self.classification_threshold = params.get('classification_threshold', params.get('on_power_threshold', 15))
+        self.regression_loss_weight = params.get('regression_loss_weight', 1.0)
+        self.classification_loss_weight = params.get('classification_loss_weight', 1.0)
+        self.classification_metadata = classification_metadata(
+            self.appliance_params,
+            self.classification_threshold,
+        )
+        self.loss_weight_metadata = loss_weight_metadata(
+            self.regression_loss_weight,
+            self.classification_loss_weight,
+        )
         
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd!")
@@ -227,9 +243,13 @@ class RNN_attention_classification(Disaggregator):
         This preprocessing mirrors the original TensorFlow implementation.
         """
         appliance_on_off = []
-        THRESHOLD = 15  # Power threshold to consider an appliance 'on'
 
         for app_index, (appliance_name, on_off_list) in enumerate(classify_appliance):
+            threshold = appliance_threshold(
+                self.appliance_params,
+                appliance_name,
+                self.classification_threshold,
+            )
             classification_appliance_dfs = []
             for appliance in on_off_list:
                 n = self.sequence_length
@@ -237,8 +257,8 @@ class RNN_attention_classification(Disaggregator):
                 
                 # Apply thresholding
                 appliance_copy = appliance.copy()
-                appliance_copy[appliance_copy <= THRESHOLD] = 0
-                appliance_copy[appliance_copy > THRESHOLD] = 1
+                appliance_copy[appliance_copy <= threshold] = 0
+                appliance_copy[appliance_copy > threshold] = 1
                 
                 # Create sequences
                 new_app_readings = appliance_copy.values.flatten()
@@ -413,7 +433,10 @@ class RNN_attention_classification(Disaggregator):
                             output, classification_output, _ = model(batch_x)
                             
                             # Combined loss (regression + classification)
-                            loss = mse_loss(output, batch_y) + bce_loss(classification_output, batch_c)
+                            loss = (
+                                self.regression_loss_weight * mse_loss(output, batch_y)
+                                + self.classification_loss_weight * bce_loss(classification_output, batch_c)
+                            )
                             
                             loss.backward()
                             optimizer.step()
@@ -423,7 +446,10 @@ class RNN_attention_classification(Disaggregator):
                         model.eval()
                         with torch.no_grad():
                             val_output, val_classification, _ = model(v_x)
-                            val_loss = mse_loss(val_output, v_y) + bce_loss(val_classification, v_c)
+                            val_loss = (
+                                self.regression_loss_weight * mse_loss(val_output, v_y)
+                                + self.classification_loss_weight * bce_loss(val_classification, v_c)
+                            )
 
                         avg_train_loss = np.mean(epoch_losses)
                         _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")

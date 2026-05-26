@@ -8,17 +8,21 @@ import matplotlib.pyplot as  plt
 from sklearn.decomposition import MiniBatchDictionaryLearning, SparseCoder
 from sklearn.metrics import mean_squared_error
 import time
-import warnings
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.params import (
+    validate_non_negative_int,
+    validate_positive_int,
+    validate_positive_number,
+)
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
-warnings.filterwarnings("ignore")
 
 class DSC(Disaggregator):
     
     def __init__(self, params):
         initialize_runtime(self, params, backends=("python", "numpy"))
+        super().__init__()
 
         self.MODEL_NAME = 'DSC'  # Add the name for the algorithm
         self.chunk_wise_training = False
@@ -34,6 +38,14 @@ class DSC(Disaggregator):
         self.iterations = params.get('iterations',self.iterations)
         self.n_epochs = self.iterations
         self.n_components = params.get('n_components',self.n_components)
+        self.sparsity_coef = params.get('sparsity_coef', self.sparsity_coef)
+        self.shape = validate_positive_int("shape", self.shape)
+        self.iterations = validate_non_negative_int("iterations", self.iterations)
+        self.n_epochs = self.iterations
+        self.n_components = validate_positive_int("n_components", self.n_components)
+        self.learning_rate = validate_positive_number("learning_rate", self.learning_rate)
+        self.sparsity_coef = validate_positive_number("sparsity_coef", self.sparsity_coef)
+        self.padding_metadata = []
 
     def learn_dictionary(self, appliance_main, app_name):
 
@@ -101,8 +113,8 @@ class DSC(Disaggregator):
             predicted_b = np.where(predicted_b>0,predicted_b,0)
             # Making sure that columns sum to 1
             predicted_b = (predicted_b.T/np.linalg.norm(predicted_b.T,axis=1).reshape((-1,1))).T 
-            #if i%verbose==0:
-            _log_print("Iteration ",i," Error ",err)
+            if self.verbose and verbose and i % verbose == 0:
+                _log_print("Iteration ",i," Error ",err)
 
         return  best_b
 
@@ -186,9 +198,18 @@ class DSC(Disaggregator):
 
         test_predictions = []
         for test_main in test_main_list:
+            original_length = test_main.size
+            extra_values = 0
             if test_main.size%self.shape!=0:
                 extra_values = self.shape - (test_main.size)%(self.shape)
                 test_main = list(test_main.values.flatten()) + [0]*extra_values
+            self.padding_metadata.append(
+                {
+                    "original_length": original_length,
+                    "padded_length": original_length + extra_values,
+                    "extra_values": extra_values,
+                }
+            )
             test_main = np.array(test_main).reshape((-1,self.shape)).T
             predicted_activations = self.disggregation_model.transform(test_main.T).T
             #predicted_usage = self.reconstruction_bases@predicted_activations
@@ -199,7 +220,9 @@ class DSC(Disaggregator):
                 predicted_usage = np.matmul(self.reconstruction_bases[:,start_comp:start_comp+n_comps],predicted_activations[start_comp:start_comp+n_comps,:])
                 start_comp+=n_comps
                 predicted_usage = predicted_usage.T.flatten() 
+                predicted_usage = predicted_usage[:original_length]
                 flat_mains = test_main.T.flatten()
+                flat_mains = flat_mains[:original_length]
                 predicted_usage = np.where(predicted_usage>flat_mains,flat_mains,predicted_usage)
                 disggregation_dict[app_name] = pd.Series(predicted_usage)
             results = pd.DataFrame(disggregation_dict, dtype='float32')

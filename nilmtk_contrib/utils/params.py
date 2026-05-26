@@ -59,15 +59,24 @@ def require_odd_sequence_length(sequence_length):
         raise ValueError("sequence_length must be odd.")
 
 
-def _validate_positive_int(name, value):
+def validate_positive_int(name, value):
+    """Validate a positive integer parameter."""
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
     return value
 
 
-def _validate_non_negative_int(name, value):
+def validate_non_negative_int(name, value):
+    """Validate a non-negative integer parameter."""
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"{name} must be a non-negative integer.")
+    return value
+
+
+def validate_positive_number(name, value):
+    """Validate a positive numeric parameter."""
+    if isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{name} must be a positive number.")
     return value
 
 
@@ -126,9 +135,9 @@ def normalize_common_params(params, defaults):
     verbose = get_param(params, "verbose", default=defaults.get("verbose", False))
     device = get_param(params, "device", default=defaults.get("device"))
 
-    _validate_positive_int("sequence_length", sequence_length)
-    _validate_non_negative_int("n_epochs", n_epochs)
-    _validate_positive_int("batch_size", batch_size)
+    validate_positive_int("sequence_length", sequence_length)
+    validate_non_negative_int("n_epochs", n_epochs)
+    validate_positive_int("batch_size", batch_size)
     _validate_non_zero_std("mains_std", mains_std)
     _validate_appliance_params(appliance_params)
 

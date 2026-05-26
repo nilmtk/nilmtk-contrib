@@ -19,6 +19,11 @@ import copy
 
 # Set device
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.preprocessing.classification import (
+    appliance_threshold,
+    classification_metadata,
+    loss_weight_metadata,
+)
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -248,6 +253,17 @@ class ResNet_classification(Disaggregator):
         self.appliance_params = params.get('appliance_params', {})
         self.mains_params = params.get('mains_params', {})
         self.device = device
+        self.classification_threshold = params.get('classification_threshold', params.get('on_power_threshold', 15))
+        self.regression_loss_weight = params.get('regression_loss_weight', 1.0)
+        self.classification_loss_weight = params.get('classification_loss_weight', 1.0)
+        self.classification_metadata = classification_metadata(
+            self.appliance_params,
+            self.classification_threshold,
+        )
+        self.loss_weight_metadata = loss_weight_metadata(
+            self.regression_loss_weight,
+            self.classification_loss_weight,
+        )
         
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd!")
@@ -259,16 +275,20 @@ class ResNet_classification(Disaggregator):
     def classify(self, classify_appliance):
         """Creates binary on/off classification labels for appliances."""
         appliance_on_off = []
-        THRESHOLD = 15 # Power threshold for 'on' state
 
         for app_index, (appliance_name, on_off_list) in enumerate(classify_appliance):
+            threshold = appliance_threshold(
+                self.appliance_params,
+                appliance_name,
+                self.classification_threshold,
+            )
             classification_appliance_dfs = []
             for appliance in on_off_list:
                 n = self.sequence_length
                 units_to_pad = n // 2
                 appliance_copy = appliance.copy()
-                appliance_copy[appliance_copy <= THRESHOLD] = 0
-                appliance_copy[appliance_copy > THRESHOLD] = 1
+                appliance_copy[appliance_copy <= threshold] = 0
+                appliance_copy[appliance_copy > threshold] = 1
                 new_app_readings = appliance_copy.values.flatten()
                 new_app_readings = np.pad(new_app_readings, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
                 new_app_readings = np.array([new_app_readings[i:i + n] for i in range(len(new_app_readings) - n + 1)])
@@ -434,7 +454,10 @@ class ResNet_classification(Disaggregator):
                             output, classification_output = model(batch_x)
                             
                             # Combined loss for regression and classification
-                            loss = mse_loss(output, batch_y) + bce_loss(classification_output, batch_c)
+                            loss = (
+                                self.regression_loss_weight * mse_loss(output, batch_y)
+                                + self.classification_loss_weight * bce_loss(classification_output, batch_c)
+                            )
                             
                             loss.backward()
                             optimizer.step()
@@ -444,7 +467,10 @@ class ResNet_classification(Disaggregator):
                         model.eval()
                         with torch.no_grad():
                             val_output, val_classification = model(v_x)
-                            val_loss = mse_loss(val_output, v_y) + bce_loss(val_classification, appliance_val_classification)
+                            val_loss = (
+                                self.regression_loss_weight * mse_loss(val_output, v_y)
+                                + self.classification_loss_weight * bce_loss(val_classification, appliance_val_classification)
+                            )
 
                         avg_train_loss = np.mean(epoch_losses)
                         _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss.item():.4f}")

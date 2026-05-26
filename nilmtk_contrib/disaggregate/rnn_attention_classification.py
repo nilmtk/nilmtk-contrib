@@ -21,6 +21,11 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import tensorflow as tf
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.preprocessing.classification import (
+    appliance_threshold,
+    classification_metadata,
+    loss_weight_metadata,
+)
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -175,6 +180,17 @@ class RNN_attention_classification(Disaggregator):
         self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
         self.mains_params=params.get('mains_params',{})
+        self.classification_threshold = params.get('classification_threshold', params.get('on_power_threshold', 15))
+        self.regression_loss_weight = params.get('regression_loss_weight', 1.0)
+        self.classification_loss_weight = params.get('classification_loss_weight', 1.0)
+        self.classification_metadata = classification_metadata(
+            self.appliance_params,
+            self.classification_threshold,
+        )
+        self.loss_weight_metadata = loss_weight_metadata(
+            self.regression_loss_weight,
+            self.classification_loss_weight,
+        )
         if self.sequence_length%2==0:
             _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
@@ -343,22 +359,32 @@ class RNN_attention_classification(Disaggregator):
         optimizer = SGD(learning_rate=0.01, momentum=0.9)
         full_model.summary()
         #Two outputs of the model the classification output and the final output
-        full_model.compile(optimizer=optimizer, loss={"output": MeanSquaredError(),"classification_output": BinaryCrossentropy()})
+        full_model.compile(
+            optimizer=optimizer,
+            loss={"output": MeanSquaredError(),"classification_output": BinaryCrossentropy()},
+            loss_weights={
+                "output": self.regression_loss_weight,
+                "classification_output": self.classification_loss_weight,
+            },
+        )
         return full_model,attention_model
 
 
     def classify(self,classify_appliance):
         appliance_on_off = []
-        #Threshold for on-off
-        THRESHOLD=15
 
         for app_index, (appliance_name, on_off_list) in enumerate(classify_appliance):
+            threshold = appliance_threshold(
+                self.appliance_params,
+                appliance_name,
+                self.classification_threshold,
+            )
             classification_appliance_dfs = []
             for appliance in on_off_list:
                 n = self.sequence_length
                 units_to_pad = n // 2
-                appliance[appliance <= THRESHOLD] = 0
-                appliance[appliance > THRESHOLD] = 1
+                appliance[appliance <= threshold] = 0
+                appliance[appliance > threshold] = 1
                 new_app_readings = appliance.values.flatten()
                 new_app_readings = np.pad(new_app_readings, (units_to_pad,units_to_pad),'constant',constant_values = (0,0))
                 new_app_readings = np.array([new_app_readings[i:i + n] for i in range(len(new_app_readings) - n + 1)]) 
