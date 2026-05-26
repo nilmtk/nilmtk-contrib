@@ -390,7 +390,7 @@ class Reformer(Disaggregator):
         Preprocesses data using a sliding window, matching seq2point.
         """
         if method == 'train':
-            # Preprocessing for the train data - exactly matching seq2point
+            # Preprocessing for the train data follows the Seq2Point-style path.
             mains_df_list = []
             for mains in mains_lst:
                 new_mains = mains.values.flatten()
@@ -421,7 +421,7 @@ class Reformer(Disaggregator):
             return mains_df_list, appliance_list
         
         else:
-            # Preprocessing for the test data - exactly matching seq2point
+            # Preprocessing for the test data follows the Seq2Point-style path.
             mains_df_list = []
             for mains in mains_lst:
                 new_mains = mains.values.flatten()
@@ -569,7 +569,7 @@ class Reformer(Disaggregator):
                 model.eval()
                 with torch.no_grad():
                     prediction = model(test_main_tensor).cpu().numpy()
-                    # Denormalize exactly like seq2point
+                    # Denormalize with the Seq2Point-style appliance parameters.
                     prediction = self.appliance_params[appliance]['mean'] + prediction * self.appliance_params[appliance]['std']
                     valid_predictions = prediction.flatten()
                     valid_predictions = np.where(valid_predictions > 0, valid_predictions, 0)

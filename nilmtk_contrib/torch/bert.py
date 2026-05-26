@@ -158,7 +158,7 @@ class BERT(Disaggregator):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     def return_network(self):
-        """Creates the BERT module matching TensorFlow implementation exactly.
+        """Create the BERT-inspired module used by this backend.
         
         Key architectural features:
         - Conv1D(16, 4) with 'same' padding and linear activation
@@ -297,7 +297,7 @@ class BERT(Disaggregator):
                     # Load best weights (like TF version)
                     model.load_state_dict(torch.load(filepath))
 
-    # [Rest of the methods remain exactly the same as in the previous version]
+    # Remaining methods keep the legacy backend behavior.
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         if model is not None:
             self.models = model

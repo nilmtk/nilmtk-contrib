@@ -53,7 +53,7 @@ class ConvLSTM(Disaggregator):
         self.models = OrderedDict()
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         
-        # Extract hyperparameters from params dict - exactly same as seq2point_new
+        # Extract legacy hyperparameters used by the Seq2Point-style training path.
         self.chunk_wise_training = params.get("chunk_wise_training", False)
         self.sequence_length = params.get("sequence_length", 99)
         self.n_epochs = params.get("n_epochs", 10)
@@ -173,7 +173,7 @@ class ConvLSTM(Disaggregator):
         Preprocesses data by creating sliding windows, same as seq2point.
         """
         if method == 'train':
-            # Preprocessing for the train data - exactly matching seq2point_new
+            # Preprocessing for the train data follows the Seq2Point-style path.
             mains_df_list = []
             for mains in mains_lst:
                 new_mains = mains.values.flatten()
@@ -204,7 +204,7 @@ class ConvLSTM(Disaggregator):
             return mains_df_list, appliance_list
         
         else:
-            # Preprocessing for the test data - exactly matching seq2point_new
+            # Preprocessing for the test data follows the Seq2Point-style path.
             mains_df_list = []
             for mains in mains_lst:
                 new_mains = mains.values.flatten()
@@ -288,7 +288,7 @@ class ConvLSTM(Disaggregator):
                     best_val_loss = float('inf')
                     filepath = checkpoint_path(".pth")
                     
-                    # Training loop matching seq2point_new behavior
+                    # Training loop follows the Seq2Point-style behavior.
                     for epoch in range(self.n_epochs):
                         model.train()
                         
@@ -318,7 +318,7 @@ class ConvLSTM(Disaggregator):
                         avg_train_loss = np.mean(epoch_losses)
                         _log_print(f"Epoch {epoch+1}/{self.n_epochs} - loss: {avg_train_loss:.4f} - val_loss: {val_loss:.4f}")
                         
-                        # Save best model (matching seq2point_new's ModelCheckpoint behavior)
+                        # Save best model using the legacy checkpoint behavior.
                         if val_loss < best_val_loss:
                             best_val_loss = val_loss
                             torch.save(model.state_dict(), filepath)
@@ -352,7 +352,7 @@ class ConvLSTM(Disaggregator):
                 model.eval()
                 with torch.no_grad():
                     prediction = model(test_main_tensor).cpu().numpy()
-                    # Denormalize exactly like seq2point_new
+                    # Denormalize with the Seq2Point-style appliance parameters.
                     prediction = self.appliance_params[appliance]['mean'] + prediction * self.appliance_params[appliance]['std']
                     valid_predictions = prediction.flatten()
                     valid_predictions = np.where(valid_predictions > 0, valid_predictions, 0)

@@ -63,7 +63,7 @@ class FastReLUGRU(nn.Module):
 
 class GRUNet(nn.Module):
     """
-    Neural network matching TensorFlow WindowGRU architecture exactly.
+    Neural network intended to align with the TensorFlow WindowGRU architecture.
     """
     def __init__(self, sequence_length):
         super(GRUNet, self).__init__()
@@ -213,7 +213,7 @@ class WindowGRU(Disaggregator):
             app_tensor = torch.tensor(app_reading, dtype=torch.float32).squeeze()     # [B]
             
             # Use validation split like TF (last 15% instead of random split)
-            # This matches TF's validation_split=0.15 behavior exactly
+            # This follows the legacy TF validation split fraction.
             n_total = len(mains_tensor)
             val_size = max(1, int(0.15 * n_total)) if n_total > 1 else 0
             train_size = n_total - val_size
@@ -223,7 +223,7 @@ class WindowGRU(Disaggregator):
             train_y = app_tensor[:train_size].to(self.device)
             val_y = app_tensor[train_size:].to(self.device)
             
-            # Use Adam with TensorFlow default parameters exactly
+            # Use Adam with TensorFlow-style default parameters.
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-07, weight_decay=0.0)
             criterion = nn.MSELoss()
             
@@ -283,7 +283,7 @@ class WindowGRU(Disaggregator):
                 model = self.models[appliance]
                 model.eval()
                 with torch.no_grad():
-                    # Process in batches like TensorFlow to match behavior exactly
+                    # Process in batches following the legacy TensorFlow behavior.
                     predictions = []
                     for i in range(0, len(mains_tensor), self.batch_size):
                         batch = mains_tensor[i:i + self.batch_size]

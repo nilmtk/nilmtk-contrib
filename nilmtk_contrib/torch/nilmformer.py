@@ -5,19 +5,19 @@ _log_print = legacy_print(logger)
 """
 NILMFormer: PyTorch Implementation for NILMTK-Contrib
 
-This is an exact implementation of the NILMFormer architecture from the paper:
+This is a NILMFormer-inspired implementation based on the paper:
 "NILMFormer: Non-Intrusive Load Monitoring that Accounts for Non-Stationarity"
 by Petralia et al. (ACM SIGKDD 2025)
 
 Official GitHub: https://github.com/adrienpetralia/NILMFormer
 Paper: https://arxiv.org/html/2506.05880v1
 
-Architecture Components (matching official implementation):
+Architecture components to audit against the official implementation:
 1. Instance Normalization: Stationarizes input by subtracting mean/std
 2. DilatedBlock: Robust convolutional feature extractor with residual connections
 3. TokenStats: Linear projection of mean/std statistics into higher dimensional space
 4. Exogenous Features: Temporal encoding using create_exogene (sinusoidal functions for
-   month, day-of-week, hour, minute) - exactly as in the original repository
+   month, day-of-week, hour, minute)
 5. Transformer Encoder: Diagonal masked self-attention with pre-norm architecture
 6. Output Head: 1D convolution for sequence-to-sequence prediction
 7. Denormalization: Reverse instance normalization using projected statistics
@@ -29,10 +29,11 @@ Key Features:
 - Pre-norm transformer blocks
 - Instance normalization for non-stationarity handling
 - Sequence-to-sequence prediction with middle-point extraction
-- Exact parameter defaults from official config (d_model=96, n_heads=8, etc.)
+- Parameter defaults intended to track the official config (d_model=96, n_heads=8, etc.)
 
-This implementation follows the official NILMFormer source code structure exactly,
-including the proper exogenous feature generation via create_exogene.
+This implementation adapts NILMFormer concepts to the NILMTK-Contrib
+Disaggregator interface. Source parity must be verified before making
+reproduction claims.
 """
 
 from typing import List, Optional
@@ -567,7 +568,7 @@ class NILMFormer(Disaggregator):
         self.models = OrderedDict()
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         
-        # Model architecture parameters (following NILMFormer paper defaults) 
+        # Model architecture parameters intended to follow NILMFormer defaults.
         self.sequence_length = params.get('sequence_length', 99)
         self.c_in = params.get('c_in', 1)
         self.c_embedding = params.get('c_embedding', 8)
@@ -604,7 +605,7 @@ class NILMFormer(Disaggregator):
             raise SequenceLengthError()
 
     def return_network(self):
-        """Create and return NILMFormer network with exact architecture from paper"""
+        """Create and return the NILMFormer-inspired network."""
         model = NILMFormerNetwork(
             c_in=self.c_in,
             c_embedding=self.c_embedding,
@@ -624,10 +625,10 @@ class NILMFormer(Disaggregator):
 
     def create_exogene_features(self, n_samples, sequence_length, start_date=None):
         """
-        Create exogenous temporal features using the original NILMFormer approach.
+        Create exogenous temporal features using the NILMFormer approach.
         
         This function generates sinusoidal temporal features from timestamps,
-        following the exact implementation from the official NILMFormer repository.
+        following the intended NILMFormer timestamp-feature design.
         
         Args:
             n_samples: Number of samples

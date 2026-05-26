@@ -129,7 +129,7 @@ class ResNetClassificationNet(nn.Module):
         self.reg_bn1 = nn.BatchNorm1d(30)
         self.reg_maxpool = nn.MaxPool1d(kernel_size=3, stride=2)
         
-        # ResNet blocks with exact same parameters as TensorFlow
+        # ResNet blocks with parameters aligned to the TensorFlow backend.
         self.conv_block = ConvolutionBlock([30, 30, 30], 24)
         self.identity_block1 = IdentityBlock([30, 30, 30], 12)
         self.identity_block2 = IdentityBlock([30, 30, 30], 6)

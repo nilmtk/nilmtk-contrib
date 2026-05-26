@@ -2,7 +2,7 @@
 
 (Note - This package currently supports Python >=3.11,<3.12. Python 3.12+ is unsupported until TensorFlow and NILMTK compatibility is verified.)
 
-This repository contains all the state-of-the-art algorithms for the task of energy disaggregation implemented using NILMTK's Rapid Experimentation API. You can find the paper [here](https://doi.org/10.1145/3360322.3360844). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
+This repository contains NILMTK-compatible implementations of energy disaggregation algorithms and research baselines. You can find the NILMTK-contrib paper [here](https://doi.org/10.1145/3360322.3360844). All the notebooks that were used to can be found [here](https://github.com/nilmtk/buildsys2019-paper-notebooks).
 
 Using the NILMTK-contrib you can use the following algorithms:
  - Additive Factorial Hidden Markov Model
@@ -14,7 +14,7 @@ Using the NILMTK-contrib you can use the following algorithms:
  - Seq2Seq
  - WindowGRU
 
-The above state-of-the-art algorithms have been added to this repository. 
+The historical NILMTK-contrib algorithms and newer experimental backends are tracked in the model audit matrix. See [docs/models.md](docs/models.md) for each model's backend, citation type, implementation status, required checks, known deviations, and server validation status. See [docs/references.md](docs/references.md) for citation classification.
 
 You can do the following using the new NILMTK's Rapid Experimentation API:
  - Training and Testing across multiple appliances
