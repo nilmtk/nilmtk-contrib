@@ -1,21 +1,15 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten, Bidirectional, LSTM
+from tensorflow.keras.layers import Conv1D, Dense, Bidirectional, LSTM
 from tensorflow.keras.layers import Layer
-import os
-import pickle
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
-from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.models import Sequential, load_model
-import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import tensorflow as tf
-import sys
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -220,9 +214,9 @@ class RNN_attention(Disaggregator):
     def set_appliance_params(self,train_appliances):
         # Find the parameters using the first
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

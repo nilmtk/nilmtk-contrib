@@ -1,7 +1,7 @@
-import os, json, numpy as np, pandas as pd
-import torch, torch.nn as nn, torch.optim as optim
-import random
-from tqdm import tqdm
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
@@ -136,9 +136,9 @@ class Seq2Seq(Disaggregator):
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
         for (app_name, df_list) in train_appliances:
-            l = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.concatenate([df.values for df in df_list])
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100 # Avoid division by zero for flat signals
             self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
@@ -254,14 +254,14 @@ class Seq2Seq(Disaggregator):
                     prediction = np.concatenate(predictions, axis=0)
 
                 # Average predictions over overlapping windows
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros(n)
                 counts_arr = np.zeros(n)
                 
                 for i, p in enumerate(prediction):
-                    sum_arr[i:i+l] += p.flatten()
-                    counts_arr[i:i+l] += 1
+                    sum_arr[i:i+window_length] += p.flatten()
+                    counts_arr[i:i+window_length] += 1
                 
                 # Avoid division by zero
                 counts_arr[counts_arr == 0] = 1

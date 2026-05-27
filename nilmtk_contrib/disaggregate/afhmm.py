@@ -7,7 +7,7 @@ import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
 from nilmtk_contrib.utils.params import validate_positive_int
 
 logger = module_logger(__name__)
@@ -71,7 +71,6 @@ class AFHMM(Disaggregator):
         train_appliances = train_app_tmp
         learnt_model = OrderedDict()
         means_vector = []
-        one_hot_states_vector = []
         pi_s_vector = []
         transmat_vector = []
         states_vector = []
@@ -100,8 +99,7 @@ class AFHMM(Disaggregator):
             for i in keys:
                 pi.append(counter[i]/total)
             pi = np.array(pi)
-            nb_classes = self.default_num_states
-            targets = states.reshape(-1)
+            states.reshape(-1)
             means_vector.append(means)
             pi_s_vector.append(pi)
             transmat_vector.append(transmat.T)
@@ -126,10 +124,13 @@ class AFHMM(Disaggregator):
 
         sigma = 100*np.ones((len(test_mains),1))
         flag = 0
+        s_ = None
 
         for epoch in range(6):
             # The alernative Minimization
             if epoch%2==1:
+                if s_ is None:
+                    raise RuntimeError(f"{self.MODEL_NAME} solver did not produce appliance states.")
                 usage = np.zeros((len(test_mains)))
                 for appliance_id in range(self.num_appliances):
                     app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
@@ -142,7 +143,7 @@ class AFHMM(Disaggregator):
                     constraints = []
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
-                    delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
+                    cvx.Variable(shape=(len(test_mains),1), name='delta_t')
                     for appliance_id in range(self.num_appliances):
                             state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))                    
                             cvx_state_vectors.append(state_vector)

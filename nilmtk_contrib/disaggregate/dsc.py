@@ -1,14 +1,12 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 import pandas as pd
 import numpy as np
 from collections import OrderedDict 
-import matplotlib.pyplot as  plt
 from sklearn.decomposition import MiniBatchDictionaryLearning, SparseCoder
 from sklearn.metrics import mean_squared_error
 import time
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
 from nilmtk_contrib.utils.params import (
     validate_non_negative_int,
     validate_positive_int,
@@ -93,7 +91,7 @@ class DSC(Disaggregator):
         _log_print("If Iteration wise errors are not decreasing, then please decrease the learning rate")
         for i in range(self.iterations):
 
-            a = time.time()
+            time.time()
             # Finding activations for the given bases
             model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
             train_predicted_a = model.transform(train_power.T).T

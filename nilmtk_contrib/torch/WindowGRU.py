@@ -1,12 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from collections import OrderedDict
 import numpy as np
 import pandas as pd
-import random
-from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
@@ -302,7 +299,6 @@ class WindowGRU(Disaggregator):
         return test_predictions
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
-        max_val = self.max_val
         if method == 'train':
             _log_print("Training processing")
             processed_mains = []

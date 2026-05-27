@@ -1,11 +1,9 @@
 from collections import OrderedDict
-import os
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
@@ -170,9 +168,9 @@ class Seq2PointTorch(Disaggregator):
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
         for app_name, df_list in train_appliances:
-            l = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.concatenate([df.values for df in df_list])
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100 # Avoid division by zero for flat signals
             self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}

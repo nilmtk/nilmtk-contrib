@@ -187,9 +187,9 @@ class RNN(Disaggregator):
     def set_appliance_params(self,train_appliances):
         # Find the parameters using the first
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

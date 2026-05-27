@@ -1,25 +1,18 @@
 from __future__ import print_function, division
-from warnings import warn
 
-from tensorflow.keras.layers import Conv2D, ZeroPadding1D,MaxPooling1D
+from tensorflow.keras.layers import ZeroPadding1D,MaxPooling1D
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import BatchNormalization
-from tensorflow.keras.layers import AveragePooling1D
 
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Layer,Conv1D, Dense, Dropout, Reshape, Flatten,Add,MaxPool1D,BatchNormalization
-import os
+from tensorflow.keras.layers import Layer,Conv1D, Dense, Dropout, Flatten,Add
 import pandas as pd
 import numpy as np
-import pickle
 from collections import OrderedDict
 
-from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.models import Sequential, load_model
-import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
 import tensorflow as tf
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
@@ -186,7 +179,7 @@ class ResNet(Disaggregator):
                     filepath = checkpoint_path(".h5")
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
-                    history=model.fit(train_x,train_y,validation_data=(v_x,v_y),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
+                    model.fit(train_x,train_y,validation_data=(v_x,v_y),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
                     model.load_weights(filepath)
 
 
@@ -218,14 +211,14 @@ class ResNet(Disaggregator):
                 # the sum_arr keeps the number of times a particular timestamp has occured
                 # the predictions are summed for  agiven time, and is divided by the number of times it has occured
                 
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction)):
-                    sum_arr[i:i + l] += prediction[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
 
@@ -289,8 +282,8 @@ class ResNet(Disaggregator):
                 if app_name in self.appliance_params:
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
-                    app_min=self.appliance_params[app_name]['min']
-                    app_max=self.appliance_params[app_name]['max']
+                    self.appliance_params[app_name]['min']
+                    self.appliance_params[app_name]['max']
                 else:
                     _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
@@ -327,11 +320,11 @@ class ResNet(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
-            app_max=np.max(l)
-            app_min=np.min(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
+            app_max=np.max(values)
+            app_min=np.min(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std,'max':app_max,'min':app_min}})

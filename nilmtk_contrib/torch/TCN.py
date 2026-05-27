@@ -1,11 +1,9 @@
 from collections import OrderedDict
-import os
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
@@ -283,9 +281,9 @@ class TCN(Disaggregator):
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
         for app_name, df_list in train_appliances:
-            l = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list, axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})

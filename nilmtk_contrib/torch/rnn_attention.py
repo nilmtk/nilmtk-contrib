@@ -1,21 +1,14 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-import os
-import pickle
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
-import matplotlib.pyplot as plt
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from tqdm import tqdm
-import random
-import sys
 
 # Use GPU if available, otherwise fall back to CPU
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
@@ -365,9 +358,9 @@ class RNN_attention(Disaggregator):
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
         for (app_name, df_list) in train_appliances:
-            l = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.concatenate([df.values for df in df_list])
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100  # Avoid division by zero for flat signals
             self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}

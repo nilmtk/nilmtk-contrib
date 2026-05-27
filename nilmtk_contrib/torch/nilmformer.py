@@ -1,7 +1,3 @@
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
-
-logger = module_logger(__name__)
-_log_print = legacy_print(logger)
 """
 NILMFormer: PyTorch Implementation for NILMTK-Contrib
 
@@ -38,7 +34,6 @@ reproduction claims.
 
 from typing import List, Optional
 from collections import OrderedDict
-import os
 import numpy as np
 import pandas as pd
 import torch
@@ -46,10 +41,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
-import random
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 
 
 class SequenceLengthError(Exception):
@@ -1030,9 +1027,9 @@ class NILMFormer(Disaggregator):
         """Calculate normalization parameters for each appliance"""
         
         for (app_name, df_list) in train_appliances:
-            l = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list, axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({

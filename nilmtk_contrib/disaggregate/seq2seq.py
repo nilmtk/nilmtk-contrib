@@ -112,14 +112,14 @@ class Seq2Seq(Disaggregator):
                 # the sum_arr keeps the number of times a particular timestamp has occured
                 # the predictions are summed for  agiven time, and is divided by the number of times it has occured
                 
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction)):
-                    sum_arr[i:i + l] += prediction[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
 
@@ -208,9 +208,9 @@ class Seq2Seq(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

@@ -1,15 +1,10 @@
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+from tensorflow.keras.layers import Conv1D, Dense, Reshape, Flatten
 import pandas as pd
 import numpy as np
 from collections import OrderedDict 
-from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.models import Sequential
-import matplotlib.pyplot as  plt
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
-from statistics import mean
 import os
 import json
 from nilmtk_contrib.utils.checkpoints import (
@@ -22,7 +17,7 @@ from nilmtk_contrib.utils.checkpoints import (
     temporary_checkpoint,
 )
 from nilmtk_contrib.utils.logging import get_logger
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print
 from nilmtk_contrib.utils.random import set_random_seed
 from nilmtk_contrib.utils.validation import train_validation_split
 
@@ -280,9 +275,9 @@ class DAE(Disaggregator):
     
     def set_appliance_params(self,train_appliances):
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

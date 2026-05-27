@@ -7,10 +7,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from nilmtk.disaggregate import Disaggregator
-import os
 
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)

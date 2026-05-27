@@ -94,7 +94,6 @@ class WindowGRU(Disaggregator):
         return test_predictions
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
-        max_val = self.max_val
         if method == 'train':
             _log_print("Training processing")
             processed_mains = []

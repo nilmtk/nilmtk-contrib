@@ -1,7 +1,10 @@
-import os, json
+import json
 from pathlib import Path
-import torch, torch.nn as nn, torch.optim as optim
-import numpy as np, pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
@@ -16,7 +19,7 @@ from nilmtk_contrib.utils.checkpoints import (
     temporary_checkpoint,
 )
 from nilmtk_contrib.utils.logging import get_logger
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print
 from nilmtk_contrib.utils.params import normalize_common_params
 from nilmtk_contrib.utils.random import set_random_seed
 from nilmtk_contrib.utils.validation import train_validation_split
@@ -133,7 +136,8 @@ class DAE(Disaggregator):
         for name, lst in train_appliances:
             arr = pd.concat(lst, axis=0).values.flatten()
             m, s = arr.mean(), arr.std()
-            if s < 1: s = 100  # avoid zero std
+            if s < 1:
+                s = 100  # avoid zero std
             self.appliance_params[name] = {'mean': m, 'std': s}
 
     def normalize_input(self, data, n, mean, std, overlap):

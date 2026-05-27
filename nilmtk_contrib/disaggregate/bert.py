@@ -1,27 +1,20 @@
 from __future__ import print_function, division
-from warnings import warn
 
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten,Input,GlobalAveragePooling1D
-from tensorflow.keras.layers import AveragePooling1D
-import os
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten
 import pandas as pd
 import numpy as np
-import pickle
 from collections import OrderedDict
 
-from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Layer,MultiHeadAttention,LayerNormalization,Embedding
-import matplotlib.pyplot as plt
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
+import tensorflow as tf
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
-import tensorflow as tf
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu,True)
@@ -189,14 +182,14 @@ class BERT(Disaggregator):
                 # the sum_arr keeps the number of times a particular timestamp has occured
                 # the predictions are summed for  agiven time, and is divided by the number of times it has occured
                 
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction)):
-                    sum_arr[i:i + l] += prediction[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
 
@@ -289,9 +282,9 @@ class BERT(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})

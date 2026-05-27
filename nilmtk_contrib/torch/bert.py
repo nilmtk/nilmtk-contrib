@@ -1,6 +1,3 @@
-import os
-import random
-import pickle
 import numpy as np
 import pandas as pd
 import torch
@@ -9,7 +6,6 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from collections import OrderedDict
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 from tqdm import tqdm  # Added for progress bars
 
@@ -328,15 +324,15 @@ class BERT(Disaggregator):
                 
                 prediction = np.concatenate(prediction, axis=0)
                 
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr) 
+                len(sum_arr)
                 
                 for i in range(len(prediction)):
-                    sum_arr[i:i + l] += prediction[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
@@ -400,9 +396,9 @@ class BERT(Disaggregator):
     
     def set_appliance_params(self, train_appliances):
         for (app_name, df_list) in train_appliances:
-            l = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list, axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})

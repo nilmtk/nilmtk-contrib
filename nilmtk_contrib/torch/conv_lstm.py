@@ -1,11 +1,9 @@
 from collections import OrderedDict
-import os
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
 
 
@@ -83,7 +81,6 @@ class ConvLSTM(Disaggregator):
                 self.conv3 = nn.Conv1d(64, 128, kernel_size=4, stride=1, padding=1)
                 
                 # Calculate conv output length
-                conv_len = sequence_length  # With padding, length is preserved
                 self.conv_output_dim = 128
                 
                 # Dropout for regularization
@@ -221,9 +218,9 @@ class ConvLSTM(Disaggregator):
         Computes and sets normalization parameters for each appliance.
         """
         for app_name, df_list in train_appliances:
-            l = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list, axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})

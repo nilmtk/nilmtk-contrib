@@ -1,20 +1,14 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-import os
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-import pickle
 from collections import OrderedDict
-import matplotlib.pyplot as plt
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from tqdm import tqdm
-import random
 import copy
 
 # Set device
@@ -290,8 +284,8 @@ class RNN_attention_classification(Disaggregator):
             appliance_list = []
             for app_index, (app_name, app_df_lst) in enumerate(submeters_lst):
                 if app_name in self.appliance_params:
-                    app_mean = self.appliance_params[app_name]['mean']
-                    app_std = self.appliance_params[app_name]['std']
+                    self.appliance_params[app_name]['mean']
+                    self.appliance_params[app_name]['std']
                     app_min = self.appliance_params[app_name]['min']
                     app_max = self.appliance_params[app_name]['max']
                 else:
@@ -487,14 +481,14 @@ class RNN_attention_classification(Disaggregator):
                     prediction_output = prediction_output.cpu().numpy()
                 
                 # Average predictions over overlapping windows to get a single series
-                l = self.sequence_length
-                n = len(prediction_output) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction_output) + window_length - 1
                 sum_arr = np.zeros(n)
                 counts_arr = np.zeros(n)
                 
                 for i, p in enumerate(prediction_output):
-                    sum_arr[i:i+l] += p.flatten()
-                    counts_arr[i:i+l] += 1
+                    sum_arr[i:i+window_length] += p.flatten()
+                    counts_arr[i:i+window_length] += 1
                 
                 # Avoid division by zero
                 counts_arr[counts_arr == 0] = 1

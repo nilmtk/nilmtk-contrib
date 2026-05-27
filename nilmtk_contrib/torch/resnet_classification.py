@@ -1,20 +1,14 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-import os
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-import pickle
 from collections import OrderedDict
-import matplotlib.pyplot as plt
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from tqdm import tqdm
-import random
 import copy
 
 # Set device
@@ -312,8 +306,8 @@ class ResNet_classification(Disaggregator):
             appliance_list = []
             for app_index, (app_name, app_df_lst) in enumerate(submeters_lst):
                 if app_name in self.appliance_params:
-                    app_mean = self.appliance_params[app_name]['mean']
-                    app_std = self.appliance_params[app_name]['std']
+                    self.appliance_params[app_name]['mean']
+                    self.appliance_params[app_name]['std']
                     app_min = self.appliance_params[app_name]['min']
                     app_max = self.appliance_params[app_name]['max']
                 else:
@@ -346,22 +340,22 @@ class ResNet_classification(Disaggregator):
 
     def set_mains_params(self, train_main):
         """Computes and sets normalization parameters for the mains data."""
-        l = np.concatenate([mains.values.flatten() for mains in train_main])
+        values = np.concatenate([mains.values.flatten() for mains in train_main])
         self.mains_params.update({
-            'mean': np.mean(l), 
-            'std': np.std(l), 
-            'min': np.min(l), 
-            'max': np.max(l)
+            'mean': np.mean(values),
+            'std': np.std(values),
+            'min': np.min(values),
+            'max': np.max(values)
         })
 
     def set_appliance_params(self, train_appliances):
         """Computes and sets normalization parameters for each appliance."""
         for (app_name, df_list) in train_appliances:
-            l = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(l)
-            app_std = np.std(l)
-            app_max = np.max(l)
-            app_min = np.min(l)
+            values = np.concatenate([df.values for df in df_list])
+            app_mean = np.mean(values)
+            app_std = np.std(values)
+            app_max = np.max(values)
+            app_min = np.min(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params[app_name] = {
@@ -508,13 +502,13 @@ class ResNet_classification(Disaggregator):
                     prediction = prediction_output.cpu().numpy()
                 
                 # Average predictions over overlapping windows
-                l = self.sequence_length
+                window_length = self.sequence_length
                 n = len(prediction)
-                sum_arr = np.zeros(n + l - 1)
-                counts_arr = np.zeros(n + l - 1)
+                sum_arr = np.zeros(n + window_length - 1)
+                counts_arr = np.zeros(n + window_length - 1)
                 for i in range(n):
-                    sum_arr[i:i+l] += prediction[i]
-                    counts_arr[i:i+l] += 1
+                    sum_arr[i:i+window_length] += prediction[i]
+                    counts_arr[i:i+window_length] += 1
                 for i in range(len(counts_arr)):
                     if counts_arr[i] == 0:
                         counts_arr[i] = 1

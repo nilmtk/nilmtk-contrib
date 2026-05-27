@@ -1,25 +1,17 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten, Bidirectional, LSTM, Input, Multiply, Activation, Add
-from tensorflow.keras.layers import Conv2D, ZeroPadding1D,MaxPooling1D
-from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Conv1D, Dense, Flatten, Bidirectional, LSTM, Input, Multiply, Activation, Add
 from tensorflow.keras.layers import Layer
 from tensorflow.keras import Model
-import os
-import pickle
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.losses import BinaryCrossentropy,MeanSquaredError
-from tensorflow.keras.models import Sequential, load_model
-import matplotlib.pyplot as plt
-import matplotlib as mlp
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow.keras.backend as K
 import tensorflow as tf
+import copy
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 from nilmtk_contrib.preprocessing.classification import (
     appliance_threshold,
@@ -32,9 +24,6 @@ _log_print = legacy_print(logger)
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu,True)
-import sys
-
-import copy
 
 class SequenceLengthError(Exception):
     pass
@@ -250,7 +239,7 @@ class RNN_attention_classification(Disaggregator):
                     v_y=v_class_y[:,:self.sequence_length]
                     appliance_train_classification=train_class_y[:,self.sequence_length:]
                     appliance_val_classification=v_class_y[:,self.sequence_length:]
-                    history=model.fit(train_x,[train_y,appliance_train_classification],validation_data=(v_x,[v_y,appliance_val_classification]),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
+                    model.fit(train_x,[train_y,appliance_train_classification],validation_data=(v_x,[v_y,appliance_val_classification]),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
                     model.load_weights(filepath)
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
@@ -273,34 +262,34 @@ class RNN_attention_classification(Disaggregator):
                 prediction = []
                 model = self.models[appliance]
                 prediction_output,prediction_classification = self.models[appliance].predict(x=test_main_array,batch_size=self.batch_size)
-                W=self.att_models[appliance].predict(x=test_main_array,batch_size=self.batch_size)
+                self.att_models[appliance].predict(x=test_main_array,batch_size=self.batch_size)
                 #####################
                 # This block is for creating the average of predictions over the different sequences
                 # the counts_arr keeps the number of times a particular timestamp has occured
                 # the sum_arr keeps the number of times a particular timestamp has occured
                 # the predictions are summed for  agiven time, and is divided by the number of times it has occured
                 
-                l = self.sequence_length
-                n = len(prediction_output) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction_output) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction_output)):
-                    sum_arr[i:i + l] += prediction_output[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction_output[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
 
                 prediction = (self.appliance_params[appliance]['min'] + (sum_arr * (self.appliance_params[appliance]['max']-self.appliance_params[appliance]['min'])))
 
-                l = self.sequence_length
-                n = len(prediction_classification) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction_classification) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction_classification)):
-                    sum_arr[i:i + l] += prediction_classification[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction_classification[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
                     
@@ -318,8 +307,6 @@ class RNN_attention_classification(Disaggregator):
 
     def return_network(self):
 
-        filters = 32
-        kernel_size = 4
         units = 128
         input_data = Input(shape=(self.sequence_length, 1))
         #This classificcation network is inspired from:-
@@ -412,8 +399,8 @@ class RNN_attention_classification(Disaggregator):
             for app_index, (app_name, app_df_lst) in enumerate(submeters_lst):
 
                 if app_name in self.appliance_params:
-                    app_mean = self.appliance_params[app_name]['mean']
-                    app_std = self.appliance_params[app_name]['std']
+                    self.appliance_params[app_name]['mean']
+                    self.appliance_params[app_name]['std']
                     app_min=self.appliance_params[app_name]['min']
                     app_max=self.appliance_params[app_name]['max']
                 else:
@@ -451,15 +438,15 @@ class RNN_attention_classification(Disaggregator):
             return processed_mains_lst
 
     def set_mains_params(self,train_main):
-        l=[]
+        values=[]
         for mains in train_main :
             new_mains = mains.values.flatten()
-            l.extend(new_mains)
+            values.extend(new_mains)
        
-        main_mean=np.mean(l)
-        main_std=np.std(l)
-        main_min=np.min(l)
-        main_max=np.max(l)
+        main_mean=np.mean(values)
+        main_std=np.std(values)
+        main_min=np.min(values)
+        main_max=np.max(values)
         self.mains_params.update({'mean':main_mean,'std':main_std,'min':main_min,'max':main_max})
 
 
@@ -467,11 +454,11 @@ class RNN_attention_classification(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
-            app_max=np.max(l)
-            app_min=np.min(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
+            app_max=np.max(values)
+            app_min=np.min(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std,'min':app_min,'max':app_max}})

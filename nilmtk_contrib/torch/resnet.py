@@ -1,24 +1,18 @@
 from __future__ import print_function, division
-from warnings import warn
 
 from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-import os
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-import pickle
 from collections import OrderedDict
-import matplotlib.pyplot as plt
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from tqdm import tqdm
-import random
 
 # Set device
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -277,8 +271,8 @@ class ResNet(Disaggregator):
                 if app_name in self.appliance_params:
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
-                    app_min = self.appliance_params[app_name]['min']
-                    app_max = self.appliance_params[app_name]['max']
+                    self.appliance_params[app_name]['min']
+                    self.appliance_params[app_name]['max']
                 else:
                     raise ApplianceNotFoundError(f"Parameters for appliance '{app_name}' not found!")
 
@@ -404,14 +398,14 @@ class ResNet(Disaggregator):
                 prediction = np.concatenate(predictions, axis=0)
                 
                 # Average predictions over overlapping windows
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros(n)
                 counts_arr = np.zeros(n)
                 
                 for i, p in enumerate(prediction):
-                    sum_arr[i:i+l] += p.flatten()
-                    counts_arr[i:i+l] += 1
+                    sum_arr[i:i+window_length] += p.flatten()
+                    counts_arr[i:i+window_length] += 1
                 
                 # Replace zero counts with one to avoid division by zero
                 counts_arr[counts_arr == 0] = 1
@@ -454,11 +448,11 @@ class ResNet(Disaggregator):
         _log_print("Setting appliance parameters...")
         
         for (app_name, df_list) in train_appliances:
-            l = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(l)
-            app_std = np.std(l)
-            app_max = np.max(l)
-            app_min = np.min(l)
+            values = np.concatenate([df.values for df in df_list])
+            app_mean = np.mean(values)
+            app_std = np.std(values)
+            app_max = np.max(values)
+            app_min = np.min(values)
             if app_std < 1:
                 app_std = 100
             self.appliance_params[app_name] = {
