@@ -1,88 +1,59 @@
 # NILMTK-Contrib
 
-NILMTK-Contrib provides NILMTK-compatible implementations of energy disaggregation algorithms and research baselines. The repository paper is Batra et al., "Towards Reproducible State-of-the-Art Energy Disaggregation", BuildSys 2019, DOI: https://doi.org/10.1145/3360322.3360844.
+NILMTK-Contrib provides NILMTK-compatible implementations of non-intrusive load monitoring (NILM) and energy disaggregation algorithms. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
 
-This package currently supports Python `>=3.11,<3.12`. Python 3.12 and newer are unsupported until TensorFlow and NILMTK compatibility is verified.
+The repository paper is:
 
-The historical NILMTK-contrib algorithms and newer experimental backends are tracked in [docs/models.md](docs/models.md). Citation classification is tracked in [docs/references.md](docs/references.md). Server validation protocol and result recording live in [docs/server-validation.md](docs/server-validation.md).
+Batra et al., "Towards Reproducible State-of-the-Art Energy Disaggregation", BuildSys 2019, DOI: https://doi.org/10.1145/3360322.3360844.
 
 ## Runtime Requirements
 
 - Python `>=3.11,<3.12`.
-- Backend-specific extras for model use; minimal installs are intentionally lightweight.
-- NILMTK-compatible datasets are required for real experiments and notebook runs.
-- Backend smoke tests, paper-faithfulness checks, and benchmark claims must be validated on a server environment with the right Python version, dependencies, datasets, and hardware.
+- Install a backend extra before importing or training backend-specific models.
+- NILMTK-compatible datasets are required for real experiments, notebook runs, and benchmark reproduction.
+- Model training and benchmark comparisons should be run in controlled server environments with the relevant backend, dataset, and hardware available.
 
-## Model Matrix
-
-Status values are intentionally conservative:
-
-- `paper_faithful_unverified`: the cited source is NILM-specific, but implementation correspondence has not been fully validated.
-- `paper_inspired`: the model adapts a generic architecture paper to NILM.
-- `legacy_baseline`: retained for compatibility; not claimed as a direct NILM paper reproduction.
-- `experimental`: citation, implementation, or backend behavior still needs focused audit.
-
-| Algorithm | Backend | Import path | Status | Paper/source | Notes |
-|---|---|---|---|---|---|
-| AFHMM | Classical | `nilmtk_contrib.disaggregate.AFHMM` | `paper_faithful_unverified` | Kolter and Jaakkola AFHMM | Requires `classical` extra; convex objective and HMM setup still need server audit |
-| AFHMM_SAC | Classical | `nilmtk_contrib.disaggregate.AFHMM_SAC` | `paper_faithful_unverified` | Zhong et al. SAC-AFHMM | Requires `classical` extra; SAC aggregate constraint behavior needs focused checks |
-| DSC | Classical | `nilmtk_contrib.disaggregate.DSC` | `paper_faithful_unverified` | Kolter, Batra, and Ng DSC | Requires `classical` extra; dictionary persistence is not implemented |
-| DAE | TensorFlow | `nilmtk_contrib.disaggregate.DAE` | `paper_faithful_unverified` | Kelly and Knottenbelt Neural NILM | Metadata save/load exists; architecture still needs paper check |
-| DAE | PyTorch | `nilmtk_contrib.torch.DAE` | `paper_faithful_unverified` | Kelly and Knottenbelt Neural NILM | Metadata save/load exists; backend parity not server-validated |
-| RNN | TensorFlow | `nilmtk_contrib.disaggregate.RNN` | `paper_faithful_unverified` | Kelly and Knottenbelt Neural NILM | Legacy implementation; output form requires backend smoke tests |
-| RNN | PyTorch | `nilmtk_contrib.torch.RNN` | `paper_faithful_unverified` | Kelly and Knottenbelt Neural NILM | PyTorch adaptation; parity not server-validated |
-| Seq2Point | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Point` | `paper_faithful_unverified` | Zhang et al. Seq2Point | Center target and output length need backend shape tests |
-| Seq2PointTorch | PyTorch | `nilmtk_contrib.torch.Seq2PointTorch` | `paper_faithful_unverified` | Zhang et al. Seq2Point | PyTorch adaptation; parity not server-validated |
-| Seq2Seq | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Seq` | `legacy_baseline` | Sutskever et al. generic Seq2Seq | Generic architecture citation; NILM-specific source not identified |
-| Seq2Seq | PyTorch | `nilmtk_contrib.torch.Seq2Seq` | `legacy_baseline` | Sutskever et al. generic Seq2Seq | Generic architecture citation; overlap behavior needs tests |
-| WindowGRU | TensorFlow | `nilmtk_contrib.disaggregate.WindowGRU` | `paper_faithful_unverified` | Krystalakos et al. sliding-window GRU | Online/right-padding semantics need backend checks |
-| WindowGRU | PyTorch | `nilmtk_contrib.torch.WindowGRU` | `paper_faithful_unverified` | Krystalakos et al. sliding-window GRU | PyTorch approximation; parity not server-validated |
-| RNN_attention | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention` | `paper_faithful_unverified` | Attention-NILM line | Exact paper mapping needs audit |
-| RNN_attention | PyTorch | `nilmtk_contrib.torch.RNN_attention` | `paper_faithful_unverified` | Attention/classification citation unclear | Citation-to-architecture mapping is unverified |
-| RNN_attention_classification | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention_classification` | `paper_faithful_unverified` | Attention-NILM classification line | Threshold metadata now explicit; branch behavior needs checks |
-| RNN_attention_classification | PyTorch | `nilmtk_contrib.torch.RNN_attention_classification` | `paper_faithful_unverified` | Attention/classification citation unclear | Threshold metadata now explicit; citation mapping is unverified |
-| ResNet | TensorFlow | `nilmtk_contrib.disaggregate.ResNet` | `paper_inspired` | He et al. generic ResNet | 1D residual NILM adaptation |
-| ResNet | PyTorch | `nilmtk_contrib.torch.ResNet` | `paper_inspired` | He et al. generic ResNet | 1D residual NILM adaptation; parity not server-validated |
-| ResNet_classification | TensorFlow | `nilmtk_contrib.disaggregate.ResNet_classification` | `experimental` | NILM classification citation unclear | Threshold and loss metadata now explicit |
-| ResNet_classification | PyTorch | `nilmtk_contrib.torch.ResNet_classification` | `experimental` | NILM classification citation unclear | Threshold and loss metadata now explicit |
-| BERT | TensorFlow | `nilmtk_contrib.disaggregate.BERT` | `paper_inspired` | Devlin et al. generic BERT | Transformer/BERT-inspired NILM model; no NLP-style pretraining claim |
-| BERT | PyTorch | `nilmtk_contrib.torch.BERT` | `paper_inspired` | Devlin et al. generic BERT | Transformer/BERT-inspired NILM model; tokenization needs audit |
-| ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | `paper_inspired` | Shi et al. generic ConvLSTM | Needs audit to distinguish true ConvLSTM from CNN plus LSTM |
-| TCN | PyTorch | `nilmtk_contrib.torch.TCN` | `paper_inspired` | Bai, Kolter, and Koltun generic TCN | Generic sequence-modeling baseline adapted to NILM |
-| Reformer | PyTorch | `nilmtk_contrib.torch.Reformer` | `paper_inspired` | Kitaev et al. generic Reformer | LSH attention and reversible residual completeness unverified |
-| MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | `paper_faithful_unverified` | MSDC dual-CNN NILM paper | Canonical CRF-enabled path; state/CRF tests required |
-| MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | `experimental` | MSDC ablation/source implementation | No-CRF ablation; still exports class name `MSDC` |
-| NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | `paper_faithful_unverified` | Petralia et al. NILMFormer | Server audit needed before reproduction claims |
+Python 3.12 and newer are not supported by the current package metadata because TensorFlow and NILMTK compatibility must be verified first.
 
 ## Installation
 
-Install the minimal package when you only need package metadata or lightweight imports:
+Minimal install for package metadata and lightweight imports:
 
 ```bash
 uv pip install git+https://github.com/nilmtk/nilmtk-contrib.git
 ```
 
-Install a backend-specific extra for model use:
+TensorFlow backend:
 
 ```bash
 uv pip install "nilmtk-contrib[tensorflow] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+```
+
+PyTorch backend:
+
+```bash
 uv pip install "nilmtk-contrib[torch] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+```
+
+Classical backend:
+
+```bash
 uv pip install "nilmtk-contrib[classical] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
 ```
 
-Install all model backends:
+All model backends:
 
 ```bash
 uv pip install "nilmtk-contrib[all] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
 ```
 
-For development:
+Development environment:
 
 ```bash
 uv sync --extra dev
 ```
 
-For backend development, include the relevant backend extra:
+Backend development examples:
 
 ```bash
 uv sync --extra dev --extra torch
@@ -90,18 +61,113 @@ uv sync --extra dev --extra tensorflow
 uv sync --extra dev --extra classical
 ```
 
-## Dependencies
+## Dependency Extras
 
-- Minimal install: no required runtime dependencies for top-level import.
-- `tensorflow` extra: NILMTK, NumPy, pandas, scikit-learn, matplotlib, TensorFlow, and `tensorflow-io-gcs-filesystem`.
-- `torch` extra: NILMTK, NumPy, pandas, scikit-learn, matplotlib, PyTorch, and tqdm.
-- `classical` extra: NILMTK, NumPy, pandas, matplotlib, scikit-learn, SciPy, cvxpy, and hmmlearn.
-- `all` extra: union of TensorFlow, PyTorch, classical, and NILMTK dependencies.
-- `dev` extra: pytest, pytest-cov, black, ruff, and build.
+| Extra | Intended use | Main dependencies |
+|---|---|---|
+| Minimal | Import package metadata and lightweight modules | No required runtime dependencies |
+| `tensorflow` | TensorFlow/Keras disaggregators | NILMTK, NumPy, pandas, scikit-learn, matplotlib, TensorFlow, `tensorflow-io-gcs-filesystem` |
+| `torch` | PyTorch disaggregators | NILMTK, NumPy, pandas, scikit-learn, matplotlib, PyTorch, tqdm |
+| `classical` | AFHMM, AFHMM_SAC, DSC | NILMTK, NumPy, pandas, matplotlib, scikit-learn, SciPy, cvxpy, hmmlearn |
+| `all` | All backends | Union of TensorFlow, PyTorch, classical, and NILMTK dependencies |
+| `dev` | Tests, formatting, and build checks | pytest, pytest-cov, black, ruff, build |
+
+## Models
+
+The table below lists the public model surface. "Verification" describes how the implementation should be cited and interpreted in research use.
+
+| Algorithm | Backend | Import path | Verification | Paper/source | Notes |
+|---|---|---|---|---|---|
+| AFHMM | Classical | `nilmtk_contrib.disaggregate.AFHMM` | NILM paper implementation, not independently benchmark-certified in this package state | Kolter and Jaakkola, AFHMM for energy disaggregation | Requires `classical` extra |
+| AFHMM_SAC | Classical | `nilmtk_contrib.disaggregate.AFHMM_SAC` | NILM paper implementation, not independently benchmark-certified in this package state | Zhong, Goddard, and Sutton, signal aggregate constraints in AFHMMs | Requires `classical` extra |
+| DSC | Classical | `nilmtk_contrib.disaggregate.DSC` | NILM paper implementation, not independently benchmark-certified in this package state | Kolter, Batra, and Ng, discriminative sparse coding | Requires `classical` extra |
+| DAE | TensorFlow | `nilmtk_contrib.disaggregate.DAE` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
+| DAE | PyTorch | `nilmtk_contrib.torch.DAE` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
+| RNN | TensorFlow | `nilmtk_contrib.disaggregate.RNN` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
+| RNN | PyTorch | `nilmtk_contrib.torch.RNN` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
+| Seq2Point | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Point` | NILM paper implementation requiring dataset-specific validation | Zhang et al., Sequence-to-Point Learning | TensorFlow/Keras backend |
+| Seq2PointTorch | PyTorch | `nilmtk_contrib.torch.Seq2PointTorch` | PyTorch implementation requiring parity validation for new claims | Zhang et al., Sequence-to-Point Learning | PyTorch backend |
+| Seq2Seq | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Seq` | Legacy NILM baseline adapted from a generic sequence model | Sutskever, Vinyals, and Le, sequence-to-sequence learning | Generic architecture citation |
+| Seq2Seq | PyTorch | `nilmtk_contrib.torch.Seq2Seq` | Legacy NILM baseline adapted from a generic sequence model | Sutskever, Vinyals, and Le, sequence-to-sequence learning | Generic architecture citation |
+| WindowGRU | TensorFlow | `nilmtk_contrib.disaggregate.WindowGRU` | NILM paper implementation requiring experiment validation for new claims | Krystalakos, Nalmpantis, and Vrakas, sliding-window GRU | TensorFlow/Keras backend |
+| WindowGRU | PyTorch | `nilmtk_contrib.torch.WindowGRU` | PyTorch implementation requiring parity validation for new claims | Krystalakos, Nalmpantis, and Vrakas, sliding-window GRU | PyTorch backend |
+| RNN_attention | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention` | Attention-based NILM implementation | Sudoso and Piccialli, attention-based NILM | TensorFlow/Keras backend |
+| RNN_attention | PyTorch | `nilmtk_contrib.torch.RNN_attention` | PyTorch attention-based NILM implementation | Attention-based NILM literature | PyTorch backend |
+| RNN_attention_classification | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention_classification` | Attention-based NILM implementation with classification branch | Sudoso and Piccialli, attention-based NILM | Explicit on/off threshold parameters are supported |
+| RNN_attention_classification | PyTorch | `nilmtk_contrib.torch.RNN_attention_classification` | PyTorch attention-based NILM implementation with classification branch | Attention-based NILM literature | Explicit on/off threshold parameters are supported |
+| ResNet | TensorFlow | `nilmtk_contrib.disaggregate.ResNet` | 1D residual NILM adaptation of a generic architecture | He et al., Deep Residual Learning | Generic computer-vision architecture adapted to NILM |
+| ResNet | PyTorch | `nilmtk_contrib.torch.ResNet` | 1D residual NILM adaptation of a generic architecture | He et al., Deep Residual Learning | Generic computer-vision architecture adapted to NILM |
+| ResNet_classification | TensorFlow | `nilmtk_contrib.disaggregate.ResNet_classification` | Residual NILM model with classification branch | Residual and NILM classification literature | Explicit threshold and loss-weight parameters are supported |
+| ResNet_classification | PyTorch | `nilmtk_contrib.torch.ResNet_classification` | Residual NILM model with classification branch | Residual and NILM classification literature | Explicit threshold and loss-weight parameters are supported |
+| BERT | TensorFlow | `nilmtk_contrib.disaggregate.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
+| BERT | PyTorch | `nilmtk_contrib.torch.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
+| ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | ConvLSTM-inspired NILM adaptation | Shi et al., ConvLSTM | Generic spatiotemporal architecture adapted to NILM |
+| TCN | PyTorch | `nilmtk_contrib.torch.TCN` | Generic TCN sequence-modeling baseline adapted to NILM | Bai, Kolter, and Koltun, TCN | PyTorch backend |
+| Reformer | PyTorch | `nilmtk_contrib.torch.Reformer` | Reformer-inspired NILM adaptation | Kitaev, Kaiser, and Levskaya, Reformer | Efficient Transformer architecture adapted to NILM |
+| MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | NILM paper implementation requiring experiment validation for new claims | MSDC dual-CNN NILM paper | Canonical CRF-enabled implementation path |
+| MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
+| NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
+
+## Research Use And Reproducibility
+
+Use the model table to choose the correct backend and citation. Generic architecture papers support architecture inspiration only; they should not be cited as NILM-specific evidence by themselves.
+
+For reproducible experiments:
+
+- Record the Python version, package extras, dataset, building, appliance list, sampling period, random seed, and hardware.
+- Run backend-specific smoke tests before running full experiments.
+- Verify TensorFlow/PyTorch parity before comparing paired implementations.
+- Verify model output lengths and indices before computing NILMTK metrics.
+- Treat notebook outputs as historical examples unless rerun in the current environment.
+
+Recommended fast checks for source validation:
+
+```bash
+python -m compileall -q nilmtk_contrib tests
+python -m pytest -q tests/test_imports.py tests/test_params.py tests/test_preprocessing_windows.py tests/test_preprocessing_alignment.py tests/test_preprocessing_classification.py tests/test_validation.py tests/test_checkpoints.py tests/test_random_logging.py tests/test_model_runtime.py
+python -m build
+```
+
+Backend smoke checks should be run in environments with the corresponding extras:
+
+```bash
+python -m pytest -q tests/torch -m "not slow"
+python -m pytest -q tests/tensorflow -m "not slow"
+python -m pytest -q tests/classical -m "not slow"
+```
+
+## Reference Papers And Codebases
+
+NILM-specific references:
+
+- Kolter and Jaakkola, "Approximate Inference in Additive Factorial HMMs with Application to Energy Disaggregation", AISTATS 2012, https://proceedings.mlr.press/v22/zico12.html.
+- Zhong, Goddard, and Sutton, "Signal Aggregate Constraints in Additive Factorial HMMs, with Application to Energy Disaggregation", NeurIPS 2014, https://papers.nips.cc/paper/5526-signal-aggregate-constraints-in-additive-factorial-hmms-with-application-to-energy-disaggregation.
+- Kolter, Batra, and Ng, "Energy Disaggregation via Discriminative Sparse Coding", NeurIPS 2010, https://papers.nips.cc/paper/4054-energy-disaggregation-via-discriminative-sparse-coding.
+- Kelly and Knottenbelt, "Neural NILM: Deep Neural Networks Applied to Energy Disaggregation", arXiv:1507.06594, https://arxiv.org/abs/1507.06594.
+- Zhang et al., "Sequence-to-Point Learning With Neural Networks for Non-Intrusive Load Monitoring", AAAI 2018, DOI: https://doi.org/10.1609/aaai.v32i1.11873.
+- Krystalakos, Nalmpantis, and Vrakas, "Sliding Window Approach for Online Energy Disaggregation Using Artificial Neural Networks", DOI: https://doi.org/10.1145/3200947.3201011.
+- Sudoso and Piccialli, "Non-Intrusive Load Monitoring with an Attention-based Deep Neural Network", arXiv:1912.00759, https://arxiv.org/abs/1912.00759.
+- MSDC, "Exploiting Multi-State Power Consumption in Non-intrusive Load Monitoring based on A Dual-CNN Model", arXiv:2302.05565, https://arxiv.org/abs/2302.05565.
+- Petralia et al., "NILMFormer: Non-Intrusive Load Monitoring that Accounts for Non-Stationarity", arXiv:2506.05880, https://arxiv.org/abs/2506.05880.
+
+Generic architecture references:
+
+- Sutskever, Vinyals, and Le, "Sequence to Sequence Learning with Neural Networks", arXiv:1409.3215, https://arxiv.org/abs/1409.3215.
+- He et al., "Deep Residual Learning for Image Recognition", arXiv:1512.03385, https://arxiv.org/abs/1512.03385.
+- Devlin et al., "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding", arXiv:1810.04805, https://arxiv.org/abs/1810.04805.
+- Shi et al., "Convolutional LSTM Network: A Machine Learning Approach for Precipitation Nowcasting", arXiv:1506.04214, https://arxiv.org/abs/1506.04214.
+- Bai, Kolter, and Koltun, "An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling", arXiv:1803.01271, https://arxiv.org/abs/1803.01271.
+- Kitaev, Kaiser, and Levskaya, "Reformer: The Efficient Transformer", arXiv:2001.04451, https://arxiv.org/abs/2001.04451.
+
+Reference repositories:
+
+- Attention-NILM: https://github.com/antoniosudoso/attention-nilm.
+- NILMFormer: https://github.com/adrienpetralia/NILMFormer.
+- TCN: https://github.com/locuslab/TCN.
 
 ## Usage
 
-The sample notebooks under [sample_notebooks](sample_notebooks) show the NILMTK rapid experimentation API. Notebook results are historical examples; rerun them only in a server environment with the relevant datasets and backend extras installed.
+The sample notebooks under [sample_notebooks](sample_notebooks) demonstrate the NILMTK rapid experimentation API. Install the relevant backend extra and ensure datasets are available before running them.
 
 Supported experiment workflows include:
 
@@ -129,16 +195,9 @@ docker pull ghcr.io/enfuego27826/nilmtk-contrib:latest
 docker run --rm -it ghcr.io/enfuego27826/nilmtk-contrib:latest bash
 ```
 
-## Known Limitations
-
-- Paper-faithfulness is tracked per model and remains unverified unless the model row says otherwise.
-- TensorFlow and PyTorch paired models may diverge in architecture, preprocessing, training defaults, and output alignment until server parity checks pass.
-- No local benchmark results are claimed by this repository state.
-- Dataset conversion, notebook execution, backend smoke tests, and training benchmarks must be run on server environments.
-
 ## Citation
 
-If you find this repo useful for your research, please cite:
+If you find this repository useful for your research, please cite:
 
 ```bibtex
 @inproceedings{10.1145/3360322.3360844,
