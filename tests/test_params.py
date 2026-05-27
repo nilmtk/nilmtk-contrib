@@ -4,6 +4,9 @@ from nilmtk_contrib.utils.params import (
     get_param,
     normalize_common_params,
     require_odd_sequence_length,
+    validate_non_negative_int,
+    validate_positive_int,
+    validate_positive_number,
 )
 
 
@@ -152,3 +155,16 @@ def test_require_odd_sequence_length_accepts_odd_values():
 def test_require_odd_sequence_length_rejects_even_values():
     with pytest.raises(ValueError, match="sequence_length must be odd"):
         require_odd_sequence_length(100)
+
+
+def test_model_specific_parameter_validators():
+    assert validate_positive_int("time_period", 720) == 720
+    assert validate_non_negative_int("iterations", 0) == 0
+    assert validate_positive_number("learning_rate", 1e-9) == 1e-9
+
+    with pytest.raises(ValueError, match="time_period"):
+        validate_positive_int("time_period", 0)
+    with pytest.raises(ValueError, match="iterations"):
+        validate_non_negative_int("iterations", -1)
+    with pytest.raises(ValueError, match="learning_rate"):
+        validate_positive_number("learning_rate", 0)
