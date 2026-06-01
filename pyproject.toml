@@ -8,7 +8,7 @@ allow-direct-references = true
 [project]
 name = "nilmtk-contrib"
 version = "0.1.2"
-description = "State-of-the-art algorithms for energy disaggregation using NILMTK’s Rapid Experimentation API"
+description = "NILMTK-compatible algorithms for energy disaggregation using NILMTK's Rapid Experimentation API"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.12"

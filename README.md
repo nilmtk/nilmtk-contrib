@@ -128,12 +128,11 @@ python -m pytest -q tests/test_imports.py tests/test_params.py tests/test_prepro
 python -m build
 ```
 
-Backend smoke checks should be run in environments with the corresponding extras:
+Backend smoke checks should be run in environments with the corresponding extras by importing the target model classes and running small dataset-specific training or prediction jobs before launching full experiments. For example:
 
 ```bash
-python -m pytest -q tests/torch -m "not slow"
-python -m pytest -q tests/tensorflow -m "not slow"
-python -m pytest -q tests/classical -m "not slow"
+uv sync --extra dev --extra torch
+python -m pytest -q
 ```
 
 ## Reference Papers And Codebases
