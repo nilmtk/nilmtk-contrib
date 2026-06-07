@@ -23,14 +23,23 @@ IGNORED_NAMES = {
 }
 
 
+def is_ignored_generated_file(path):
+    if path.name in IGNORED_NAMES:
+        return True
+    if path.name.startswith(".coverage."):
+        return True
+    if any(part.endswith(".egg-info") for part in path.parts):
+        return True
+    return False
+
+
 def repository_files(repo_root):
     return [
         path
         for path in repo_root.rglob("*")
         if (
             path.is_file()
-            and path.name not in IGNORED_NAMES
-            and not any(part.endswith(".egg-info") for part in path.parts)
+            and not is_ignored_generated_file(path)
             and not IGNORED_PARTS.intersection(path.parts)
         )
     ]
