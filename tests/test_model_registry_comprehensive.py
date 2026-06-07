@@ -91,3 +91,18 @@ def test_model_specs_cover_every_model_module_file(repo_root):
 
     covered = {spec.module_name for spec in ALL_MODEL_SPECS}
     assert covered == model_files
+
+
+def test_model_code_does_not_unpack_appliance_params_by_dict_order(repo_root):
+    model_dirs = [
+        repo_root / "nilmtk_contrib" / "disaggregate",
+        repo_root / "nilmtk_contrib" / "torch",
+    ]
+    offenders = []
+    for model_dir in model_dirs:
+        for path in model_dir.glob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            if "appliance_params" in source and ".values()" in source:
+                offenders.append(str(path.relative_to(repo_root)))
+
+    assert offenders == []

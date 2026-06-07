@@ -349,7 +349,8 @@ class DAE(Disaggregator):
                         p  = m(xb).cpu().numpy()
                         preds.append(p)
                 p_all = np.concatenate(preds).reshape(-1, self.sequence_length)
-                mean,std = self.appliance_params[name].values()
+                mean = self.appliance_params[name]["mean"]
+                std = self.appliance_params[name]["std"]
                 p_den = self.denormalize_output(p_all, mean, std).flatten()
                 p_den = np.clip(p_den, 0, None)
                 outd[name] = pd.Series(p_den)
