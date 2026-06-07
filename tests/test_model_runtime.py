@@ -1,6 +1,6 @@
 import pytest
 
-from nilmtk_contrib.utils.model import initialize_runtime
+from nilmtk_contrib.utils.model import checkpoint_path, initialize_runtime
 
 
 class RuntimeOnlyModel:
@@ -36,3 +36,10 @@ def test_initialize_runtime_preserves_real_persistence_methods():
 
     assert model.save_model() == "saved"
     assert model.load_model() == "loaded"
+
+
+def test_checkpoint_path_returns_string_for_keras_compatibility():
+    path = checkpoint_path(".h5")
+
+    assert isinstance(path, str)
+    assert path.endswith("checkpoint.h5")

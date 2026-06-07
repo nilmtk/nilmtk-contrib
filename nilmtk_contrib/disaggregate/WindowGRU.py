@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from nilmtk.disaggregate import Disaggregator
@@ -65,7 +66,7 @@ class WindowGRU(Disaggregator):
                     shuffle=True,
                     verbose=1 if self.verbose else 0,
             )
-            if split.metadata.validation_enabled and filepath.exists():
+            if split.metadata.validation_enabled and Path(filepath).exists():
                 model.load_weights(filepath)
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):

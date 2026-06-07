@@ -45,4 +45,4 @@ def legacy_print(logger):
 
 def checkpoint_path(suffix):
     """Return a temporary checkpoint path managed for the process lifetime."""
-    return managed_checkpoint_path(suffix)
+    return str(managed_checkpoint_path(suffix))

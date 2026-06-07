@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from nilmtk.disaggregate import Disaggregator
@@ -82,7 +83,7 @@ class Seq2Seq(Disaggregator):
                             callbacks=[checkpoint] if split.metadata.validation_enabled else [],
                             verbose=1 if self.verbose else 0,
                     )
-                    if split.metadata.validation_enabled and filepath.exists():
+                    if split.metadata.validation_enabled and Path(filepath).exists():
                         model.load_weights(filepath)
 
                     
