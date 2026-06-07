@@ -6,10 +6,20 @@ import tomllib
 
 IGNORED_PARTS = {
     ".git",
+    ".mypy_cache",
+    ".ipynb_checkpoints",
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
     "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+}
+
+IGNORED_NAMES = {
+    ".coverage",
+    "coverage.xml",
 }
 
 
@@ -17,7 +27,12 @@ def repository_files(repo_root):
     return [
         path
         for path in repo_root.rglob("*")
-        if path.is_file() and not IGNORED_PARTS.intersection(path.parts)
+        if (
+            path.is_file()
+            and path.name not in IGNORED_NAMES
+            and not any(part.endswith(".egg-info") for part in path.parts)
+            and not IGNORED_PARTS.intersection(path.parts)
+        )
     ]
 
 
