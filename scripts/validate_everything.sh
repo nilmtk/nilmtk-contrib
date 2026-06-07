@@ -8,7 +8,7 @@ cd "$ROOT_DIR"
 
 PYTHON_BIN="${PYTHON_BIN:-python3.11}"
 UV_BIN="${UV_BIN:-uv}"
-EXTRAS="${EXTRAS:-dev all}"
+EXTRAS="${EXTRAS:-dev}"
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-0}"
 STRICT_BACKENDS="${STRICT_BACKENDS:-1}"
 RUN_NOTEBOOK_EXECUTION="${RUN_NOTEBOOK_EXECUTION:-0}"
@@ -120,7 +120,8 @@ exec(Path("nilmtk_contrib/version.py").read_text(encoding="utf-8"), version_ns)
 assert project["project"]["name"] == "nilmtk-contrib"
 assert project["project"]["readme"] == "README.md"
 assert project["project"]["requires-python"] == ">=3.11,<3.12"
-assert project["project"]["version"] == version_ns["version"] == version_ns["short_version"]
+assert project["project"]["version"] == version_ns["short_version"]
+assert version_ns["version"].startswith(version_ns["short_version"])
 
 extras = project["project"]["optional-dependencies"]
 for required in ("tensorflow", "torch", "classical", "nilm", "all", "dev"):

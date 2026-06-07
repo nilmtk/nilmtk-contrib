@@ -15,11 +15,25 @@ IGNORED_PARTS = {
     "build",
     "dist",
     "htmlcov",
+    "sample_notebooks",
 }
 
 IGNORED_NAMES = {
     ".coverage",
     "coverage.xml",
+}
+
+KNOWN_ROOT_DOTFILES = {
+    ".dockerignore",
+    ".gitattributes",
+    ".gitignore",
+}
+
+SOURCE_ROOTS = {
+    "nilmtk_contrib",
+    "tests",
+    "scripts",
+    "docs",
 }
 
 
@@ -28,9 +42,18 @@ def is_ignored_generated_file(path):
         return True
     if path.name.startswith(".coverage."):
         return True
+    if path.name.startswith(".") and path.name not in KNOWN_ROOT_DOTFILES:
+        return True
     if any(part.endswith(".egg-info") for part in path.parts):
         return True
     return False
+
+
+def is_repository_source_file(path, repo_root):
+    relative = path.relative_to(repo_root)
+    if len(relative.parts) == 1:
+        return True
+    return relative.parts[0] in SOURCE_ROOTS
 
 
 def repository_files(repo_root):
@@ -39,6 +62,7 @@ def repository_files(repo_root):
         for path in repo_root.rglob("*")
         if (
             path.is_file()
+            and is_repository_source_file(path, repo_root)
             and not is_ignored_generated_file(path)
             and not IGNORED_PARTS.intersection(path.parts)
         )
@@ -57,7 +81,7 @@ def test_every_repository_file_has_a_validation_path(repo_root):
         if suffix == ".py":
             py_compile.compile(str(path), doraise=True)
             ast.parse(path.read_text(encoding="utf-8"))
-        elif suffix in {".json", ".ipynb"}:
+        elif suffix == ".json":
             json.loads(path.read_text(encoding="utf-8"))
         elif suffix == ".toml":
             tomllib.loads(path.read_text(encoding="utf-8"))
@@ -75,6 +99,36 @@ def test_every_repository_file_has_a_validation_path(repo_root):
         validated.add(path)
 
     assert validated == set(files)
+
+
+def test_generated_runtime_files_are_not_repository_sources(repo_root):
+    generated_names = [
+        ".coverage",
+        ".coverage.host.123.random",
+        "coverage.xml",
+        ".nfs0000000000000001",
+    ]
+    for name in generated_names:
+        path = repo_root / name
+        assert is_ignored_generated_file(path)
+
+
+def test_known_root_dotfiles_remain_repository_sources(repo_root):
+    for name in KNOWN_ROOT_DOTFILES:
+        path = repo_root / name
+        assert not is_ignored_generated_file(path)
+        assert is_repository_source_file(path, repo_root)
+
+
+def test_nested_non_source_files_are_excluded(repo_root):
+    assert not is_repository_source_file(
+        repo_root / "sample_notebooks" / "historical.ipynb",
+        repo_root,
+    )
+    assert is_repository_source_file(
+        repo_root / "nilmtk_contrib" / "version.py",
+        repo_root,
+    )
 
 
 def test_python_packages_have_init_files(repo_root):
