@@ -4,6 +4,7 @@ import importlib.util
 
 import pytest
 
+from nilmtk_contrib.metadata import MODEL_CATALOG, ModelCatalogEntry, model_catalog_by_module
 from nilmtk_contrib.utils.optional_imports import OptionalDependencyError
 
 from model_smoke_helpers import (
@@ -41,6 +42,25 @@ def test_msdc_without_crf_module_is_covered_even_though_not_exported():
     )
     assert spec.class_name == "MSDC"
     assert spec.module_name.endswith("msdc_without_crf")
+
+
+def test_public_model_catalog_matches_comprehensive_model_specs():
+    catalog_by_module = model_catalog_by_module()
+    specs_by_module = {spec.module_name: spec for spec in ALL_MODEL_SPECS}
+
+    assert set(catalog_by_module) == set(specs_by_module)
+    assert all(isinstance(entry, ModelCatalogEntry) for entry in MODEL_CATALOG)
+
+    for module_name, spec in specs_by_module.items():
+        entry = catalog_by_module[module_name]
+        assert entry.backend == spec.backend
+        assert entry.module_path == spec.module_name
+        assert entry.class_name == spec.class_name
+        if module_name == "nilmtk_contrib.torch.msdc_without_crf":
+            assert entry.exported_from is None
+            assert entry.name == "MSDC without CRF"
+        else:
+            assert entry.exported_from == spec.package
 
 
 @pytest.mark.parametrize(

@@ -115,9 +115,9 @@ def test_collect_dependencies_marks_missing_package_as_none():
 
 
 def test_collect_dependencies_reports_installed_package_version():
-    dependencies = collect_dependencies(["pip"])
+    dependencies = collect_dependencies(["pytest"])
 
-    assert dependencies["pip"]
+    assert dependencies["pytest"]
 
 
 def test_torch_state_wrappers_save_and_load_state_dict(monkeypatch, tmp_path):
