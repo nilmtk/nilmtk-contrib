@@ -447,6 +447,8 @@ class ResNet_classification(Disaggregator):
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std,'min':app_min,'max':app_max}})
 
-    
+    def classification_output_plot(self, prediction_classification, appliance):
+        """Optional classification-output plotting hook."""
+        pass
     
 

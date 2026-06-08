@@ -1,3 +1,4 @@
+import ast
 import importlib
 import importlib.util
 
@@ -104,5 +105,107 @@ def test_model_code_does_not_unpack_appliance_params_by_dict_order(repo_root):
             source = path.read_text(encoding="utf-8")
             if "appliance_params" in source and ".values()" in source:
                 offenders.append(str(path.relative_to(repo_root)))
+
+    assert offenders == []
+
+
+def test_classification_plot_hook_is_defined_when_called(repo_root):
+    offenders = []
+    for model_dir in (
+        repo_root / "nilmtk_contrib" / "disaggregate",
+        repo_root / "nilmtk_contrib" / "torch",
+    ):
+        for path in model_dir.glob("*classification.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for class_node in [node for node in tree.body if isinstance(node, ast.ClassDef)]:
+                methods = {
+                    node.name
+                    for node in class_node.body
+                    if isinstance(node, ast.FunctionDef)
+                }
+                calls_plot_hook = any(
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "classification_output_plot"
+                    for node in ast.walk(class_node)
+                )
+                if calls_plot_hook and "classification_output_plot" not in methods:
+                    offenders.append(f"{path.name}:{class_node.name}")
+
+    assert offenders == []
+
+
+def _class_method_calls(class_node):
+    nested_classes = {
+        nested
+        for nested in ast.walk(class_node)
+        if isinstance(nested, ast.ClassDef) and nested is not class_node
+    }
+    calls = set()
+    for node in ast.walk(class_node):
+        if node in nested_classes:
+            continue
+        if any(parent in nested_classes for parent in getattr(node, "_parents", ())):
+            continue
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+        ):
+            calls.add(node.func.attr)
+    return calls
+
+
+def _attach_ast_parents(tree):
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            child._parents = (*getattr(parent, "_parents", ()), parent)
+
+
+def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root):
+    known_runtime_methods = {
+        "apply",
+        "load_model",
+        "modules",
+        "named_parameters",
+        "save_model",
+    }
+    offenders = []
+    for model_dir in (
+        repo_root / "nilmtk_contrib" / "disaggregate",
+        repo_root / "nilmtk_contrib" / "torch",
+    ):
+        for path in model_dir.glob("*.py"):
+            if path.name == "__init__.py":
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            _attach_ast_parents(tree)
+            for class_node in [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
+                methods = {
+                    node.name
+                    for node in class_node.body
+                    if isinstance(node, ast.FunctionDef)
+                }
+                assigned_attrs = {
+                    target.attr
+                    for node in ast.walk(class_node)
+                    if isinstance(node, ast.Assign)
+                    for target in node.targets
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                    )
+                }
+                missing = sorted(
+                    call
+                    for call in _class_method_calls(class_node)
+                    if call not in methods
+                    and call not in assigned_attrs
+                    and call not in known_runtime_methods
+                )
+                if missing:
+                    offenders.append(f"{path.name}:{class_node.name}:{missing}")
 
     assert offenders == []
