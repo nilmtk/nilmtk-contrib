@@ -55,7 +55,7 @@ class DSC(Disaggregator):
 
         if app_name not in self.dictionaries:
             _log_print("Training First dictionary for ",app_name)
-            model = MiniBatchDictionaryLearning(n_components=self.n_components,positive_code=True,positive_dict=True,transform_algorithm='lasso_lars',alpha=self.sparsity_coef)
+            model = MiniBatchDictionaryLearning(n_components=self.n_components,positive_code=True,positive_dict=True,fit_algorithm='cd',transform_algorithm='lasso_cd',alpha=self.sparsity_coef)
         
         else:
             _log_print("Re-training dictionary for ",app_name)
@@ -93,9 +93,9 @@ class DSC(Disaggregator):
 
             time.time()
             # Finding activations for the given bases
-            model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
+            model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_cd',transform_alpha=self.sparsity_coef)
             train_predicted_a = model.transform(train_power.T).T
-            model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
+            model = SparseCoder(dictionary=predicted_b.T,positive_code=True,transform_algorithm='lasso_cd',transform_alpha=self.sparsity_coef)
             val_predicted_a = model.transform(v_power.T).T        
             err = np.mean(np.abs(val_predicted_a - v_optimal_a))
 
@@ -170,7 +170,7 @@ class DSC(Disaggregator):
             _log_print("Optimal Errors")
             self.print_appliance_wise_errors(concatenated_activations, concatenated_bases)
             _log_print("--"*15)
-            model = SparseCoder(dictionary=concatenated_bases.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
+            model = SparseCoder(dictionary=concatenated_bases.T,positive_code=True,transform_algorithm='lasso_cd',transform_alpha=self.sparsity_coef)
             predicted_activations = model.transform(train_main.T).T
             _log_print('\n\n')
             _log_print("--"*15)
@@ -179,7 +179,7 @@ class DSC(Disaggregator):
             _log_print("--"*15)
             _log_print('\n\n')
             optimal_b = self.discriminative_training(concatenated_activations,concatenated_bases)
-            model = SparseCoder(dictionary=optimal_b.T,positive_code=True,transform_algorithm='lasso_lars',transform_alpha=self.sparsity_coef)
+            model = SparseCoder(dictionary=optimal_b.T,positive_code=True,transform_algorithm='lasso_cd',transform_alpha=self.sparsity_coef)
             self.disggregation_model = model
             predicted_activations = model.transform(train_main.T).T
             _log_print("--"*15)
@@ -227,4 +227,3 @@ class DSC(Disaggregator):
             test_predictions.append(results)
 
         return test_predictions
-

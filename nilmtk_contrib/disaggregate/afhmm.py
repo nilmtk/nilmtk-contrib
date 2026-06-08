@@ -174,10 +174,10 @@ class AFHMM(Disaggregator):
 
                     
                     
-                    total_observed_reading = np.zeros((test_mains.shape))
+                    total_observed_reading = 0
                     # TOtal observed reading equals the sum of each appliance
                     for appliance_id in range(self.num_appliances):
-                                total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
+                                total_observed_reading = total_observed_reading + cvx_state_vectors[appliance_id]@means_vector[appliance_id]
 
                     # Loss function to be minimized
                     
@@ -258,6 +258,5 @@ class AFHMM(Disaggregator):
             predictions_lst.append(prediction)
             
         return predictions_lst
-
 
 

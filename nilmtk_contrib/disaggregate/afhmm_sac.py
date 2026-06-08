@@ -241,10 +241,10 @@ class AFHMM_SAC(Disaggregator):
 
                     # Second order cone constraints
                     
-                    total_observed_reading = np.zeros((test_mains.shape))
+                    total_observed_reading = 0
                         #_log_print(len(cvx_state_vectors))
                     for appliance_id in range(self.num_appliances):
-                                total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
+                                total_observed_reading = total_observed_reading + cvx_state_vectors[appliance_id]@means_vector[appliance_id]
                     flag=1
 
                     
