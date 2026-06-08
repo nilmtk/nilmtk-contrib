@@ -1,6 +1,11 @@
 from pathlib import Path
+import sys
 
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def pytest_addoption(parser):
@@ -43,11 +48,17 @@ def pytest_addoption(parser):
         default="fridge",
         help="Appliance name used by optional real-dataset smoke tests.",
     )
+    group.addoption(
+        "--run-gpu-tests",
+        action="store_true",
+        default=False,
+        help="Run optional GPU availability and backend placement tests.",
+    )
 
 
 @pytest.fixture(scope="session")
 def repo_root():
-    return Path(__file__).resolve().parents[1]
+    return REPO_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -61,3 +72,8 @@ def model_smoke_config(pytestconfig):
         "real_dataset_building": pytestconfig.getoption("--real-dataset-building"),
         "real_dataset_appliance": pytestconfig.getoption("--real-dataset-appliance"),
     }
+
+
+@pytest.fixture(scope="session")
+def gpu_tests_enabled(pytestconfig):
+    return pytestconfig.getoption("--run-gpu-tests")

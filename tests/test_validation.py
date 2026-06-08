@@ -160,6 +160,15 @@ def test_split_rejects_length_mismatch():
         raise AssertionError("Expected ValueError")
 
 
+def test_split_rejects_unsized_inputs():
+    try:
+        train_validation_split(1, 1)
+    except ValueError as exc:
+        assert "sized collections" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_safe_train_test_split_guarantees_validation_when_possible():
     train_x, val_x, train_y, val_y = safe_train_test_split(
         np.arange(3),
@@ -179,3 +188,34 @@ def test_safe_train_test_split_handles_single_sample():
 
     assert train_x.tolist() == [1]
     assert val_x.size == 0
+
+
+def test_safe_train_test_split_supports_unshuffled_integer_test_size():
+    train_x, val_x, train_y, val_y = safe_train_test_split(
+        ["a", "b", "c", "d"],
+        [1, 2, 3, 4],
+        test_size=2,
+        shuffle=False,
+    )
+
+    assert train_x == ["a", "b"]
+    assert val_x == ["c", "d"]
+    assert train_y == [1, 2]
+    assert val_y == [3, 4]
+
+
+def test_safe_train_test_split_rejects_missing_arrays_and_length_mismatch():
+    for args in [(), (np.arange(2), np.arange(3))]:
+        try:
+            safe_train_test_split(*args)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Expected ValueError for {args}")
+
+
+def test_safe_train_test_split_preserves_tuple_type():
+    train_x, val_x = safe_train_test_split(("a", "b", "c"), test_size=1, shuffle=False)
+
+    assert train_x == ("a", "b")
+    assert val_x == ("c",)

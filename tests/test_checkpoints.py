@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 
@@ -7,8 +8,12 @@ from nilmtk_contrib.utils.checkpoints import (
     build_metadata,
     collect_dependencies,
     load_metadata,
+    load_keras_weights,
+    load_torch_state,
     managed_checkpoint_path,
+    save_keras_weights,
     save_metadata,
+    save_torch_state,
     temporary_checkpoint,
     unsupported_persistence,
 )
@@ -107,6 +112,81 @@ def test_collect_dependencies_marks_missing_package_as_none():
     dependencies = collect_dependencies(["definitely-missing-nilmtk-contrib-package"])
 
     assert dependencies == {"definitely-missing-nilmtk-contrib-package": None}
+
+
+def test_collect_dependencies_reports_installed_package_version():
+    dependencies = collect_dependencies(["pip"])
+
+    assert dependencies["pip"]
+
+
+def test_torch_state_wrappers_save_and_load_state_dict(monkeypatch, tmp_path):
+    saved = {}
+    load_calls = []
+
+    class FakeTorch:
+        @staticmethod
+        def save(state, path):
+            saved[str(path)] = state
+
+        @staticmethod
+        def load(path, map_location=None, weights_only=True):
+            load_calls.append(
+                {
+                    "path": str(path),
+                    "map_location": map_location,
+                    "weights_only": weights_only,
+                }
+            )
+            return saved[str(path)]
+
+    class FakeModel:
+        def __init__(self):
+            self.loaded = None
+
+        def state_dict(self):
+            return {"weight": 42}
+
+        def load_state_dict(self, state):
+            self.loaded = state
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch)
+    path = tmp_path / "model.pt"
+    model = FakeModel()
+
+    save_torch_state(model, path)
+    loaded_model = load_torch_state(model, path, device="cpu", weights_only=False)
+
+    assert saved[str(path)] == {"weight": 42}
+    assert loaded_model is model
+    assert model.loaded == {"weight": 42}
+    assert load_calls == [
+        {
+            "path": str(path),
+            "map_location": "cpu",
+            "weights_only": False,
+        }
+    ]
+
+
+def test_keras_weight_wrappers_delegate_to_model_methods(tmp_path):
+    calls = []
+
+    class FakeKerasModel:
+        def save_weights(self, path):
+            calls.append(("save", path))
+
+        def load_weights(self, path):
+            calls.append(("load", path))
+
+    model = FakeKerasModel()
+    path = tmp_path / "model.weights.h5"
+
+    save_keras_weights(model, path)
+    loaded_model = load_keras_weights(model, path)
+
+    assert loaded_model is model
+    assert calls == [("save", path), ("load", path)]
 
 
 def test_unsupported_persistence_raises_with_model_name():

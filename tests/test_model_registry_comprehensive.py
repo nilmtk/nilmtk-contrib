@@ -60,6 +60,7 @@ def test_model_class_access_succeeds_or_reports_optional_dependency(spec):
             module = importlib.import_module(spec.module_name)
             cls = getattr(module, spec.class_name)
         else:
+            package.__dict__.pop(spec.class_name, None)
             cls = getattr(package, spec.class_name)
     except OptionalDependencyError as exc:
         message = str(exc)
@@ -105,6 +106,65 @@ def test_model_code_does_not_unpack_appliance_params_by_dict_order(repo_root):
             source = path.read_text(encoding="utf-8")
             if "appliance_params" in source and ".values()" in source:
                 offenders.append(str(path.relative_to(repo_root)))
+
+    assert offenders == []
+
+
+def test_model_constructors_accept_params_argument(repo_root):
+    offenders = []
+    for model_dir in (
+        repo_root / "nilmtk_contrib" / "disaggregate",
+        repo_root / "nilmtk_contrib" / "torch",
+    ):
+        for path in model_dir.glob("*.py"):
+            if path.name in {"__init__.py", "preprocessing.py"}:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            module_name = ".".join(path.relative_to(repo_root).with_suffix("").parts)
+            expected_class_names = [
+                spec.class_name
+                for spec in ALL_MODEL_SPECS
+                if spec.module_name == module_name
+            ]
+            for class_node in [
+                node
+                for node in tree.body
+                if isinstance(node, ast.ClassDef) and node.name in expected_class_names
+            ]:
+                init_methods = [
+                    node
+                    for node in class_node.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+                ]
+                if not init_methods:
+                    offenders.append(f"{path.name}:{class_node.name}:missing __init__")
+                    continue
+                args = [arg.arg for arg in init_methods[0].args.args]
+                if args[:2] != ["self", "params"]:
+                    offenders.append(f"{path.name}:{class_node.name}:{args}")
+
+    assert offenders == []
+
+
+def test_model_modules_define_custom_error_classes_that_they_raise(repo_root):
+    offenders = []
+    for spec in ALL_MODEL_SPECS:
+        if spec.backend == "classical":
+            continue
+        module_path = repo_root.joinpath(*spec.module_name.split(".")).with_suffix(".py")
+        source = module_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(module_path))
+        class_names = {
+            node.name for node in tree.body if isinstance(node, ast.ClassDef)
+        }
+        raised_errors = {
+            error_name
+            for error_name in {"SequenceLengthError", "ApplianceNotFoundError"}
+            if f"raise {error_name}" in source or f"raise ({error_name})" in source
+        }
+        missing = raised_errors - class_names
+        if missing:
+            offenders.append(f"{module_path.name}:{sorted(missing)}")
 
     assert offenders == []
 

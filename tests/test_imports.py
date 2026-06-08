@@ -2,9 +2,13 @@ import importlib
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
+import nilmtk_contrib.disaggregate as disaggregate_exports
+import nilmtk_contrib.torch as torch_exports
+import nilmtk_contrib.utils.optional_imports as optional_imports
 from nilmtk_contrib.utils.optional_imports import OptionalDependencyError, require_optional
 
 
@@ -55,6 +59,24 @@ def test_require_optional_error_message():
     )
 
 
+def test_require_optional_returns_imported_module():
+    module = require_optional("json", "dev", "Import test")
+
+    assert module is json
+
+
+def test_require_optional_reraises_nested_module_not_found(monkeypatch):
+    def fake_import_module(package_name):
+        raise ModuleNotFoundError("missing nested", name="nested_dependency")
+
+    monkeypatch.setattr(optional_imports, "import_module", fake_import_module)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        require_optional("outer_package", "dev", "Nested import test")
+
+    assert exc_info.value.name == "nested_dependency"
+
+
 @pytest.mark.parametrize(
     ("package_name", "class_name"),
     [
@@ -77,3 +99,41 @@ def test_backend_exports_succeed_or_raise_optional_dependency_message(
         assert "Install nilmtk-contrib[" in message
     except ImportError as exc:
         pytest.fail(f"Unexpected non-optional import failure: {exc}")
+
+
+def test_lazy_exports_reject_unknown_attributes():
+    with pytest.raises(AttributeError, match="NoSuchModel"):
+        getattr(disaggregate_exports, "NoSuchModel")
+
+    with pytest.raises(AttributeError, match="NoSuchModel"):
+        getattr(torch_exports, "NoSuchModel")
+
+
+def test_disaggregate_disaggregator_export_reports_missing_nilmtk(monkeypatch):
+    def fake_import_module(module_name):
+        assert module_name == "nilmtk.disaggregate"
+        raise ModuleNotFoundError("missing nilmtk", name="nilmtk")
+
+    disaggregate_exports.__dict__.pop("Disaggregator", None)
+    monkeypatch.setattr(disaggregate_exports, "import_module", fake_import_module)
+
+    with pytest.raises(OptionalDependencyError) as exc_info:
+        disaggregate_exports.__getattr__("Disaggregator")
+
+    assert str(exc_info.value) == (
+        "Disaggregator requires 'nilmtk'. Install nilmtk-contrib[nilm]."
+    )
+
+
+def test_disaggregate_disaggregator_export_caches_loaded_value(monkeypatch):
+    sentinel = object()
+
+    def fake_import_module(module_name):
+        assert module_name == "nilmtk.disaggregate"
+        return SimpleNamespace(Disaggregator=sentinel)
+
+    disaggregate_exports.__dict__.pop("Disaggregator", None)
+    monkeypatch.setattr(disaggregate_exports, "import_module", fake_import_module)
+
+    assert disaggregate_exports.__getattr__("Disaggregator") is sentinel
+    assert disaggregate_exports.Disaggregator is sentinel

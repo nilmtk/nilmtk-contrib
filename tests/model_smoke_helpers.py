@@ -93,7 +93,7 @@ def smoke_params(spec, epochs):
     return {
         "sequence_length": sequence_length,
         "n_epochs": epochs,
-        "batch_size": 2,
+        "batch_size": 32,
         "mains_mean": 140.0,
         "mains_std": 80.0,
         "device": "cpu",
@@ -132,20 +132,36 @@ def load_real_dataset_chunks(path, building, appliance, sequence_length, max_sam
         pytest.skip(f"real dataset path does not exist: {dataset_path}")
 
     data_set = nilmtk.DataSet(str(dataset_path))
-    elec = data_set.buildings[building].elec
-    mains = elec.mains().power_series_all_data().dropna()
-    submeter = elec[appliance].power_series_all_data().dropna()
-    joined = pd.concat([mains, submeter], axis=1).dropna().iloc[:max_samples]
-    if len(joined) < sequence_length:
-        pytest.skip(
-            f"real dataset has {len(joined)} aligned samples; "
-            f"need at least {sequence_length}"
-        )
+    try:
+        elec = data_set.buildings[building].elec
+        mains = elec.mains().power_series_all_data().dropna()
+        appliance_meter = None
+        for meter in elec.submeters().meters:
+            for meter_appliance in getattr(meter, "appliances", []):
+                if meter_appliance.identifier.type == appliance:
+                    appliance_meter = meter
+                    break
+            if appliance_meter is not None:
+                break
+        if appliance_meter is None:
+            pytest.skip(f"appliance {appliance!r} not found in building {building}")
 
-    windows = math.ceil(len(joined) / sequence_length)
-    target_length = windows * sequence_length
-    joined = joined.iloc[:target_length]
-    joined.columns = ["mains", appliance]
-    mains_df = pd.DataFrame(joined["mains"].to_numpy(), index=joined.index, columns=["power"])
-    appliance_df = pd.DataFrame(joined[appliance].to_numpy(), index=joined.index, columns=["power"])
-    return [mains_df], [(appliance, [appliance_df])]
+        submeter = appliance_meter.power_series_all_data().dropna()
+        joined = pd.concat([mains, submeter], axis=1).dropna().iloc[:max_samples]
+        if len(joined) < sequence_length:
+            pytest.skip(
+                f"real dataset has {len(joined)} aligned samples; "
+                f"need at least {sequence_length}"
+            )
+
+        windows = math.ceil(len(joined) / sequence_length)
+        target_length = windows * sequence_length
+        joined = joined.iloc[:target_length]
+        joined.columns = ["mains", appliance]
+        mains_df = pd.DataFrame(joined["mains"].to_numpy(), index=joined.index, columns=["power"])
+        appliance_df = pd.DataFrame(joined[appliance].to_numpy(), index=joined.index, columns=["power"])
+        return [mains_df], [(appliance, [appliance_df])]
+    finally:
+        store = getattr(data_set, "store", None)
+        if store is not None:
+            store.close()
