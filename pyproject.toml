@@ -31,7 +31,7 @@ dependencies = []
 [project.optional-dependencies]
 tensorflow = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",
   "matplotlib",
@@ -40,7 +40,7 @@ tensorflow = [
 ]
 torch = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",
   "matplotlib",
@@ -49,12 +49,12 @@ torch = [
 ]
 classical = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "matplotlib",
   "scikit-learn",
   "scipy",
-  "cvxpy>=1.0.0",
+  "cvxpy>=1.0.0,<1.8.0",
   "hmmlearn"
 ]
 nilm = [
@@ -62,7 +62,7 @@ nilm = [
 ]
 all = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",
   "scipy",
@@ -71,11 +71,11 @@ all = [
   "tensorflow-io-gcs-filesystem==0.31.0",
   "torch>=2.0,<2.7",
   "tqdm>=4.66",
-  "cvxpy>=1.0.0",
+  "cvxpy>=1.0.0,<1.8.0",
   "hmmlearn"
 ]
 dev = [
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
@@ -89,7 +89,7 @@ path = "nilmtk_contrib/version.py"
 
 [dependency-groups]
 dev = [
-  "numpy",
+  "numpy>=1.26.0,<2",
   "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
