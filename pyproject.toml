@@ -44,7 +44,7 @@ torch = [
   "pandas",
   "scikit-learn",
   "matplotlib",
-  "torch>=2.0,<2.7",
+  "torch>=2.12.0,<2.13",
   "tqdm>=4.66"
 ]
 classical = [
@@ -69,7 +69,7 @@ all = [
   "matplotlib",
   "tensorflow>=2.12.0,<2.16.0",
   "tensorflow-io-gcs-filesystem==0.31.0",
-  "torch>=2.0,<2.7",
+  "torch>=2.12.0,<2.13",
   "tqdm>=4.66",
   "cvxpy>=1.0.0,<1.8.0",
   "hmmlearn"
