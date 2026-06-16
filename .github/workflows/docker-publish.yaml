@@ -1,0 +1,102 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      install_extra:
+        description: Backend extra to build and publish
+        type: choice
+        default: all
+        options:
+          - all
+          - torch
+          - tensorflow
+          - classical
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/nilmtk-contrib
+
+jobs:
+  resolve-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      extras: ${{ steps.extras.outputs.extras }}
+    steps:
+      - name: Resolve build matrix
+        id: extras
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          INPUT_EXTRA: ${{ github.event.inputs.install_extra }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            extras="[\"${INPUT_EXTRA}\"]"
+          elif [[ "$GIT_REF" == refs/tags/v* ]]; then
+            extras='["all","torch","tensorflow","classical"]'
+          else
+            extras='["all"]'
+          fi
+          echo "extras=$extras" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: resolve-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        install_extra: ${{ fromJson(needs.resolve-matrix.outputs.extras) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && matrix.install_extra == 'all' }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.install_extra == 'all' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.install_extra == 'all' }}
+            type=semver,pattern={{version}},suffix=-${{ matrix.install_extra }},enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.install_extra != 'all' }}
+            type=raw,value=${{ matrix.install_extra }},enable=${{ matrix.install_extra != 'all' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+            type=sha,prefix=,suffix=-${{ matrix.install_extra }},enable=${{ matrix.install_extra != 'all' }}
+            type=sha,prefix=,enable=${{ matrix.install_extra == 'all' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            INSTALL_EXTRA=${{ matrix.install_extra }}
+            INSTALL_DEV=false
+          cache-from: type=gha,scope=${{ matrix.install_extra }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.install_extra }}
+          provenance: mode=max
+          sbom: true
