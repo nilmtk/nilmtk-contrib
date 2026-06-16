@@ -1,14 +1,58 @@
-# NILMBench2026
+# NILMTK-Contrib with NILMBench2026
 
-NILMBench2026 is a large-scale, reproducible benchmark for non-intrusive load monitoring (NILM) and energy disaggregation. It evaluates sixteen models across regression accuracy, event detection, computational efficiency, and generalization on public NILM datasets at both 1-minute and 15-minute resolutions.
+This is the `nilmtk-contrib` repository, extended with the NILMBench2026 benchmark contribution.
 
-The benchmark is implemented through the modernized `nilmtk-contrib` package, which provides NILMTK-compatible disaggregation models and experiment workflows. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
+The repository has two connected parts:
+
+- **NILMTK-Contrib package work**: the reusable `nilmtk_contrib` Python package with NILMTK-compatible disaggregation models, preprocessing utilities, experiment workflows, optional backend extras, tests, and Docker packaging. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
+- **NILMBench2026 contribution**: the benchmark and reproducibility work built on top of `nilmtk-contrib`. NILMBench2026 evaluates sixteen NILM models across regression accuracy, event detection, computational efficiency, and generalization on public NILM datasets at both 1-minute and 15-minute resolutions.
+
+NILMBench2026 uses the modernized `nilmtk-contrib` package in this repository as its implementation base. The benchmark contribution also documents the modernization and extension of the NILMTK ecosystem, including PyTorch model implementations, containerized workflows, and reproducible experiment setup.
 
 This repository is based on the original [`nilmtk-contrib`](https://github.com/nilmtk/nilmtk-contrib) repository and extends it for the NILMBench2026 benchmark.
 
-The repository paper is:
+The repository is associated with two papers:
 
 Kuloor, Singh, Dhru, and Batra, "NILMBench2026: A Benchmark for Energy Disaggregation", BuildSys 2026, DOI: https://doi.org/10.1145/3744256.3812587.
+
+Batra, Kukunuri, Pandey, Malakar, Kumar, Krystalakos, Zhong, Meira, and Parson, "Towards Reproducible State-of-the-Art Energy Disaggregation", BuildSys 2019, DOI: https://doi.org/10.1145/3360322.3360844.
+
+## Citation
+
+If you find our research useful, please consider citing:
+
+```bibtex
+@inproceedings{kuloor2026nilmbench,
+  title     = {NILMBench2026: A Benchmark for Energy Disaggregation},
+  author    = {Kuloor, Aayush and Singh, Anurag and Dhru, Harsh and Batra, Nipun},
+  booktitle = {Proceedings of the 13th ACM International Conference on Systems for
+               Energy-Efficient Buildings, Cities, and Transportation (BuildSys '26)},
+  year      = {2026},
+  doi       = {10.1145/3744256.3812587},
+  publisher = {ACM},
+  address   = {Banff, AB, Canada}
+}
+```
+
+
+```bibtex
+@inproceedings{10.1145/3360322.3360844,
+  author = {Batra, Nipun and Kukunuri, Rithwik and Pandey, Ayush and Malakar, Raktim and Kumar, Rajat and Krystalakos, Odysseas and Zhong, Mingjun and Meira, Paulo and Parson, Oliver},
+  title = {Towards Reproducible State-of-the-Art Energy Disaggregation},
+  year = {2019},
+  isbn = {9781450370059},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3360322.3360844},
+  doi = {10.1145/3360322.3360844},
+  booktitle = {Proceedings of the 6th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation},
+  pages = {193--202},
+  numpages = {10},
+  keywords = {smart meters, energy disaggregation, non-intrusive load monitoring},
+  location = {New York, NY, USA},
+  series = {BuildSys '19}
+}
+```
 
 ## Runtime Requirements
 
@@ -84,7 +128,7 @@ uv run python -m pytest -q
 
 ## Docker
 
-The repository ships a reproducible container image based on Python 3.11 (Debian Bookworm). The image installs `nilmtk-contrib` with `uv`, pins the Python runtime, and bundles the system libraries needed for NumPy, SciPy, scikit-learn, TensorFlow, and PyTorch.
+The repository ships a reproducible container image based on Python 3.11. The image installs `nilmtk-contrib` with `uv`, pins the Python runtime, and bundles the system libraries needed for NumPy, SciPy, scikit-learn, TensorFlow, and PyTorch.
 
 ### Prerequisites
 
@@ -296,40 +340,3 @@ Supported experiment workflows include:
 - Training and testing with artificial aggregate.
 - Training and testing with different sampling frequencies.
 
-## Citation
-
-If you use NILMBench2026 or its benchmark results in your research, please cite:
-
-```bibtex
-@inproceedings{kuloor2026nilmbench,
-  title     = {NILMBench2026: A Benchmark for Energy Disaggregation},
-  author    = {Kuloor, Aayush and Singh, Anurag and Dhru, Harsh and Batra, Nipun},
-  booktitle = {Proceedings of the 13th ACM International Conference on Systems for
-               Energy-Efficient Buildings, Cities, and Transportation (BuildSys '26)},
-  year      = {2026},
-  doi       = {10.1145/3744256.3812587},
-  publisher = {ACM},
-  address   = {Banff, AB, Canada}
-}
-```
-
-If you use `nilmtk-contrib`, please also cite the NILMTK-Contrib paper:
-
-```bibtex
-@inproceedings{10.1145/3360322.3360844,
-  author = {Batra, Nipun and Kukunuri, Rithwik and Pandey, Ayush and Malakar, Raktim and Kumar, Rajat and Krystalakos, Odysseas and Zhong, Mingjun and Meira, Paulo and Parson, Oliver},
-  title = {Towards Reproducible State-of-the-Art Energy Disaggregation},
-  year = {2019},
-  isbn = {9781450370059},
-  publisher = {Association for Computing Machinery},
-  address = {New York, NY, USA},
-  url = {https://doi.org/10.1145/3360322.3360844},
-  doi = {10.1145/3360322.3360844},
-  booktitle = {Proceedings of the 6th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation},
-  pages = {193--202},
-  numpages = {10},
-  keywords = {smart meters, energy disaggregation, non-intrusive load monitoring},
-  location = {New York, NY, USA},
-  series = {BuildSys '19}
-}
-```
