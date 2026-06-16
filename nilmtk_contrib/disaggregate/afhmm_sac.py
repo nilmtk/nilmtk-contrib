@@ -7,10 +7,17 @@ import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
+from nilmtk_contrib.utils.params import validate_positive_int
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class AFHMM_SAC(Disaggregator):
     """1 dimensional baseline Mean algorithm."""
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy"))
+        super().__init__()
         self.model = []
         self.MIN_CHUNK_LENGTH = 100
         self.MODEL_NAME = 'AFHMM_SAC'
@@ -22,11 +29,35 @@ class AFHMM_SAC(Disaggregator):
         self.signal_aggregates = OrderedDict()
         self.time_period = params.get('time_period', self.time_period)
         self.default_num_states = params.get('default_num_states',2)
+        self.time_period = validate_positive_int("time_period", self.time_period)
+        self.default_num_states = validate_positive_int("default_num_states", self.default_num_states)
+        if self.default_num_states < 2:
+            raise ValueError("default_num_states must be at least 2.")
+        self.max_workers = params.get("max_workers")
+        if self.max_workers is not None:
+            self.max_workers = validate_positive_int("max_workers", self.max_workers)
+        self.solver = params.get("solver", cvx.SCS)
+        self.max_iters = params.get("max_iters")
+        self.eps = params.get("eps")
+        self.warm_start = params.get("warm_start", True)
+        self.sac_strength = params.get("sac_strength", 1.0)
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training = False
         if self.load_model_path:
             self.load_model(self.load_model_path)
+
+    def _solve_problem(self, problem):
+        solve_kwargs = {
+            "solver": self.solver,
+            "verbose": self.verbose,
+            "warm_start": self.warm_start,
+        }
+        if self.max_iters is not None:
+            solve_kwargs["max_iters"] = self.max_iters
+        if self.eps is not None:
+            solve_kwargs["eps"] = self.eps
+        return problem.solve(**solve_kwargs)
 
 
 
@@ -53,7 +84,6 @@ class AFHMM_SAC(Disaggregator):
 
         means_vector = []
 
-        one_hot_states_vector = []
 
         pi_s_vector = []
 
@@ -64,7 +94,7 @@ class AFHMM_SAC(Disaggregator):
         train_main = train_main.values.flatten().reshape((-1,1))
         
         for appliance_name, power in train_appliances:
-            #print (appliance_name)
+            #_log_print(appliance_name)
             self.appliances.append(appliance_name)
             
             X = power.values.reshape((-1,1))
@@ -91,8 +121,7 @@ class AFHMM_SAC(Disaggregator):
             
             pi = np.array(pi)
 
-            nb_classes = self.default_num_states
-            targets = states.reshape(-1)
+            states.reshape(-1)
             
             means_vector.append(means)
             pi_s_vector.append(pi)
@@ -106,28 +135,26 @@ class AFHMM_SAC(Disaggregator):
         self.means_vector = means_vector
         self.transmat_vector = transmat_vector
 
-#         print(transmat_vector)
-#         print (means_vector)
-#         print (states_vector)
-#         print (pi_s_vector)
-        print ("Finished Training")
-#         print (self.signal_aggregates)
-#        print (np.log(transmat))
-#        print(pi)
-#        print (np.log(pi))
-        #print (np.sum(transmat_vector[0],axis=1))
-        #print (np.sum(transmat_vector[0],axis=0))
-            #print (states.shape)
-            #print (one_hot_targets.shape)
+#         _log_print(means_vector)
+#         _log_print(states_vector)
+#         _log_print(pi_s_vector)
+        _log_print("Finished Training")
+#         _log_print(self.signal_aggregates)
+#        _log_print(np.log(transmat))
+#        _log_print(np.log(pi))
+        #_log_print(np.sum(transmat_vector[0],axis=1))
+        #_log_print(np.sum(transmat_vector[0],axis=0))
+            #_log_print(states.shape)
+            #_log_print(one_hot_targets.shape)
 
         # one_hot_states_vector = np.array(one_hot_states_vector)
 
-        # # print (transmat_vector[0])
-        # # print (np.sum(transmat_vector[0],axis=0))
-        # # print (np.sum(transmat_vector[0],axis=1))
+        # # _log_print(transmat_vector[0])
+        # # _log_print(np.sum(transmat_vector[0],axis=0))
+        # # _log_print(np.sum(transmat_vector[0],axis=1))
         # appliance_variable_matrix = []
 
-        # #print (len(states_vector))
+        # #_log_print(len(states_vector))
         # #variable_matrix = np.zeros((len(appliance_states),self.default_num_states,self.default_num_states))
 
         # for appliance_states in states_vector:
@@ -153,8 +180,11 @@ class AFHMM_SAC(Disaggregator):
         transmat_vector = self.transmat_vector
         sigma = 100*np.ones((len(test_mains),1))
         flag = 0
+        s_ = None
         for epoch in range(6):
             if epoch%2==1:
+                if s_ is None:
+                    raise RuntimeError(f"{self.MODEL_NAME} solver did not produce appliance states.")
                 # The alernative Minimization
                 usage = np.zeros((len(test_mains)))
                 for appliance_id in range(self.num_appliances):
@@ -168,7 +198,7 @@ class AFHMM_SAC(Disaggregator):
                     constraints = []
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
-                    delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
+                    cvx.Variable(shape=(len(test_mains),1), name='delta_t')
 
                     for appliance_id in range(self.num_appliances):
                             state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))                    
@@ -202,15 +232,19 @@ class AFHMM_SAC(Disaggregator):
                     for appliance_id in range(self.num_appliances):
                         appliance_usage = cvx_state_vectors[appliance_id]@means_vector[appliance_id]
                         total_appliance_usage = cvx.sum(appliance_usage)
-                        constraints+=[total_appliance_usage <= self.signal_aggregates[self.appliances[appliance_id]]]
+                        aggregate_limit = (
+                            self.sac_strength
+                            * self.signal_aggregates[self.appliances[appliance_id]]
+                        )
+                        constraints+=[total_appliance_usage <= aggregate_limit]
 
 
                     # Second order cone constraints
                     
-                    total_observed_reading = np.zeros((test_mains.shape))
-                        #print (len(cvx_state_vectors))
+                    total_observed_reading = 0
+                        #_log_print(len(cvx_state_vectors))
                     for appliance_id in range(self.num_appliances):
-                                total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
+                                total_observed_reading = total_observed_reading + cvx_state_vectors[appliance_id]@means_vector[appliance_id]
                     flag=1
 
                     
@@ -243,7 +277,7 @@ class AFHMM_SAC(Disaggregator):
                 expression = cvx.Minimize(expression)
                 prob = cvx.Problem(expression, constraints)
 
-                prob.solve(solver=cvx.SCS,verbose=False, warm_start=True)
+                self._solve_problem(prob)
                 s_ = [i.value for i in cvx_state_vectors]
 
         prediction_dict = {}
@@ -262,12 +296,12 @@ class AFHMM_SAC(Disaggregator):
 
     def disaggregate_chunk(self, test_mains_list):
 
-        # Sistributes the test mains across multiple threads and runs them in parallel
-        manager = Manager()
-        d = manager.dict()
-        
+        # Distributes the test mains across multiple workers and runs them in parallel.
         predictions_lst = []
-        for test_mains in test_mains_list:        
+        for test_mains in test_mains_list:
+            original_length = len(test_mains)
+            manager = Manager()
+            d = manager.dict()
             test_mains_big = test_mains.values.flatten().reshape((-1,1))
             self.arr_of_results = []        
             threads = []
@@ -276,17 +310,24 @@ class AFHMM_SAC(Disaggregator):
                 t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
                 threads.append(t)
 
-            for t in threads:
-                t.start()
-
-            for t in threads:
-                t.join()
+            worker_limit = self.max_workers or len(threads) or 1
+            for start in range(0, len(threads), worker_limit):
+                active_threads = threads[start:start + worker_limit]
+                for t in active_threads:
+                    t.start()
+                for t in active_threads:
+                    t.join()
+                    if t.exitcode != 0:
+                        raise RuntimeError(
+                            f"{self.MODEL_NAME} worker failed with exit code {t.exitcode}."
+                        )
 
             for i in range(len(threads)):
+                if i not in d:
+                    raise RuntimeError(f"{self.MODEL_NAME} worker {i} did not return results.")
                 self.arr_of_results.append(d[i])
             prediction = pd.concat(self.arr_of_results,axis=0)
+            prediction = prediction.iloc[:original_length]
             predictions_lst.append(prediction)
-            
-        return predictions_lst
 
- 
+        return predictions_lst

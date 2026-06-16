@@ -1,9 +1,61 @@
+# Version control and CI
+.git/
+.github/
+
+# Local Python environments and caches
 .venv/
+venv/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editor and notebook metadata
+.ipynb_checkpoints/
+.vscode/
+.DS_Store
+
+# Secrets and local config
+.env
+.env.*
+
+# Large or generated data artifacts
+*.h5
+*.hdf5
+*.xlsx
+*.xls
+*.xlxs
+*.pt
+*.pth
+model.json
+*-temp-weights-*
+
+# Legacy experiment output folders
+Mean/
+mean_folder/
+onlineGRU/
+seq2point/
+seq2seq/
+rnn/
+dae/
+excess/
+pre-trained-mean/
+prev_disaggregate/
+buildsys_notebooks/
+
+# Site and paper assets not needed in the runtime image
+index.html
+paper.tex
+
+# Logs and databases
 *.log
 *.sqlite3
-.env
-.DS_Store

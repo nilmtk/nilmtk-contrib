@@ -1,10 +1,31 @@
-import os, json
-import torch, torch.nn as nn, torch.optim as optim
-import numpy as np, pandas as pd
+import json
+from pathlib import Path
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.utils.checkpoints import (
+    build_metadata,
+    collect_dependencies,
+    load_metadata,
+    load_torch_state,
+    save_metadata,
+    save_torch_state,
+    temporary_checkpoint,
+)
+from nilmtk_contrib.utils.logging import get_logger
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print
+from nilmtk_contrib.utils.params import normalize_common_params
+from nilmtk_contrib.utils.random import set_random_seed
+from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = get_logger(__name__)
+_log_print = legacy_print(logger)
 
 class DAEModel(nn.Module):
     """
@@ -36,24 +57,76 @@ class DAEModel(nn.Module):
         return x
 
 class DAE(Disaggregator):
+    """
+    Denoising Autoencoder for non-intrusive load monitoring.
+    
+    This implementation is based on the paper:
+    "Neural NILM: Deep Neural Networks Applied to Energy Disaggregation"
+    https://arxiv.org/abs/1507.06594
+    
+    The model uses a denoising autoencoder architecture for energy disaggregation tasks,
+    learning to reconstruct individual appliance power consumption from aggregate
+    household power measurements.
+    
+    Architecture Overview:
+    - Convolutional encoder layer for feature extraction
+    - Fully connected bottleneck layers for dimensionality reduction
+    - Convolutional decoder layer for sequence reconstruction
+    - Sequence-to-sequence prediction for energy disaggregation
+    
+    Parameters:
+        params (dict): Configuration parameters including:
+            - sequence_length (int): Length of input sequences (default: 99)
+            - n_epochs (int): Number of training epochs (default: 10)
+            - batch_size (int): Training batch size (default: 512)
+            - mains_mean (float): Mean value for mains normalization (default: 1000)
+            - mains_std (float): Standard deviation for mains normalization (default: 600)
+            - appliance_params (dict): Appliance-specific normalization parameters
+            - save-model-path (str): Path to save trained models
+            - pretrained-model-path (str): Path to load pre-trained models
+    """
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
         super().__init__()
+        common = normalize_common_params(
+            params,
+            defaults={
+                "sequence_length": 99,
+                "n_epochs": 10,
+                "batch_size": 512,
+                "mains_mean": 1000,
+                "mains_std": 600,
+                "appliance_params": {},
+                "save_model_path": None,
+                "pretrained_model_path": None,
+                "chunk_wise_training": False,
+                "seed": None,
+                "verbose": False,
+                "device": None,
+            },
+        )
         self.MODEL_NAME        = "DAE"
         self.file_prefix       = f"{self.MODEL_NAME.lower()}-temp-weights"
-        self.sequence_length   = params.get('sequence_length', 99)
-        self.n_epochs          = params.get('n_epochs', 10)
-        self.batch_size        = params.get('batch_size', 512)
-        self.mains_mean        = params.get('mains_mean', 1000)
-        self.mains_std         = params.get('mains_std', 600)
-        self.appliance_params  = params.get('appliance_params', {})
-        self.save_model_path   = params.get('save-model-path', None)
-        self.load_model_path   = params.get('pretrained-model-path', None)
+        self.sequence_length   = common.sequence_length
+        self.n_epochs          = common.n_epochs
+        self.batch_size        = common.batch_size
+        self.mains_mean        = common.mains_mean
+        self.mains_std         = common.mains_std
+        self.appliance_params  = common.appliance_params
+        self.save_model_path   = common.save_model_path
+        self.load_model_path   = common.pretrained_model_path
+        self.chunk_wise_training = common.chunk_wise_training
+        self.seed              = common.seed
+        self.verbose           = common.verbose
         self.models            = OrderedDict()
-        self.device            = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = common.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device            = torch.device(device)
+        set_random_seed(self.seed, backends=("python", "numpy", "torch"))
         if self.load_model_path:
             self.load_model()
 
     def return_network(self):
+        """Returns the DAE model."""
         return DAEModel(self.sequence_length).to(self.device)
 
     def set_appliance_params(self, train_appliances):
@@ -63,10 +136,14 @@ class DAE(Disaggregator):
         for name, lst in train_appliances:
             arr = pd.concat(lst, axis=0).values.flatten()
             m, s = arr.mean(), arr.std()
-            if s < 1: s = 100  # avoid zero std
+            if s < 1:
+                s = 100  # avoid zero std
             self.appliance_params[name] = {'mean': m, 'std': s}
 
     def normalize_input(self, data, n, mean, std, overlap):
+        """
+        Normalizes and windows the input data.
+        """
         flat = data.flatten()
         pad  = (n - flat.size % n) % n
         flat = np.concatenate([flat, np.zeros(pad)])
@@ -79,11 +156,14 @@ class DAE(Disaggregator):
         return ((w - mean)/std).reshape(-1, n, 1)  # normalize and reshape for model
 
     def denormalize_output(self, data, mean, std):
+        """
+        Denormalizes the output data.
+        """
         return mean + data*std
 
     def call_preprocessing(self, mains_lst, subs, method):
         """
-        Preprocess the mains and appliances data for training or testing.
+        Preprocesses the mains and appliance data.
         """
         if method == 'train':
             pm, apps = [], []
@@ -119,6 +199,9 @@ class DAE(Disaggregator):
         return pm
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **_):
+        """
+        Trains the model on a chunk of data.
+        """
         if not self.appliance_params:
             self.set_appliance_params(train_appliances)
 
@@ -140,72 +223,111 @@ class DAE(Disaggregator):
 
             X = torch.tensor(mains_arr, dtype=torch.float32)  # mains input
             Y = torch.tensor(arr, dtype=torch.float32)  # appliance output
-            split = int(len(X)*0.85)
-            tr_ds = TensorDataset(X[:split], Y[:split])  # train set
-            va_ds = TensorDataset(X[split:], Y[split:])  # validation set
+            split = train_validation_split(
+                X,
+                Y,
+                validation_fraction=0.15,
+                strategy="tail",
+                min_train=1,
+                min_val=1,
+                allow_no_validation=True,
+            )
+            if not split.metadata.should_train:
+                continue
+
+            tr_ds = TensorDataset(split.X_train, split.y_train)  # train set
             tr = DataLoader(tr_ds, batch_size=self.batch_size, shuffle=True)  # train loader
-            va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
+            va = None
+            if split.metadata.validation_enabled:
+                va_ds = TensorDataset(split.X_val, split.y_val)  # validation set
+                va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
 
             opt     = optim.Adam(model.parameters())
             loss_fn = nn.MSELoss()
-            best    = float('inf')
-            ckpt    = f"{self.file_prefix}-{name.replace(' ','_')}-epoch{current_epoch}.pt"
-
-            for _ in tqdm(range(self.n_epochs), desc=name):
-                model.train()
-                for xb, yb in tr:
-                    xb, yb = xb.to(self.device), yb.to(self.device)
-                    opt.zero_grad()
-                    out = model(xb)
-                    loss_fn(out, yb).backward()
-                    opt.step()
-
-                model.eval()
-                vl = []
-                with torch.no_grad():
-                    for xb, yb in va:
+            best = float('inf')
+            with temporary_checkpoint(".pt") as ckpt:
+                epochs = tqdm(range(self.n_epochs), desc=name, disable=not self.verbose)
+                for _ in epochs:
+                    model.train()
+                    for xb, yb in tr:
                         xb, yb = xb.to(self.device), yb.to(self.device)
-                        vl.append(loss_fn(model(xb), yb).item())
-                val_loss = sum(vl)/len(vl)
-                if val_loss < best:
-                    best = val_loss
-                    torch.save(model.state_dict(), ckpt)
+                        opt.zero_grad()
+                        out = model(xb)
+                        loss_fn(out, yb).backward()
+                        opt.step()
 
-            model.load_state_dict(torch.load(ckpt, map_location=self.device))
+                    if va is None:
+                        save_torch_state(model, ckpt)
+                    else:
+                        model.eval()
+                        vl = []
+                        with torch.no_grad():
+                            for xb, yb in va:
+                                xb, yb = xb.to(self.device), yb.to(self.device)
+                                vl.append(loss_fn(model(xb), yb).item())
+                        if vl:
+                            val_loss = sum(vl)/len(vl)
+                            if val_loss < best:
+                                best = val_loss
+                                save_torch_state(model, ckpt)
+
+                if ckpt.exists():
+                    load_torch_state(model, ckpt, self.device)
 
         if self.save_model_path:
             self.save_model()
 
     def save_model(self):
-        os.makedirs(self.save_model_path, exist_ok=True)
-        params = {
-            'sequence_length': self.sequence_length,
-            'mains_mean':      self.mains_mean,
-            'mains_std':       self.mains_std,
-            'appliance_params':self.appliance_params
-        }
-        with open(os.path.join(self.save_model_path,'model.json'),'w') as f:
-            json.dump(params, f)
+        """
+        Saves the trained model and parameters.
+        """
+        model_folder = Path(self.save_model_path)
+        model_folder.mkdir(parents=True, exist_ok=True)
+        metadata = build_metadata(
+            model_class=self.MODEL_NAME,
+            backend="torch",
+            sequence_length=self.sequence_length,
+            appliance_params=self.appliance_params,
+            mains_mean=self.mains_mean,
+            mains_std=self.mains_std,
+            dependencies=collect_dependencies(["nilmtk-contrib", "torch", "numpy", "pandas"]),
+        )
+        save_metadata(model_folder, metadata)
         for name, m in self.models.items():
-            torch.save(m.state_dict(),
-                       os.path.join(self.save_model_path, f"{name}.pt"))
+            logger.info("Saving %s model for %s.", self.MODEL_NAME, name)
+            save_torch_state(m, model_folder / f"{name}.pt")
 
     def load_model(self):
-        with open(os.path.join(self.load_model_path,'model.json')) as f:
-            p = json.load(f)
+        """
+        Loads a pre-trained model and its parameters.
+        """
+        model_folder = Path(self.load_model_path)
+        metadata_path = model_folder / "metadata.json"
+        if metadata_path.exists():
+            p = load_metadata(
+                model_folder,
+                expected_model_class=self.MODEL_NAME,
+                expected_backend="torch",
+            )
+        else:
+            logger.warning(
+                "Loading legacy %s model metadata from model.json.", self.MODEL_NAME
+            )
+            with open(model_folder / 'model.json') as f:
+                p = json.load(f)
         self.sequence_length = p['sequence_length']
         self.mains_mean      = p['mains_mean']
         self.mains_std       = p['mains_std']
         self.appliance_params= p['appliance_params']
         for name in self.appliance_params:
             m = self.return_network()
-            m.load_state_dict(torch.load(
-                os.path.join(self.load_model_path, f"{name}.pt"),
-                map_location=self.device
-            ))
+            load_torch_state(m, model_folder / f"{name}.pt", self.device)
             self.models[name] = m
 
     def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
+        """
+        Disaggregates a chunk of mains data.
+        """
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
                 test_main_list, None, 'test'
@@ -227,7 +349,8 @@ class DAE(Disaggregator):
                         p  = m(xb).cpu().numpy()
                         preds.append(p)
                 p_all = np.concatenate(preds).reshape(-1, self.sequence_length)
-                mean,std = self.appliance_params[name].values()
+                mean = self.appliance_params[name]["mean"]
+                std = self.appliance_params[name]["std"]
                 p_den = self.denormalize_output(p_all, mean, std).flatten()
                 p_den = np.clip(p_den, 0, None)
                 outd[name] = pd.Series(p_den)

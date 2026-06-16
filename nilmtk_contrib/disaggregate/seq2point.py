@@ -1,12 +1,18 @@
 from collections import OrderedDict
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from nilmtk.disaggregate import Disaggregator
 from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Sequential
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -16,6 +22,7 @@ class ApplianceNotFoundError(Exception):
 class Seq2Point(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
         """
         Parameters to be specified for the model
         """
@@ -31,7 +38,7 @@ class Seq2Point(Disaggregator):
         self.mains_mean = params.get('mains_mean',1800)
         self.mains_std = params.get('mains_std',600)
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
@@ -39,7 +46,7 @@ class Seq2Point(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
-        print("...............Seq2Point partial_fit running...............")
+        _log_print("...............Seq2Point partial_fit running...............")
         # Do the pre-processing, such as  windowing and normalizing
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
@@ -57,30 +64,32 @@ class Seq2Point(Disaggregator):
         for appliance_name, power in train_appliances:
             # Check if the appliance was already trained. If not then create a new model for it
             if appliance_name not in self.models:
-                print("First model training for", appliance_name)
+                _log_print("First model training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
             # Retrain the particular appliance
             else:
-                print("Started Retraining model for", appliance_name)
+                _log_print("Started Retraining model for", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                            "_".join(appliance_name.split()),
-                            current_epoch,
-                    )
-                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
+                    filepath = checkpoint_path(".h5")
+                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1 if self.verbose else 0,save_best_only=True,mode='min')
+                    split = train_validation_split(train_main, power, validation_fraction=0.15, strategy='tail', allow_no_validation=True)
+                    if not split.metadata.should_train:
+                        continue
                     model.fit(
-                            train_main, power,
-                            validation_split=0.15,
+                            split.X_train, split.y_train,
+                            validation_data=(split.X_val, split.y_val) if split.metadata.validation_enabled else None,
                             epochs=self.n_epochs,
                             batch_size=self.batch_size,
-                            callbacks=[checkpoint],
+                            callbacks=[checkpoint] if split.metadata.validation_enabled else [],
+                            verbose=1 if self.verbose else 0,
                     )
-                    model.load_weights(filepath)
+                    if split.metadata.validation_enabled and Path(filepath).exists():
+                        model.load_weights(filepath)
 
                     
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
@@ -145,7 +154,7 @@ class Seq2Point(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
                 processed_appliance_dfs = []
@@ -176,10 +185,10 @@ class Seq2Point(Disaggregator):
     def set_appliance_params(self,train_appliances):
         # Find the parameters using the first
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
-        print (self.appliance_params)
+        _log_print(self.appliance_params)

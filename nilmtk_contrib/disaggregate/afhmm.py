@@ -7,9 +7,16 @@ import cvxpy as cvx
 from hmmlearn import hmm
 from multiprocessing import Process, Manager
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
+from nilmtk_contrib.utils.params import validate_positive_int
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class AFHMM(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy"))
+        super().__init__()
         self.model = []
         self.MODEL_NAME = 'AFHMM'        
         self.models = []
@@ -19,11 +26,34 @@ class AFHMM(Disaggregator):
         self.time_period = 720
         self.time_period = params.get('time_period', self.time_period)
         self.default_num_states = params.get('default_num_states',2)
+        self.time_period = validate_positive_int("time_period", self.time_period)
+        self.default_num_states = validate_positive_int("default_num_states", self.default_num_states)
+        if self.default_num_states < 2:
+            raise ValueError("default_num_states must be at least 2.")
+        self.max_workers = params.get("max_workers")
+        if self.max_workers is not None:
+            self.max_workers = validate_positive_int("max_workers", self.max_workers)
+        self.solver = params.get("solver", cvx.SCS)
+        self.max_iters = params.get("max_iters")
+        self.eps = params.get("eps")
+        self.warm_start = params.get("warm_start", True)
         self.save_model_path = params.get('save-model-path', None)
         self.load_model_path = params.get('pretrained-model-path',None)
         self.chunk_wise_training =  False
         if self.load_model_path:
             self.load_model(self.load_model_path)
+
+    def _solve_problem(self, problem):
+        solve_kwargs = {
+            "solver": self.solver,
+            "verbose": self.verbose,
+            "warm_start": self.warm_start,
+        }
+        if self.max_iters is not None:
+            solve_kwargs["max_iters"] = self.max_iters
+        if self.eps is not None:
+            solve_kwargs["eps"] = self.eps
+        return problem.solve(**solve_kwargs)
 
 
     def partial_fit(self, train_main, train_appliances, **load_kwargs):
@@ -41,14 +71,13 @@ class AFHMM(Disaggregator):
         train_appliances = train_app_tmp
         learnt_model = OrderedDict()
         means_vector = []
-        one_hot_states_vector = []
         pi_s_vector = []
         transmat_vector = []
         states_vector = []
         train_main = train_main.values.flatten().reshape((-1,1))
 
         for appliance_name, power in train_appliances:
-            #print (appliance_name)
+            #_log_print(appliance_name)
             # Learning the pi's and transistion probabliites  for each appliance using a simple HMM
             self.appliances.append(appliance_name)    
             X = power.values.reshape((-1,1))
@@ -70,8 +99,7 @@ class AFHMM(Disaggregator):
             for i in keys:
                 pi.append(counter[i]/total)
             pi = np.array(pi)
-            nb_classes = self.default_num_states
-            targets = states.reshape(-1)
+            states.reshape(-1)
             means_vector.append(means)
             pi_s_vector.append(pi)
             transmat_vector.append(transmat.T)
@@ -83,7 +111,7 @@ class AFHMM(Disaggregator):
         self.pi_s_vector = pi_s_vector
         self.means_vector = means_vector
         self.transmat_vector = transmat_vector
-        print ("Finished Training")
+        _log_print("Finished Training")
 
     def disaggregate_thread(self, test_mains,index,d):
 
@@ -96,10 +124,13 @@ class AFHMM(Disaggregator):
 
         sigma = 100*np.ones((len(test_mains),1))
         flag = 0
+        s_ = None
 
         for epoch in range(6):
             # The alernative Minimization
             if epoch%2==1:
+                if s_ is None:
+                    raise RuntimeError(f"{self.MODEL_NAME} solver did not produce appliance states.")
                 usage = np.zeros((len(test_mains)))
                 for appliance_id in range(self.num_appliances):
                     app_usage= np.sum(s_[appliance_id]@means_vector[appliance_id],axis=1)
@@ -112,7 +143,7 @@ class AFHMM(Disaggregator):
                     constraints = []
                     cvx_state_vectors = []
                     cvx_variable_matrices = []
-                    delta = cvx.Variable(shape=(len(test_mains),1), name='delta_t')
+                    cvx.Variable(shape=(len(test_mains),1), name='delta_t')
                     for appliance_id in range(self.num_appliances):
                             state_vector = cvx.Variable(shape=(len(test_mains), self.default_num_states), name='state_vec-%s'%(appliance_id))                    
                             cvx_state_vectors.append(state_vector)
@@ -143,10 +174,10 @@ class AFHMM(Disaggregator):
 
                     
                     
-                    total_observed_reading = np.zeros((test_mains.shape))
+                    total_observed_reading = 0
                     # TOtal observed reading equals the sum of each appliance
                     for appliance_id in range(self.num_appliances):
-                                total_observed_reading+=cvx_state_vectors[appliance_id]@means_vector[appliance_id]                    
+                                total_observed_reading = total_observed_reading + cvx_state_vectors[appliance_id]@means_vector[appliance_id]
 
                     # Loss function to be minimized
                     
@@ -177,7 +208,7 @@ class AFHMM(Disaggregator):
                 expression = term_1 + term_2 + term_3 + term_4
                 expression = cvx.Minimize(expression)
                 prob = cvx.Problem(expression, constraints,)                
-                prob.solve(solver=cvx.SCS,verbose=False,warm_start=True)
+                self._solve_problem(prob)
                 s_ = [i.value for i in cvx_state_vectors]
 
         prediction_dict = {}
@@ -193,11 +224,11 @@ class AFHMM(Disaggregator):
     def disaggregate_chunk(self, test_mains_list):
 
         # Sistributes the test mains across multiple threads and runs them in parallel
-        manager = Manager()
-        d = manager.dict()
-        
         predictions_lst = []
-        for test_mains in test_mains_list:        
+        for test_mains in test_mains_list:
+            original_length = len(test_mains)
+            manager = Manager()
+            d = manager.dict()
             test_mains_big = test_mains.values.flatten().reshape((-1,1))
             self.arr_of_results = []        
             threads = []
@@ -206,18 +237,26 @@ class AFHMM(Disaggregator):
                 t = Process(target=self.disaggregate_thread, args=(test_mains,test_block,d))
                 threads.append(t)
 
-            for t in threads:
-                t.start()
-
-            for t in threads:
-                t.join()
+            worker_limit = self.max_workers or len(threads) or 1
+            for start in range(0, len(threads), worker_limit):
+                active_threads = threads[start:start + worker_limit]
+                for t in active_threads:
+                    t.start()
+                for t in active_threads:
+                    t.join()
+                    if t.exitcode != 0:
+                        raise RuntimeError(
+                            f"{self.MODEL_NAME} worker failed with exit code {t.exitcode}."
+                        )
 
             for i in range(len(threads)):
+                if i not in d:
+                    raise RuntimeError(f"{self.MODEL_NAME} worker {i} did not return results.")
                 self.arr_of_results.append(d[i])
             prediction = pd.concat(self.arr_of_results,axis=0)
+            prediction = prediction.iloc[:original_length]
             predictions_lst.append(prediction)
             
         return predictions_lst
-
 
 

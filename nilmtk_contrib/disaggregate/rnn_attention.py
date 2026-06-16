@@ -1,25 +1,19 @@
 from __future__ import print_function, division
-from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten, Bidirectional, LSTM
+from tensorflow.keras.layers import Conv1D, Dense, Bidirectional, LSTM
 from tensorflow.keras.layers import Layer
-import os
-import pickle
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
-from tensorflow.keras.optimizers import SGD
-from tensorflow.keras.models import Sequential, load_model
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 import tensorflow as tf
-import random
-import sys
-random.seed(10)
-np.random.seed(10)
-import tensorflow as tf
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 gpus=tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu,True)
@@ -60,6 +54,7 @@ class AttentionLayer(Layer):
 class RNN_attention(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
         """
         Parameters to be specified for the model
         """
@@ -75,7 +70,7 @@ class RNN_attention(Disaggregator):
         self.mains_mean = params.get('mains_mean',1800)
         self.mains_std = params.get('mains_std',600)
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self,train_main,train_appliances,do_preprocessing=True,
@@ -85,7 +80,7 @@ class RNN_attention(Disaggregator):
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)  
 
-        print("...............RNN_attention partial_fit running...............")
+        _log_print("...............RNN_attention partial_fit running...............")
         # Do the pre-processing, such as  windowing and normalizing
 
         if do_preprocessing:
@@ -105,18 +100,18 @@ class RNN_attention(Disaggregator):
         for appliance_name, power in train_appliances:
             # Check if the appliance was already trained. If not then create a new model for it
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
             # Retrain the particular appliance
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = 'RNN_attention-temp-weights-'+str(random.randint(0,100000))+'.h5'
+                    filepath = checkpoint_path(".h5")
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
                     train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
                     model.fit(train_x,train_y,validation_data=(v_x,v_y),epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
@@ -189,7 +184,7 @@ class RNN_attention(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
                 processed_appliance_dfs = []
@@ -219,11 +214,10 @@ class RNN_attention(Disaggregator):
     def set_appliance_params(self,train_appliances):
         # Find the parameters using the first
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
-        print (self.appliance_params)
- 
+        _log_print(self.appliance_params)

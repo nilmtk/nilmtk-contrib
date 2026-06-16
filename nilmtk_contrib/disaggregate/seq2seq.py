@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from nilmtk.disaggregate import Disaggregator
@@ -7,6 +8,11 @@ from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Sequential
 
 
+from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.validation import train_validation_split
+
+logger = module_logger(__name__)
+_log_print = legacy_print(logger)
 class SequenceLengthError(Exception):
     pass
 
@@ -18,6 +24,7 @@ class ApplianceNotFoundError(Exception):
 class Seq2Seq(Disaggregator):
 
     def __init__(self, params):
+        initialize_runtime(self, params, backends=("python", "numpy", "tensorflow"))
 
         self.MODEL_NAME = "Seq2Seq"
         self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
@@ -30,11 +37,11 @@ class Seq2Seq(Disaggregator):
         self.batch_size = params.get('batch_size',512)
         self.appliance_params = params.get('appliance_params',{})
         if self.sequence_length%2==0:
-            print ("Sequence length should be odd!")
+            _log_print("Sequence length should be odd!")
             raise (SequenceLengthError)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
-        print("...............Seq2Seq partial_fit running...............")
+        _log_print("...............Seq2Seq partial_fit running...............")
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
@@ -53,29 +60,31 @@ class Seq2Seq(Disaggregator):
         train_appliances = new_train_appliances
         for appliance_name, power in train_appliances:
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                _log_print("First model training for ", appliance_name)
                 self.models[appliance_name] = self.return_network()
             else:
-                print("Started Retraining model for ", appliance_name)
+                _log_print("Started Retraining model for ", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
                 # Sometimes chunks can be empty after dropping NANS
                 if len(train_main) > 10:
                     # Do validation when you have sufficient samples
-                    filepath = self.file_prefix + "-{}-epoch{}.h5".format(
-                            "_".join(appliance_name.split()),
-                            current_epoch,
-                    )
-                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
+                    filepath = checkpoint_path(".h5")
+                    checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1 if self.verbose else 0,save_best_only=True,mode='min')
+                    split = train_validation_split(train_main, power, validation_fraction=0.15, strategy='tail', allow_no_validation=True)
+                    if not split.metadata.should_train:
+                        continue
                     model.fit(
-                            train_main, power,
-                            validation_split=.15,
+                            split.X_train, split.y_train,
+                            validation_data=(split.X_val, split.y_val) if split.metadata.validation_enabled else None,
                             epochs=self.n_epochs,
                             batch_size=self.batch_size,
-                            callbacks=[ checkpoint ],
+                            callbacks=[checkpoint] if split.metadata.validation_enabled else [],
+                            verbose=1 if self.verbose else 0,
                     )
-                    model.load_weights(filepath)
+                    if split.metadata.validation_enabled and Path(filepath).exists():
+                        model.load_weights(filepath)
 
                     
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
@@ -104,14 +113,14 @@ class Seq2Seq(Disaggregator):
                 # the sum_arr keeps the number of times a particular timestamp has occured
                 # the predictions are summed for  agiven time, and is divided by the number of times it has occured
                 
-                l = self.sequence_length
-                n = len(prediction) + l - 1
+                window_length = self.sequence_length
+                n = len(prediction) + window_length - 1
                 sum_arr = np.zeros((n))
                 counts_arr = np.zeros((n))
-                o = len(sum_arr)
+                len(sum_arr)
                 for i in range(len(prediction)):
-                    sum_arr[i:i + l] += prediction[i].flatten()
-                    counts_arr[i:i + l] += 1
+                    sum_arr[i:i + window_length] += prediction[i].flatten()
+                    counts_arr[i:i + window_length] += 1
                 for i in range(len(sum_arr)):
                     sum_arr[i] = sum_arr[i] / counts_arr[i]
 
@@ -165,7 +174,7 @@ class Seq2Seq(Disaggregator):
                     app_mean = self.appliance_params[app_name]['mean']
                     app_std = self.appliance_params[app_name]['std']
                 else:
-                    print ("Parameters for ", app_name ," were not found!")
+                    _log_print("Parameters for ", app_name ," were not found!")
                     raise ApplianceNotFoundError()
 
 
@@ -180,7 +189,7 @@ class Seq2Seq(Disaggregator):
                     
                 appliance_list.append((app_name, processed_app_dfs))
                 #new_app_readings = np.array([ new_app_readings[i:i+n] for i in range(len(new_app_readings)-n+1) ])
-                #print (new_mains.shape, new_app_readings.shape, app_name)
+                #_log_print(new_mains.shape, new_app_readings.shape, app_name)
 
             return processed_mains_lst, appliance_list
 
@@ -200,9 +209,9 @@ class Seq2Seq(Disaggregator):
     def set_appliance_params(self,train_appliances):
 
         for (app_name,df_list) in train_appliances:
-            l = np.array(pd.concat(df_list,axis=0))
-            app_mean = np.mean(l)
-            app_std = np.std(l)
+            values = np.array(pd.concat(df_list,axis=0))
+            app_mean = np.mean(values)
+            app_std = np.std(values)
             if app_std<1:
                 app_std = 100
             self.appliance_params.update({app_name:{'mean':app_mean,'std':app_std}})
