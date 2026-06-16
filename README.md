@@ -1,10 +1,14 @@
-# NILMTK-Contrib
+# NILMBench2026
 
-NILMTK-Contrib provides NILMTK-compatible implementations of non-intrusive load monitoring (NILM) and energy disaggregation algorithms. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
+NILMBench2026 is a large-scale, reproducible benchmark for non-intrusive load monitoring (NILM) and energy disaggregation. It evaluates sixteen models across regression accuracy, event detection, computational efficiency, and generalization on public NILM datasets at both 1-minute and 15-minute resolutions.
+
+The benchmark is implemented through the modernized `nilmtk-contrib` package, which provides NILMTK-compatible disaggregation models and experiment workflows. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
+
+This repository is based on the original [`nilmtk-contrib`](https://github.com/nilmtk/nilmtk-contrib) repository and extends it for the NILMBench2026 benchmark.
 
 The repository paper is:
 
-Batra et al., "Towards Reproducible State-of-the-Art Energy Disaggregation", BuildSys 2019, DOI: https://doi.org/10.1145/3360322.3360844.
+Kuloor, Singh, Dhru, and Batra, "NILMBench2026: A Benchmark for Energy Disaggregation", BuildSys 2026, DOI: https://doi.org/10.1145/3744256.3812587.
 
 ## Runtime Requirements
 
@@ -47,7 +51,7 @@ All model backends:
 uv pip install "nilmtk-contrib[all] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
 ```
 
-Development environment:
+Local development (from a clone of this repository):
 
 ```bash
 uv sync --extra dev
@@ -59,7 +63,149 @@ Backend development examples:
 uv sync --extra dev --extra torch
 uv sync --extra dev --extra tensorflow
 uv sync --extra dev --extra classical
+uv sync --extra dev --extra all
 ```
+
+### Verify your install
+
+After `uv sync --extra dev`, run a quick sanity check to confirm the package and core tests are in good shape:
+
+```bash
+uv run python -m compileall -q nilmtk_contrib tests
+uv run python -m pytest -q tests/test_imports.py tests/test_params.py tests/test_preprocessing_windows.py tests/test_preprocessing_alignment.py tests/test_preprocessing_classification.py tests/test_validation.py tests/test_checkpoints.py tests/test_random_logging.py tests/test_model_runtime.py
+```
+
+Before launching full experiments, smoke-test the backend you plan to use. Sync the matching extra and run the full test suite—for example, with PyTorch:
+
+```bash
+uv sync --extra dev --extra torch
+uv run python -m pytest -q
+```
+
+## Docker
+
+The repository ships a reproducible container image based on Python 3.11 (Debian Bookworm). The image installs `nilmtk-contrib` with `uv`, pins the Python runtime, and bundles the system libraries needed for NumPy, SciPy, scikit-learn, TensorFlow, and PyTorch.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) 24+ (Docker Desktop on Windows/macOS is fine).
+- Optional GPU support: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) if you plan to pass `--gpus all`.
+
+### Pull the pre-built image
+
+```bash
+docker pull ghcr.io/nilmtk/nilmtk-contrib:latest
+docker run --rm -it ghcr.io/nilmtk/nilmtk-contrib:latest bash
+```
+
+Backend-specific tags:
+
+```bash
+docker pull ghcr.io/nilmtk/nilmtk-contrib:torch
+docker pull ghcr.io/nilmtk/nilmtk-contrib:tensorflow
+docker pull ghcr.io/nilmtk/nilmtk-contrib:classical
+```
+
+GPU-enabled pre-built image:
+
+```bash
+docker run --rm -it --gpus all ghcr.io/nilmtk/nilmtk-contrib:latest bash
+```
+
+### Build locally
+
+Default all-backend image:
+
+```bash
+docker build -t nilmtk-contrib:all .
+```
+
+Backend-specific images (smaller, faster builds):
+
+```bash
+docker build -t nilmtk-contrib:torch --build-arg INSTALL_EXTRA=torch .
+docker build -t nilmtk-contrib:tensorflow --build-arg INSTALL_EXTRA=tensorflow .
+docker build -t nilmtk-contrib:classical --build-arg INSTALL_EXTRA=classical .
+```
+
+Image with dev/test dependencies:
+
+```bash
+docker build -t nilmtk-contrib:dev --build-arg INSTALL_DEV=true .
+```
+
+### Run interactively
+
+```bash
+docker run --rm -it nilmtk-contrib:all bash
+```
+
+Mount a local dataset directory (read-only) at `/data`:
+
+```bash
+docker run --rm -it -v /path/to/datasets:/data:ro nilmtk-contrib:all bash
+```
+
+On Windows PowerShell, use a drive path such as `-v C:/Users/you/datasets:/data:ro`.
+
+GPU-enabled shell (requires NVIDIA Container Toolkit):
+
+```bash
+docker run --rm -it --gpus all nilmtk-contrib:all bash
+```
+
+Inside the container, verify CUDA visibility for PyTorch:
+
+```bash
+python -c "import torch; print('cuda:', torch.cuda.is_available())"
+```
+
+### Verify the image
+
+Quick package and backend checks:
+
+```bash
+docker run --rm nilmtk-contrib:all python -c "import nilmtk_contrib; print(nilmtk_contrib.__version__)"
+docker run --rm nilmtk-contrib:all python -c "import nilmtk_contrib.disaggregate, nilmtk_contrib.torch; print('imports ok')"
+docker run --rm nilmtk-contrib:all python -c "import nilmtk, torch, tensorflow as tf; print('nilmtk ok'); print('torch', torch.__version__); print('tensorflow', tf.__version__)"
+```
+
+Compile and run the lightweight test subset (requires the dev image):
+
+```bash
+docker build -t nilmtk-contrib:dev --build-arg INSTALL_DEV=true .
+docker run --rm nilmtk-contrib:dev python -m compileall -q nilmtk_contrib tests
+docker run --rm nilmtk-contrib:dev python -m pytest -q \
+  tests/test_imports.py \
+  tests/test_params.py \
+  tests/test_preprocessing_windows.py \
+  tests/test_preprocessing_alignment.py \
+  tests/test_preprocessing_classification.py \
+  tests/test_validation.py \
+  tests/test_checkpoints.py \
+  tests/test_random_logging.py \
+  tests/test_model_runtime.py
+```
+
+One-shot smoke test after building the default image:
+
+```bash
+docker run --rm nilmtk-contrib:all bash -lc "python -c \"import nilmtk_contrib; import torch; import tensorflow as tf; print('nilmtk-contrib', nilmtk_contrib.__version__); print('torch', torch.__version__); print('tensorflow', tf.__version__)\""
+```
+
+### Docker build arguments
+
+| Argument | Default | Allowed values | Purpose |
+|---|---|---|---|
+| `INSTALL_EXTRA` | `all` | `all`, `torch`, `tensorflow`, `classical` | Optional dependency extra to install |
+| `INSTALL_DEV` | `false` | `true`, `false` | Also install `.[dev]` for pytest and tooling |
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Multi-backend image definition with build args |
+| `.dockerignore` | Keeps build context small and excludes local artifacts |
 
 ## Dependency Extras
 
@@ -108,33 +254,6 @@ The table below lists the public model surface. "Verification" describes how the
 | MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
 
-## Research Use And Reproducibility
-
-Use the model table to choose the correct backend and citation. Generic architecture papers support architecture inspiration only; they should not be cited as NILM-specific evidence by themselves.
-
-For reproducible experiments:
-
-- Record the Python version, package extras, dataset, building, appliance list, sampling period, random seed, and hardware.
-- Run backend-specific smoke tests before running full experiments.
-- Verify TensorFlow/PyTorch parity before comparing paired implementations.
-- Verify model output lengths and indices before computing NILMTK metrics.
-- Treat notebook outputs as historical examples unless rerun in the current environment.
-
-Recommended fast checks for source validation:
-
-```bash
-python -m compileall -q nilmtk_contrib tests
-python -m pytest -q tests/test_imports.py tests/test_params.py tests/test_preprocessing_windows.py tests/test_preprocessing_alignment.py tests/test_preprocessing_classification.py tests/test_validation.py tests/test_checkpoints.py tests/test_random_logging.py tests/test_model_runtime.py
-python -m build
-```
-
-Backend smoke checks should be run in environments with the corresponding extras by importing the target model classes and running small dataset-specific training or prediction jobs before launching full experiments. For example:
-
-```bash
-uv sync --extra dev --extra torch
-python -m pytest -q
-```
-
 ## Reference Papers And Codebases
 
 NILM-specific references:
@@ -166,53 +285,51 @@ Reference repositories:
 
 ## Usage
 
-The sample notebooks under [sample_notebooks](sample_notebooks) demonstrate the NILMTK rapid experimentation API. Install the relevant backend extra and ensure datasets are available before running them.
+The sample notebooks under [sample_notebooks](sample_notebooks) demonstrate the NILMTK rapid experimentation API used by NILMBench2026. Install the relevant backend extra and ensure datasets are available before running them.
 
 Supported experiment workflows include:
 
+- NILMBench2026 benchmark runs across accuracy, event-detection, efficiency, and generalization metrics.
 - Training and testing across multiple appliances.
 - Training and testing across multiple datasets for transfer learning.
 - Training and testing across multiple buildings.
 - Training and testing with artificial aggregate.
 - Training and testing with different sampling frequencies.
 
-## Docker
-
-Build and run locally:
-
-```bash
-docker build -t nilmtk-contrib .
-docker run --rm -it nilmtk-contrib bash
-```
-
-The default Dockerfile installs `.[all]`. Edit the Dockerfile to use `.[torch]`, `.[tensorflow]`, or `.[classical]` for a narrower backend image.
-
-Pull the pre-built image:
-
-```bash
-docker pull ghcr.io/enfuego27826/nilmtk-contrib:latest
-docker run --rm -it ghcr.io/enfuego27826/nilmtk-contrib:latest bash
-```
-
 ## Citation
 
-If you find this repository useful for your research, please cite:
+If you use NILMBench2026 or its benchmark results in your research, please cite:
+
+```bibtex
+@inproceedings{kuloor2026nilmbench,
+  title     = {NILMBench2026: A Benchmark for Energy Disaggregation},
+  author    = {Kuloor, Aayush and Singh, Anurag and Dhru, Harsh and Batra, Nipun},
+  booktitle = {Proceedings of the 13th ACM International Conference on Systems for
+               Energy-Efficient Buildings, Cities, and Transportation (BuildSys '26)},
+  year      = {2026},
+  doi       = {10.1145/3744256.3812587},
+  publisher = {ACM},
+  address   = {Banff, AB, Canada}
+}
+```
+
+If you use `nilmtk-contrib`, please also cite the NILMTK-Contrib paper:
 
 ```bibtex
 @inproceedings{10.1145/3360322.3360844,
-author = {Batra, Nipun and Kukunuri, Rithwik and Pandey, Ayush and Malakar, Raktim and Kumar, Rajat and Krystalakos, Odysseas and Zhong, Mingjun and Meira, Paulo and Parson, Oliver},
-title = {Towards Reproducible State-of-the-Art Energy Disaggregation},
-year = {2019},
-isbn = {9781450370059},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-url = {https://doi.org/10.1145/3360322.3360844},
-doi = {10.1145/3360322.3360844},
-booktitle = {Proceedings of the 6th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation},
-pages = {193-202},
-numpages = {10},
-keywords = {smart meters, energy disaggregation, non-intrusive load monitoring},
-location = {New York, NY, USA},
-series = {BuildSys '19}
+  author = {Batra, Nipun and Kukunuri, Rithwik and Pandey, Ayush and Malakar, Raktim and Kumar, Rajat and Krystalakos, Odysseas and Zhong, Mingjun and Meira, Paulo and Parson, Oliver},
+  title = {Towards Reproducible State-of-the-Art Energy Disaggregation},
+  year = {2019},
+  isbn = {9781450370059},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3360322.3360844},
+  doi = {10.1145/3360322.3360844},
+  booktitle = {Proceedings of the 6th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation},
+  pages = {193--202},
+  numpages = {10},
+  keywords = {smart meters, energy disaggregation, non-intrusive load monitoring},
+  location = {New York, NY, USA},
+  series = {BuildSys '19}
 }
 ```
