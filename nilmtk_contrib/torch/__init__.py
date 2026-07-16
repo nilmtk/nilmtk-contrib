@@ -10,6 +10,7 @@ _EXPORTS = {
     "DAE": ("nilmtk_contrib.torch.dae", "DAE"),
     "MSDC": ("nilmtk_contrib.torch.msdc", "MSDC"),
     "NILMFormer": ("nilmtk_contrib.torch.nilmformer", "NILMFormer"),
+    "PatchTST": ("nilmtk_contrib.torch.patchtst", "PatchTST"),
     "Reformer": ("nilmtk_contrib.torch.reformer", "Reformer"),
     "ResNet": ("nilmtk_contrib.torch.resnet", "ResNet"),
     "ResNet_classification": (

@@ -32,6 +32,7 @@ MODEL_CATALOG = (
     ModelCatalogEntry("MSDC", "torch", "nilmtk_contrib.torch.msdc", "MSDC", "nilmtk_contrib.torch"),
     ModelCatalogEntry("MSDC without CRF", "torch", "nilmtk_contrib.torch.msdc_without_crf", "MSDC", None),
     ModelCatalogEntry("NILMFormer", "torch", "nilmtk_contrib.torch.nilmformer", "NILMFormer", "nilmtk_contrib.torch"),
+    ModelCatalogEntry("PatchTST", "torch", "nilmtk_contrib.torch.patchtst", "PatchTST", "nilmtk_contrib.torch"),
     ModelCatalogEntry("Reformer", "torch", "nilmtk_contrib.torch.reformer", "Reformer", "nilmtk_contrib.torch"),
     ModelCatalogEntry("ResNet", "torch", "nilmtk_contrib.torch.resnet", "ResNet", "nilmtk_contrib.torch"),
     ModelCatalogEntry("ResNet_classification", "torch", "nilmtk_contrib.torch.resnet_classification", "ResNet_classification", "nilmtk_contrib.torch"),

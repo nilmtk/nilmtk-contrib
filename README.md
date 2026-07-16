@@ -291,6 +291,7 @@ The table below lists the public model surface. "Verification" describes how the
 | ResNet_classification | PyTorch | `nilmtk_contrib.torch.ResNet_classification` | Residual NILM model with classification branch | Residual and NILM classification literature | Explicit threshold and loss-weight parameters are supported |
 | BERT | TensorFlow | `nilmtk_contrib.disaggregate.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
 | BERT | PyTorch | `nilmtk_contrib.torch.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
+| PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | Patch-based Transformer adapted to sequence-to-point NILM | Nie et al., A Time Series is Worth 64 Words | Separate mains/target normalization; no forecasting RevIN reversal |
 | ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | ConvLSTM-inspired NILM adaptation | Shi et al., ConvLSTM | Generic spatiotemporal architecture adapted to NILM |
 | TCN | PyTorch | `nilmtk_contrib.torch.TCN` | Generic TCN sequence-modeling baseline adapted to NILM | Bai, Kolter, and Koltun, TCN | PyTorch backend |
 | Reformer | PyTorch | `nilmtk_contrib.torch.Reformer` | Reformer-inspired NILM adaptation | Kitaev, Kaiser, and Levskaya, Reformer | Efficient Transformer architecture adapted to NILM |
@@ -319,6 +320,7 @@ Generic architecture references:
 - Devlin et al., "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding", arXiv:1810.04805, https://arxiv.org/abs/1810.04805.
 - Shi et al., "Convolutional LSTM Network: A Machine Learning Approach for Precipitation Nowcasting", arXiv:1506.04214, https://arxiv.org/abs/1506.04214.
 - Bai, Kolter, and Koltun, "An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling", arXiv:1803.01271, https://arxiv.org/abs/1803.01271.
+- Nie et al., "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers", ICLR 2023, https://arxiv.org/abs/2211.14730. Reference implementation: https://github.com/yuqinie98/PatchTST.
 - Kitaev, Kaiser, and Levskaya, "Reformer: The Efficient Transformer", arXiv:2001.04451, https://arxiv.org/abs/2001.04451.
 
 Reference repositories:
@@ -339,4 +341,3 @@ Supported experiment workflows include:
 - Training and testing across multiple buildings.
 - Training and testing with artificial aggregate.
 - Training and testing with different sampling frequencies.
-
