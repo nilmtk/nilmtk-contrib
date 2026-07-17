@@ -2,6 +2,7 @@ import importlib
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from types import SimpleNamespace
 
 import pytest
@@ -28,6 +29,11 @@ def _imported_modules_after(statement):
 def test_top_level_import_is_lightweight():
     imported = _imported_modules_after("import nilmtk_contrib")
     assert imported == set()
+
+
+def test_runtime_version_matches_distribution_metadata():
+    package = importlib.import_module("nilmtk_contrib")
+    assert package.__version__ == version("nilmtk-contrib")
 
 
 def test_disaggregate_package_import_is_lightweight():

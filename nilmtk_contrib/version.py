@@ -1,2 +1,5 @@
-version = '0.1.2.dev1+git.0dd2ef5'
-short_version = '0.1.2'
+"""Package version used by both Hatch and runtime imports."""
+
+__version__ = "0.1.2"
+version = __version__
+short_version = __version__
