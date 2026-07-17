@@ -56,6 +56,7 @@ TORCH_MODEL_SPECS = (
     ModelSpec("torch", "nilmtk_contrib.torch", "Seq2PointTorch", "nilmtk_contrib.torch.seq2point"),
     ModelSpec("torch", "nilmtk_contrib.torch", "Seq2Seq", "nilmtk_contrib.torch.seq2seq"),
     ModelSpec("torch", "nilmtk_contrib.torch", "TCN", "nilmtk_contrib.torch.TCN"),
+    ModelSpec("torch", "nilmtk_contrib.torch", "TimesNet", "nilmtk_contrib.torch.timesnet"),
     ModelSpec("torch", "nilmtk_contrib.torch", "WindowGRU", "nilmtk_contrib.torch.WindowGRU"),
 )
 
