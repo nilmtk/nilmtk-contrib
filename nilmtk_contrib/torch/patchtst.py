@@ -219,6 +219,19 @@ class PatchTST(Disaggregator):
         self.gradient_clip = get_param(params, "gradient_clip", 1.0)
 
         validate_positive_int("n_epochs", self.n_epochs)
+        if (
+            isinstance(self.mains_mean, bool)
+            or not isinstance(self.mains_mean, Real)
+            or not math.isfinite(self.mains_mean)
+        ):
+            raise ValueError("mains_mean must be a finite number.")
+        if (
+            isinstance(self.mains_std, bool)
+            or not isinstance(self.mains_std, Real)
+            or not math.isfinite(self.mains_std)
+            or self.mains_std <= 0
+        ):
+            raise ValueError("mains_std must be a positive finite number.")
 
         for name in (
             "patch_length",
