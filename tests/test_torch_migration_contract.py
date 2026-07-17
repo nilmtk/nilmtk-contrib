@@ -29,6 +29,7 @@ DEFAULTS_BY_MODULE = {
     "nilmtk_contrib.torch.msdc": ExpectedDefaults(99, 50, 256, 1800, 600),
     "nilmtk_contrib.torch.msdc_without_crf": ExpectedDefaults(99, 50, 256, 1800, 600),
     "nilmtk_contrib.torch.nilmformer": ExpectedDefaults(99, 100, 1024, 1800, 600),
+    "nilmtk_contrib.torch.patchtst": ExpectedDefaults(99, 10, 128, 1800, 600),
     "nilmtk_contrib.torch.reformer": ExpectedDefaults(99, 10, 512, 1800, 600),
     "nilmtk_contrib.torch.resnet": ExpectedDefaults(299, 10, 512, 1800, 600),
     "nilmtk_contrib.torch.resnet_classification": ExpectedDefaults(

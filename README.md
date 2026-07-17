@@ -297,6 +297,7 @@ The table below lists the public model surface. "Verification" describes how the
 | MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | NILM paper implementation requiring experiment validation for new claims | MSDC dual-CNN NILM paper | Canonical CRF-enabled implementation path |
 | MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
+| PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | Patch-token Transformer adaptation requiring NILM benchmark validation | Nie et al., A Time Series is Worth 64 Words | Sequence-to-point regression head |
 
 ## Reference Papers And Codebases
 
@@ -320,6 +321,7 @@ Generic architecture references:
 - Shi et al., "Convolutional LSTM Network: A Machine Learning Approach for Precipitation Nowcasting", arXiv:1506.04214, https://arxiv.org/abs/1506.04214.
 - Bai, Kolter, and Koltun, "An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling", arXiv:1803.01271, https://arxiv.org/abs/1803.01271.
 - Kitaev, Kaiser, and Levskaya, "Reformer: The Efficient Transformer", arXiv:2001.04451, https://arxiv.org/abs/2001.04451.
+- Nie et al., "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers", ICLR 2023, https://openreview.net/forum?id=Jbdc0vTOcol.
 
 Reference repositories:
 
@@ -339,4 +341,3 @@ Supported experiment workflows include:
 - Training and testing across multiple buildings.
 - Training and testing with artificial aggregate.
 - Training and testing with different sampling frequencies.
-
