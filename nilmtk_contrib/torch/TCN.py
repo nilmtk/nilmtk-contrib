@@ -442,7 +442,7 @@ class TCN(TorchDisaggregator):
             output_index = (
                 output_indexes[position]
                 if do_preprocessing
-                else getattr(frame, "index", pd.RangeIndex(len(windows)))
+                else pd.RangeIndex(len(windows))
             )
             if len(output_index) != len(windows):
                 raise ValueError(
@@ -491,7 +491,10 @@ class TCN(TorchDisaggregator):
                                 f"Model for {appliance_name!r} returned non-finite "
                                 "values."
                             )
-                        batches.append(prediction.detach().cpu())
+                        public_batch = prediction.detach().cpu()
+                        if public_batch.dtype == torch.bfloat16:
+                            public_batch = public_batch.to(dtype=torch.float32)
+                        batches.append(public_batch)
                 normalized = (
                     torch.cat(batches).numpy().reshape(-1)
                     if batches

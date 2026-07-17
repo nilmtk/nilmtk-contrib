@@ -109,7 +109,7 @@ def test_multiple_chunks_preserve_independent_indexes_and_partial_batches():
         assert prediction.index.equals(source.index)
 
 
-def test_preprocessed_inference_keeps_one_point_per_window_and_its_index():
+def test_preprocessed_inference_keeps_legacy_range_index():
     model = _model(sequence_length=7, batch_size=2)
     index = pd.Index(["a", "c", "f"], name="window")
     windows = pd.DataFrame(np.zeros((3, 7), dtype=np.float32), index=index)
@@ -119,7 +119,28 @@ def test_preprocessed_inference_keeps_one_point_per_window_and_its_index():
     )[0]
 
     assert len(prediction) == len(windows)
-    assert prediction.index.equals(index)
+    assert prediction.index.equals(pd.RangeIndex(len(windows)))
+
+
+def test_bfloat16_model_output_is_converted_to_public_float32():
+    class BFloat16Point(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.zeros(1))
+
+        def forward(self, values):
+            return torch.ones(
+                (len(values), 1), dtype=torch.bfloat16, device=values.device
+            ) + self.bias.to(dtype=torch.bfloat16)
+
+    prediction = _model(sequence_length=7).disaggregate_chunk(
+        [_frame(8)], model={"fridge": BFloat16Point()}
+    )[0]
+
+    assert prediction.dtypes.tolist() == [np.dtype("float32")]
+    np.testing.assert_array_equal(
+        prediction["fridge"].to_numpy(), np.full(8, 13.0, dtype=np.float32)
+    )
 
 
 @pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
