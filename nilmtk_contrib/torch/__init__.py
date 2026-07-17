@@ -28,6 +28,7 @@ _EXPORTS = {
     "Seq2PointTorch": ("nilmtk_contrib.torch.seq2point", "Seq2PointTorch"),
     "Seq2Seq": ("nilmtk_contrib.torch.seq2seq", "Seq2Seq"),
     "TCN": ("nilmtk_contrib.torch.TCN", "TCN"),
+    "TimesNet": ("nilmtk_contrib.torch.timesnet", "TimesNet"),
     "WindowGRU": ("nilmtk_contrib.torch.WindowGRU", "WindowGRU"),
 }
 

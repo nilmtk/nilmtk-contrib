@@ -294,6 +294,7 @@ The table below lists the public model surface. "Verification" describes how the
 | BERT | PyTorch | `nilmtk_contrib.torch.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
 | ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | ConvLSTM-inspired NILM adaptation | Shi et al., ConvLSTM | Generic spatiotemporal architecture adapted to NILM |
 | TCN | PyTorch | `nilmtk_contrib.torch.TCN` | Generic TCN sequence-modeling baseline adapted to NILM | Bai, Kolter, and Koltun, TCN | PyTorch backend |
+| TimesNet | PyTorch | `nilmtk_contrib.torch.TimesNet` | TimesNet-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Wu et al., TimesNet | PyTorch backend |
 | Reformer | PyTorch | `nilmtk_contrib.torch.Reformer` | Reformer-inspired NILM adaptation | Kitaev, Kaiser, and Levskaya, Reformer | Efficient Transformer architecture adapted to NILM |
 | MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | NILM paper implementation requiring experiment validation for new claims | MSDC dual-CNN NILM paper | Canonical CRF-enabled implementation path |
 | MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
@@ -317,6 +318,7 @@ NILM-specific references:
 - Nie et al., "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers", arXiv:2211.14730, https://arxiv.org/abs/2211.14730.
 - Luo and Wang, "ModernTCN: A Modern Pure Convolution Structure for General Time Series Analysis", ICLR 2024, https://openreview.net/forum?id=vpJMJerXHU.
 - Zeng et al., "Are Transformers Effective for Time Series Forecasting?", AAAI 2023, https://arxiv.org/abs/2205.13504.
+- Wu et al., "TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis", ICLR 2023, https://openreview.net/forum?id=ju_Uqw384Oq.
 
 Generic architecture references:
 
