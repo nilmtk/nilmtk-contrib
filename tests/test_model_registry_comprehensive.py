@@ -246,10 +246,13 @@ def _attach_ast_parents(tree):
 def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root):
     known_runtime_methods = {
         "apply",
+        "align_raw_inference_predictions",
         "appliance_minmax_params",
+        "call_preprocessing",
         "load_model",
         "modules",
         "named_parameters",
+        "preprocess_raw_inference_chunks",
         "require_models",
         "save_model",
         "set_appliance_params",
