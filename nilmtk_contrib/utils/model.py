@@ -17,15 +17,27 @@ def _unsupported_load_model(self, *args, **kwargs):
     unsupported_persistence(model_name)
 
 
+def _needs_persistence_fallback(model, method_name):
+    method = getattr(model, method_name, None)
+    if not callable(method):
+        return True
+    function = getattr(method, "__func__", method)
+    return (
+        getattr(function, "__module__", "")
+        == "nilmtk.disaggregate.disaggregator"
+        and getattr(function, "__qualname__", "").startswith("Disaggregator.")
+    )
+
+
 def initialize_runtime(model, params, *, backends):
     """Attach common runtime controls to a model instance."""
     model.seed = params.get("seed", getattr(model, "seed", None))
     model.verbose = params.get("verbose", getattr(model, "verbose", False))
     configure_logging(model.verbose)
     set_random_seed(model.seed, backends=backends)
-    if not callable(getattr(model, "save_model", None)):
+    if _needs_persistence_fallback(model, "save_model"):
         model.save_model = MethodType(_unsupported_save_model, model)
-    if not callable(getattr(model, "load_model", None)):
+    if _needs_persistence_fallback(model, "load_model"):
         model.load_model = MethodType(_unsupported_load_model, model)
 
 

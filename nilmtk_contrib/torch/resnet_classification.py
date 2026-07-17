@@ -12,6 +12,7 @@ from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_
 import copy
 
 # Set device
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 from nilmtk_contrib.preprocessing.classification import (
     appliance_threshold,
@@ -476,7 +477,7 @@ class ResNet_classification(Disaggregator):
                             _log_print(f"Validation loss improved, saving model to {filepath}")
 
                     # Load best weights
-                    model.load_state_dict(torch.load(filepath, map_location=self.device))
+                    load_torch_state(model, filepath, self.device)
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""

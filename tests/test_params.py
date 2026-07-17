@@ -133,6 +133,13 @@ def test_normalize_common_params_accepts_load_model_aliases(alias):
         ("n_epochs", -1, "n_epochs must be a non-negative integer"),
         ("batch_size", 0, "batch_size must be a positive integer"),
         ("mains_std", 0, "mains_std must not be zero"),
+        ("mains_std", -1, "mains_std must be a positive finite number"),
+        ("mains_std", float("nan"), "mains_std must be a positive finite number"),
+        ("mains_std", float("inf"), "mains_std must be a positive finite number"),
+        ("mains_mean", float("nan"), "mains_mean must be a finite number"),
+        ("seed", True, "seed must be an integer or None"),
+        ("verbose", 1, "verbose must be a boolean"),
+        ("chunk_wise_training", "yes", "chunk_wise_training must be a boolean"),
     ],
 )
 def test_normalize_common_params_validates_common_values(field, value, message):
@@ -146,6 +153,24 @@ def test_normalize_common_params_validates_appliance_std():
             {"appliance_params": {"fridge": {"mean": 75, "std": 0}}},
             DEFAULTS,
         )
+
+
+@pytest.mark.parametrize(
+    "appliance_params",
+    [
+        [],
+        {"fridge": []},
+        {"": {"mean": 1, "std": 1}},
+        {"fridge": {"mean": float("nan"), "std": 1}},
+        {"fridge": {"mean": 1, "std": float("inf")}},
+        {"fridge": {"mean": 1, "std": -1}},
+    ],
+)
+def test_normalize_common_params_rejects_malformed_appliance_params(
+    appliance_params,
+):
+    with pytest.raises(ValueError, match="appliance_params"):
+        normalize_common_params({"appliance_params": appliance_params}, DEFAULTS)
 
 
 def test_require_odd_sequence_length_accepts_odd_values():
@@ -168,3 +193,9 @@ def test_model_specific_parameter_validators():
         validate_non_negative_int("iterations", -1)
     with pytest.raises(ValueError, match="learning_rate"):
         validate_positive_number("learning_rate", 0)
+    with pytest.raises(ValueError, match="learning_rate"):
+        validate_positive_number("learning_rate", float("nan"))
+    with pytest.raises(ValueError, match="learning_rate"):
+        validate_positive_number("learning_rate", float("inf"))
+    with pytest.raises(ValueError, match="learning_rate"):
+        validate_positive_number("learning_rate", "fast")

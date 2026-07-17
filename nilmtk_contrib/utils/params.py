@@ -1,6 +1,8 @@
 """Shared parameter parsing and validation helpers."""
 
 from dataclasses import dataclass
+import math
+from numbers import Integral, Real
 import warnings
 
 
@@ -61,35 +63,64 @@ def require_odd_sequence_length(sequence_length):
 
 def validate_positive_int(name, value):
     """Validate a positive integer parameter."""
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+    if not isinstance(value, Integral) or isinstance(value, bool) or value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
     return value
 
 
 def validate_non_negative_int(name, value):
     """Validate a non-negative integer parameter."""
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, Integral) or isinstance(value, bool) or value < 0:
         raise ValueError(f"{name} must be a non-negative integer.")
     return value
 
 
 def validate_positive_number(name, value):
-    """Validate a positive numeric parameter."""
-    if isinstance(value, bool) or value <= 0:
-        raise ValueError(f"{name} must be a positive number.")
+    """Validate a positive, finite real-valued parameter."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, Real)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be a positive finite number.")
     return value
 
 
 def _validate_non_zero_std(name, value):
+    if not isinstance(value, Real) or isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive finite number.")
     if value == 0:
         raise ValueError(f"{name} must not be zero.")
+    if value < 0 or not math.isfinite(value):
+        raise ValueError(f"{name} must be a positive finite number.")
+    return value
+
+
+def _validate_finite_number(name, value):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, Real)
+        or not math.isfinite(value)
+    ):
+        raise ValueError(f"{name} must be a finite number.")
     return value
 
 
 def _validate_appliance_params(appliance_params):
+    if not isinstance(appliance_params, dict):
+        raise ValueError("appliance_params must be a dictionary.")
     for appliance, stats in appliance_params.items():
+        if not isinstance(appliance, str) or not appliance.strip():
+            raise ValueError("appliance_params keys must be non-empty strings.")
         if not isinstance(stats, dict):
-            continue
+            raise ValueError(
+                f"appliance_params[{appliance!r}] must be a dictionary."
+            )
+        if "mean" in stats:
+            _validate_finite_number(
+                f"appliance_params[{appliance!r}]['mean']", stats["mean"]
+            )
         if "std" in stats:
             _validate_non_zero_std(f"appliance_params[{appliance!r}]['std']", stats["std"])
     return appliance_params
@@ -138,8 +169,19 @@ def normalize_common_params(params, defaults):
     validate_positive_int("sequence_length", sequence_length)
     validate_non_negative_int("n_epochs", n_epochs)
     validate_positive_int("batch_size", batch_size)
+    _validate_finite_number("mains_mean", mains_mean)
     _validate_non_zero_std("mains_std", mains_std)
     _validate_appliance_params(appliance_params)
+    if seed is not None and (
+        not isinstance(seed, Integral) or isinstance(seed, bool)
+    ):
+        raise ValueError("seed must be an integer or None.")
+    if not isinstance(verbose, bool):
+        raise ValueError("verbose must be a boolean.")
+    if not isinstance(chunk_wise_training, bool):
+        raise ValueError("chunk_wise_training must be a boolean.")
+    if device is not None and (not isinstance(device, str) or not device.strip()):
+        raise ValueError("device must be a non-empty string or None.")
 
     return CommonParams(
         sequence_length=sequence_length,

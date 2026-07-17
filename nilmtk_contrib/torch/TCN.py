@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -105,10 +106,10 @@ class TemporalBlock(nn.Module):
         self.relu = nn.ReLU()
         
         # Weight normalization for stability
-        self.conv1 = nn.utils.weight_norm(self.conv1)
-        self.conv2 = nn.utils.weight_norm(self.conv2)
+        self.conv1 = nn.utils.parametrizations.weight_norm(self.conv1)
+        self.conv2 = nn.utils.parametrizations.weight_norm(self.conv2)
         if self.downsample is not None:
-            self.downsample = nn.utils.weight_norm(self.downsample)
+            self.downsample = nn.utils.parametrizations.weight_norm(self.downsample)
         
         self.init_weights()
     
@@ -380,7 +381,7 @@ class TCN(Disaggregator):
                             _log_print(f"Validation loss improved, saving model to {filepath}")
                     
                     # Load the best weights after training
-                    model.load_state_dict(torch.load(filepath, map_location=self.device))
+                    load_torch_state(model, filepath, self.device)
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""

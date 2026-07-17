@@ -38,6 +38,21 @@ def test_initialize_runtime_preserves_real_persistence_methods():
     assert model.load_model() == "loaded"
 
 
+def test_initialize_runtime_replaces_nilmtk_abstract_persistence_methods():
+    nilmtk = pytest.importorskip("nilmtk.disaggregate")
+
+    class ModelWithoutPersistence(nilmtk.Disaggregator):
+        MODEL_NAME = "NoPersistence"
+
+    model = ModelWithoutPersistence()
+    initialize_runtime(model, {}, backends=("python",))
+
+    with pytest.raises(NotImplementedError, match="NoPersistence"):
+        model.save_model()
+    with pytest.raises(NotImplementedError, match="NoPersistence"):
+        model.load_model()
+
+
 def test_checkpoint_path_returns_string_for_keras_compatibility():
     path = checkpoint_path(".h5")
 

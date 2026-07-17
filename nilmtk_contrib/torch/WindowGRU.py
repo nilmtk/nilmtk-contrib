@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -260,7 +261,7 @@ class WindowGRU(Disaggregator):
                     _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
                 
             # Load best weights (like TF version)
-            model.load_state_dict(torch.load(filepath))
+            load_torch_state(model, filepath, self.device)
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         if model is not None:
             self.models = model

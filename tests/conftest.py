@@ -77,3 +77,13 @@ def model_smoke_config(pytestconfig):
 @pytest.fixture(scope="session")
 def gpu_tests_enabled(pytestconfig):
     return pytestconfig.getoption("--run-gpu-tests")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def close_nilmtk_global_stats_cache():
+    """Close NILMTK's import-time temporary HDF store after the test session."""
+    yield
+    nilmtk = sys.modules.get("nilmtk")
+    stats_cache = getattr(nilmtk, "STATS_CACHE", None)
+    if stats_cache is not None:
+        stats_cache.close()

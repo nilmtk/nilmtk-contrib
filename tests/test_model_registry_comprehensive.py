@@ -130,6 +130,25 @@ def test_model_code_does_not_unpack_appliance_params_by_dict_order(repo_root):
     assert offenders == []
 
 
+def test_torch_models_use_the_safe_checkpoint_loader(repo_root):
+    offenders = []
+    for path in (repo_root / "nilmtk_contrib" / "torch").glob("*.py"):
+        if path.name in {"__init__.py", "preprocessing.py"}:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "torch"
+                and node.func.attr == "load"
+            ):
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert offenders == []
+
+
 def test_model_constructors_accept_params_argument(repo_root):
     offenders = []
     for model_dir in (

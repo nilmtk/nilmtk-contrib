@@ -9,6 +9,7 @@ from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_
 from nilmtk.disaggregate import Disaggregator
 from tqdm import tqdm  # Added for progress bars
 
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -291,7 +292,7 @@ class BERT(Disaggregator):
                                 _log_print(f'Epoch {epoch+1}/{self.n_epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
                     
                     # Load best weights (like TF version)
-                    model.load_state_dict(torch.load(filepath))
+                    load_torch_state(model, filepath, self.device)
 
     # Remaining methods keep the legacy backend behavior.
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):

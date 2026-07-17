@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -263,7 +264,7 @@ class Seq2PointTorch(Disaggregator):
                             _log_print(f"Validation loss improved, saving model to {filepath}")
                     
                     # Load the best performing model
-                    model.load_state_dict(torch.load(filepath, map_location=self.device))
+                    load_torch_state(model, filepath, self.device)
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""

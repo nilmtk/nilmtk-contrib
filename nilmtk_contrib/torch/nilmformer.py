@@ -43,6 +43,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.utils.checkpoints import load_torch_state
 from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -833,7 +834,7 @@ class NILMFormer(Disaggregator):
                     break
         
         # Load best model
-        model.load_state_dict(torch.load(best_model_path))
+        load_torch_state(model, best_model_path, self.device)
         model.eval()
         _log_print(f"Training completed for {appliance_name}")
 
