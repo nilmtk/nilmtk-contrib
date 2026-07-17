@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 import torch
@@ -6,10 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from nilmtk.disaggregate import Disaggregator
-
-
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -94,7 +92,7 @@ class MSDCNet(nn.Module):
         return power_preds, state_preds
 
 
-class MSDC(Disaggregator):
+class MSDC(TorchDisaggregator):
     """
     Multi-State Dual CNN for non-intrusive load monitoring without CRF layer.
     
@@ -244,21 +242,35 @@ class MSDC(Disaggregator):
         }
     }
     
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
-        super().__init__()
-        
+    def __init__(self, params=None):
+        if params is None:
+            params = {}
+        if not isinstance(params, Mapping):
+            raise TypeError("params must be a mapping or None.")
+
+        dataset = params.get('dataset', 'uk_dale')
+        if not isinstance(dataset, str) or not dataset.strip():
+            raise ValueError("dataset must be a non-empty string.")
+        dataset = dataset.strip().lower()
+        if dataset not in self.DATASET_NORMALIZATION:
+            _log_print(f"Warning: Unknown dataset '{dataset}'. Defaulting to 'uk_dale'.")
+            dataset = 'uk_dale'
+        dataset_norm = self.DATASET_NORMALIZATION[dataset]
+        super().__init__(
+            params,
+            defaults=torch_defaults(
+                n_epochs=50,
+                batch_size=256,
+                mains_mean=dataset_norm['mains_mean'],
+                mains_std=dataset_norm['mains_std'],
+            ),
+        )
         self.MODEL_NAME = "MSDC"
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         
         # Dataset configuration
-        self.dataset = params.get('dataset', 'uk_dale').lower()
+        self.dataset = dataset
         self.house = params.get('house', None)
-        
-        # Validate dataset
-        if self.dataset not in ['uk_dale', 'redd']:
-            _log_print(f"Warning: Unknown dataset '{self.dataset}'. Defaulting to 'uk_dale'.")
-            self.dataset = 'uk_dale'
         
         # Build dataset key for configuration lookup
         if self.house is not None:
@@ -267,27 +279,14 @@ class MSDC(Disaggregator):
             self.dataset_key = self.dataset
         
         # Extract hyperparameters
-        self.sequence_length = params.get('sequence_length', 99)
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd")
             
         # Output length for sequence-to-sequence prediction
         self.out_len = params.get('out_len', 64)
         self.num_states = params.get('num_states', 3)  # Will be overridden by appliance config
-        self.n_epochs = params.get('n_epochs', 50)
-        self.batch_size = params.get('batch_size', 256)
         self.learning_rate = params.get('learning_rate', 0.001)
         self.patience = params.get('patience', 5)
-        
-        # Dataset-specific normalization parameters
-        dataset_norm = self.DATASET_NORMALIZATION.get(self.dataset, self.DATASET_NORMALIZATION['uk_dale'])
-        self.mains_mean = params.get('mains_mean', dataset_norm['mains_mean'])
-        self.mains_std = params.get('mains_std', dataset_norm['mains_std'])
-        self.appliance_params = params.get('appliance_params', {})
-        
-        # Model storage
-        self.models = OrderedDict()  # Store separate models for each appliance
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Display configuration
         _log_print(f"MSDC initialized for dataset: {self.dataset.upper()}")
@@ -329,19 +328,6 @@ class MSDC(Disaggregator):
             _log_print(f"Warning: No config found for {appliance_name}, using default {num_states} states")
         
         return MSDCNet(self.sequence_length, self.out_len, num_states).to(self.device)
-    
-    def set_appliance_params(self, train_appliances):
-        """Compute normalization statistics for each appliance from training data"""
-        for name, lst in train_appliances:
-            # Always compute normalization from training data
-            arr = pd.concat(lst, axis=0).values.flatten()
-            m, s = arr.mean(), arr.std()
-            # Prevent division by zero
-            if s < 1:
-                s = 100
-            _log_print(f"Computed normalization for {name}: mean={m:.2f}, std={s:.2f}")
-            
-            self.appliance_params[name] = {'mean': m, 'std': s}
     
     def _create_state_labels(self, power_sequence, appliance_name):
         """
@@ -519,9 +505,7 @@ class MSDC(Disaggregator):
     
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregate power consumption using the trained MSDC model."""
-        
-        if model is not None:
-            self.models = model
+        self.require_models(model)
         
         # Preprocess the test mains
         if do_preprocessing:

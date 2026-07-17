@@ -1,12 +1,11 @@
-from collections import OrderedDict
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from nilmtk.disaggregate import Disaggregator
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -152,7 +151,7 @@ class Chomp1d(nn.Module):
     def forward(self, x):
         return x[:, :, :-self.chomp_size].contiguous() if self.chomp_size > 0 else x
 
-class TCN(Disaggregator):
+class TCN(TorchDisaggregator):
     """
     Temporal Convolutional Network (TCN) for Non-Intrusive Load Monitoring (NILM).
     
@@ -186,29 +185,17 @@ class TCN(Disaggregator):
             - mains_std (float): Standard deviation for mains power (default: 600)
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
-        super().__init__()
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults())
+        params = params or {}
         self.MODEL_NAME = "TCN"
-        self.models = OrderedDict()
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
-        
-        # Hyperparameters
-        self.chunk_wise_training = params.get("chunk_wise_training", False)
-        self.sequence_length = params.get("sequence_length", 99)
-        self.n_epochs = params.get("n_epochs", 10)
-        self.batch_size = params.get("batch_size", 512)
-        self.appliance_params = params.get("appliance_params", {})
-        self.mains_mean = params.get("mains_mean", 1800)
-        self.mains_std = params.get("mains_std", 600)
         
         # TCN-specific parameters
         self.num_levels = params.get("num_levels", 8)
         self.num_filters = params.get("num_filters", 25)
         self.kernel_size = params.get("kernel_size", 7)
         self.dropout = params.get("dropout", 0.2)
-        
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Sequence length must be odd for centered windowing.
         if self.sequence_length % 2 == 0:
@@ -277,17 +264,6 @@ class TCN(Disaggregator):
                 new_mains = (new_mains - self.mains_mean) / self.mains_std
                 mains_df_list.append(pd.DataFrame(new_mains))
             return mains_df_list
-
-    def set_appliance_params(self, train_appliances):
-        """Computes and sets normalization parameters for each appliance."""
-        for app_name, df_list in train_appliances:
-            values = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100
-            self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})
-        _log_print("Appliance parameters set:", self.appliance_params)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """Trains the model on a chunk of data."""
@@ -384,8 +360,7 @@ class TCN(Disaggregator):
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         # Preprocess test data
         if do_preprocessing:

@@ -2,11 +2,10 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
-from nilmtk.disaggregate import Disaggregator
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -84,7 +83,7 @@ class Seq2SeqModel(nn.Module):
         x = self.fc2(x) # Linear activation
         return x
 
-class Seq2Seq(Disaggregator):
+class Seq2Seq(TorchDisaggregator):
     """
     Sequence-to-Sequence CNN for Non-Intrusive Load Monitoring (NILM).
     
@@ -111,20 +110,11 @@ class Seq2Seq(Disaggregator):
             - appliance_params (dict): Appliance-specific normalization parameters
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    def __init__(self, params=None):
         """Initializes the disaggregator and its hyperparameters."""
+        super().__init__(params, defaults=torch_defaults())
         self.MODEL_NAME = "Seq2Seq"
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 99)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.models = OrderedDict()
-        self.mains_mean = 1800
-        self.mains_std = 600
-        self.batch_size = params.get('batch_size', 512)
-        self.appliance_params = params.get('appliance_params', {})
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd!")
@@ -132,16 +122,6 @@ class Seq2Seq(Disaggregator):
     def return_network(self):
         """Returns a new, initialized Seq2SeqModel instance."""
         return Seq2SeqModel(self.sequence_length).to(self.device)
-
-    def set_appliance_params(self, train_appliances):
-        """Computes and sets normalization parameters for each appliance."""
-        for (app_name, df_list) in train_appliances:
-            values = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100 # Avoid division by zero for flat signals
-            self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """Trains the model on a chunk of data."""
@@ -228,8 +208,7 @@ class Seq2Seq(Disaggregator):
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         if do_preprocessing:
             test_main_list = self.call_preprocessing(

@@ -6,9 +6,8 @@ import torch.optim as optim
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from collections import OrderedDict
 from torch.utils.data import TensorDataset, DataLoader
-from nilmtk.disaggregate import Disaggregator
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
 from nilmtk_contrib.utils.checkpoints import (
     build_metadata,
     collect_dependencies,
@@ -19,9 +18,7 @@ from nilmtk_contrib.utils.checkpoints import (
     temporary_checkpoint,
 )
 from nilmtk_contrib.utils.logging import get_logger
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print
-from nilmtk_contrib.utils.params import normalize_common_params
-from nilmtk_contrib.utils.random import set_random_seed
+from nilmtk_contrib.utils.model import legacy_print
 from nilmtk_contrib.utils.validation import train_validation_split
 
 logger = get_logger(__name__)
@@ -56,7 +53,7 @@ class DAEModel(nn.Module):
         x = x.permute(0,2,1)       # -> [batch, seq_len, 1]
         return x
 
-class DAE(Disaggregator):
+class DAE(TorchDisaggregator):
     """
     Denoising Autoencoder for non-intrusive load monitoring.
     
@@ -85,60 +82,16 @@ class DAE(Disaggregator):
             - save-model-path (str): Path to save trained models
             - pretrained-model-path (str): Path to load pre-trained models
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
-        super().__init__()
-        common = normalize_common_params(
-            params,
-            defaults={
-                "sequence_length": 99,
-                "n_epochs": 10,
-                "batch_size": 512,
-                "mains_mean": 1000,
-                "mains_std": 600,
-                "appliance_params": {},
-                "save_model_path": None,
-                "pretrained_model_path": None,
-                "chunk_wise_training": False,
-                "seed": None,
-                "verbose": False,
-                "device": None,
-            },
-        )
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults(mains_mean=1000))
         self.MODEL_NAME        = "DAE"
         self.file_prefix       = f"{self.MODEL_NAME.lower()}-temp-weights"
-        self.sequence_length   = common.sequence_length
-        self.n_epochs          = common.n_epochs
-        self.batch_size        = common.batch_size
-        self.mains_mean        = common.mains_mean
-        self.mains_std         = common.mains_std
-        self.appliance_params  = common.appliance_params
-        self.save_model_path   = common.save_model_path
-        self.load_model_path   = common.pretrained_model_path
-        self.chunk_wise_training = common.chunk_wise_training
-        self.seed              = common.seed
-        self.verbose           = common.verbose
-        self.models            = OrderedDict()
-        device = common.device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.device            = torch.device(device)
-        set_random_seed(self.seed, backends=("python", "numpy", "torch"))
         if self.load_model_path:
             self.load_model()
 
     def return_network(self):
         """Returns the DAE model."""
         return DAEModel(self.sequence_length).to(self.device)
-
-    def set_appliance_params(self, train_appliances):
-        """
-        Set the mean and std for each appliance based on the training data.
-        """
-        for name, lst in train_appliances:
-            arr = pd.concat(lst, axis=0).values.flatten()
-            m, s = arr.mean(), arr.std()
-            if s < 1:
-                s = 100  # avoid zero std
-            self.appliance_params[name] = {'mean': m, 'std': s}
 
     def normalize_input(self, data, n, mean, std, overlap):
         """
@@ -328,6 +281,7 @@ class DAE(Disaggregator):
         """
         Disaggregates a chunk of mains data.
         """
+        self.require_models()
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
                 test_main_list, None, 'test'

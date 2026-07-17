@@ -20,6 +20,31 @@ from nilmtk_contrib.utils.params import normalize_common_params
 
 
 SUPPORTED_DEVICE_TYPES = frozenset({"cpu", "cuda", "mps"})
+_COMMON_DEFAULTS = {
+    "sequence_length": 99,
+    "n_epochs": 10,
+    "batch_size": 512,
+    "mains_mean": 1800.0,
+    "mains_std": 600.0,
+    "appliance_params": {},
+    "save_model_path": None,
+    "pretrained_model_path": None,
+    "chunk_wise_training": False,
+    "seed": None,
+    "verbose": False,
+    "device": None,
+}
+
+
+def torch_defaults(**overrides):
+    """Return isolated common defaults with model-specific overrides."""
+    unknown = set(overrides).difference(_COMMON_DEFAULTS)
+    if unknown:
+        names = ", ".join(sorted(unknown))
+        raise ValueError(f"Unknown common default parameters: {names}.")
+    defaults = deepcopy(_COMMON_DEFAULTS)
+    defaults.update(overrides)
+    return defaults
 
 
 def _validate_appliance_name(name, *, label="Appliance"):
@@ -110,7 +135,20 @@ def resolve_torch_device(requested=None):
             raise RuntimeError(
                 "CUDA was reported available but has no visible devices."
             )
-        if device.index is not None and device.index >= device_count:
+        if device.index is None:
+            current_index = torch.cuda.current_device()
+            if (
+                isinstance(current_index, bool)
+                or not isinstance(current_index, Integral)
+                or current_index < 0
+                or current_index >= device_count
+            ):
+                raise RuntimeError(
+                    f"CUDA current device index {current_index!r} is unavailable; "
+                    f"visible device count is {device_count}."
+                )
+            device = torch.device("cuda", current_index)
+        elif device.index >= device_count:
             raise RuntimeError(
                 f"CUDA device index {device.index} is unavailable; "
                 f"visible device count is {device_count}."
@@ -269,6 +307,7 @@ class TorchDisaggregator(Disaggregator):
     APPLIANCE_STD_FLOOR = 1.0
     APPLIANCE_STD_FALLBACK = 100.0
     INCLUDE_APPLIANCE_EXTREMA = False
+    REQUIRED_APPLIANCE_STATS = ("mean", "std")
 
     def __init__(self, params=None, *, defaults):
         if params is None:
@@ -338,6 +377,60 @@ class TorchDisaggregator(Disaggregator):
         )
         self.appliance_params.update(statistics)
 
+    def _validated_appliance_stats(self, appliance_name, required_fields):
+        """Return validated statistics required by one model appliance."""
+        _validate_appliance_name(appliance_name, label="Model appliance")
+        if appliance_name not in self.appliance_params:
+            raise ValueError(
+                f"Model appliance {appliance_name!r} has no normalization parameters."
+            )
+        statistics = _copy_appliance_params(
+            {appliance_name: self.appliance_params[appliance_name]}
+        )[appliance_name]
+        missing = set(required_fields).difference(statistics)
+        if missing:
+            fields = ", ".join(sorted(missing))
+            raise ValueError(
+                f"Normalization parameters for model appliance "
+                f"{appliance_name!r} are missing {fields}."
+            )
+        return statistics
+
+    def appliance_minmax_params(self, appliance_name):
+        """Return min, max, and a safe scale for min-max normalization.
+
+        A constant target has a valid physical range of zero. Its normalized
+        training target is therefore all zeros, using the established standard
+        deviation fallback solely as a non-zero divisor. Denormalization should
+        continue to use ``maximum - minimum`` so a constant target stays constant.
+        """
+        statistics = self._validated_appliance_stats(appliance_name, ("min", "max"))
+        minimum = statistics["min"]
+        maximum = statistics["max"]
+        value_range = maximum - minimum
+        scale = value_range if value_range > 0 else self.APPLIANCE_STD_FALLBACK
+        return minimum, maximum, scale
+
+    def _validate_model_device(self, appliance_name, model):
+        devices = {parameter.device for parameter in model.parameters()}
+        devices.update(buffer.device for buffer in model.buffers())
+        incompatible = sorted(
+            (
+                device
+                for device in devices
+                if device.type != self.device.type
+                or (self.device.index is not None and device.index != self.device.index)
+            ),
+            key=str,
+        )
+        if incompatible:
+            actual = ", ".join(str(device) for device in incompatible)
+            raise ValueError(
+                f"Model for {appliance_name!r} uses incompatible device(s) "
+                f"{actual}; expected {self.device}. Move the model before "
+                "installing it."
+            )
+
     def require_models(self, models=None):
         """Optionally install and then return a validated model mapping."""
         install_models = models is not None
@@ -357,7 +450,17 @@ class TorchDisaggregator(Disaggregator):
                 raise TypeError(
                     f"Model for {appliance_name!r} must be a torch.nn.Module."
                 )
+            self._validate_model_device(appliance_name, model)
             validated[appliance_name] = model
+
+        required_stats = self.REQUIRED_APPLIANCE_STATS
+        if not isinstance(required_stats, tuple) or not all(
+            isinstance(field, str) and field for field in required_stats
+        ):
+            raise TypeError("REQUIRED_APPLIANCE_STATS must be a tuple of field names.")
+        for appliance_name in validated:
+            if required_stats:
+                self._validated_appliance_stats(appliance_name, required_stats)
         if install_models:
             self.models = validated
         return self.models

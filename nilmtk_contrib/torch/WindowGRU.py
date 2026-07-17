@@ -1,12 +1,11 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from collections import OrderedDict
 import numpy as np
 import pandas as pd
-from nilmtk.disaggregate import Disaggregator
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -133,7 +132,7 @@ class GRUNet(nn.Module):
         out = self.fc2(h)           # [batch, 1] - linear activation (no activation)
         return out
 
-class WindowGRU(Disaggregator):
+class WindowGRU(TorchDisaggregator):
     """
     Window-based GRU neural network for Non-Intrusive Load Monitoring (NILM).
     
@@ -161,19 +160,13 @@ class WindowGRU(Disaggregator):
             - pretrained-model-path (str): Path to load pre-trained models (optional)
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    REQUIRED_APPLIANCE_STATS = ()
+
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults())
         self.MODEL_NAME = "WindowGRU"
         self.file_prefix = "{}-temp-weights".format(self.MODEL_NAME.lower())
-        self.save_model_path = params.get('save-model-path', None)
-        self.load_model_path = params.get('pretrained-model-path', None)
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 99)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.models = OrderedDict()
         self.max_val = 800
-        self.batch_size = params.get('batch_size', 512)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def return_network(self):
         """Factory method to create a new GRU model instance"""
@@ -262,8 +255,7 @@ class WindowGRU(Disaggregator):
             # Load best weights (like TF version)
             model.load_state_dict(torch.load(filepath))
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
