@@ -8,6 +8,7 @@ _EXPORTS = {
     "BERT": ("nilmtk_contrib.torch.bert", "BERT"),
     "ConvLSTM": ("nilmtk_contrib.torch.conv_lstm", "ConvLSTM"),
     "DAE": ("nilmtk_contrib.torch.dae", "DAE"),
+    "DLinear": ("nilmtk_contrib.torch.dlinear", "DLinear"),
     "MSDC": ("nilmtk_contrib.torch.msdc", "MSDC"),
     "ModernTCN": ("nilmtk_contrib.torch.moderntcn", "ModernTCN"),
     "NILMFormer": ("nilmtk_contrib.torch.nilmformer", "NILMFormer"),
