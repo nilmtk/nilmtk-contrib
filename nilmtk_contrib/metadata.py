@@ -31,6 +31,7 @@ MODEL_CATALOG = (
     ModelCatalogEntry("DAE", "torch", "nilmtk_contrib.torch.dae", "DAE", "nilmtk_contrib.torch"),
     ModelCatalogEntry("MSDC", "torch", "nilmtk_contrib.torch.msdc", "MSDC", "nilmtk_contrib.torch"),
     ModelCatalogEntry("MSDC without CRF", "torch", "nilmtk_contrib.torch.msdc_without_crf", "MSDC", None),
+    ModelCatalogEntry("ModernTCN", "torch", "nilmtk_contrib.torch.moderntcn", "ModernTCN", "nilmtk_contrib.torch"),
     ModelCatalogEntry("NILMFormer", "torch", "nilmtk_contrib.torch.nilmformer", "NILMFormer", "nilmtk_contrib.torch"),
     ModelCatalogEntry("PatchTST", "torch", "nilmtk_contrib.torch.patchtst", "PatchTST", "nilmtk_contrib.torch"),
     ModelCatalogEntry("Reformer", "torch", "nilmtk_contrib.torch.reformer", "Reformer", "nilmtk_contrib.torch"),
