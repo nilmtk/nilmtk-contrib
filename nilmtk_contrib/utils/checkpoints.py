@@ -7,6 +7,7 @@ import atexit
 import importlib.metadata
 import inspect
 import json
+import os
 from pathlib import Path
 import tempfile
 
@@ -109,6 +110,31 @@ def save_metadata(path, metadata):
         json.dump(metadata, handle, indent=2, sort_keys=True)
 
 
+def save_metadata_atomic(path, metadata):
+    """Atomically publish metadata as the commit marker for a checkpoint set."""
+    folder = Path(path)
+    folder.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=folder,
+            prefix=f".{METADATA_FILENAME}.",
+            delete=False,
+        ) as handle:
+            json.dump(metadata, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, folder / METADATA_FILENAME)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def load_metadata(path, *, expected_model_class=None, expected_backend=None):
     """Load and validate persistence metadata."""
     metadata_path = Path(path) / METADATA_FILENAME
@@ -155,14 +181,19 @@ def save_torch_state(model, path):
 
 def load_torch_state(model, path, device, weights_only=True):
     """Load a PyTorch state dict, using weights_only where supported."""
+    state = load_torch_payload(path, device, weights_only=weights_only)
+    model.load_state_dict(state)
+    return model
+
+
+def load_torch_payload(path, device, weights_only=True):
+    """Load a tensor-only PyTorch payload onto an explicit device."""
     import torch
 
     load_kwargs = {"map_location": device}
     if "weights_only" in inspect.signature(torch.load).parameters:
         load_kwargs["weights_only"] = weights_only
-    state = torch.load(path, **load_kwargs)
-    model.load_state_dict(state)
-    return model
+    return torch.load(path, **load_kwargs)
 
 
 def save_keras_weights(model, path):

@@ -297,6 +297,7 @@ The table below lists the public model surface. "Verification" describes how the
 | MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | NILM paper implementation requiring experiment validation for new claims | MSDC dual-CNN NILM paper | Canonical CRF-enabled implementation path |
 | MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
+| PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | PatchTST-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Nie et al., PatchTST | PyTorch backend |
 
 ## Reference Papers And Codebases
 
@@ -311,6 +312,7 @@ NILM-specific references:
 - Sudoso and Piccialli, "Non-Intrusive Load Monitoring with an Attention-based Deep Neural Network", arXiv:1912.00759, https://arxiv.org/abs/1912.00759.
 - MSDC, "Exploiting Multi-State Power Consumption in Non-intrusive Load Monitoring based on A Dual-CNN Model", arXiv:2302.05565, https://arxiv.org/abs/2302.05565.
 - Petralia et al., "NILMFormer: Non-Intrusive Load Monitoring that Accounts for Non-Stationarity", arXiv:2506.05880, https://arxiv.org/abs/2506.05880.
+- Nie et al., "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers", arXiv:2211.14730, https://arxiv.org/abs/2211.14730.
 
 Generic architecture references:
 
@@ -339,4 +341,3 @@ Supported experiment workflows include:
 - Training and testing across multiple buildings.
 - Training and testing with artificial aggregate.
 - Training and testing with different sampling frequencies.
-

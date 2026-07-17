@@ -44,6 +44,7 @@ TORCH_MODEL_SPECS = (
     ModelSpec("torch", "nilmtk_contrib.torch", "MSDC", "nilmtk_contrib.torch.msdc", min_sequence_length=121),
     ModelSpec("torch", "nilmtk_contrib.torch", "MSDC", "nilmtk_contrib.torch.msdc_without_crf", min_sequence_length=121),
     ModelSpec("torch", "nilmtk_contrib.torch", "NILMFormer", "nilmtk_contrib.torch.nilmformer"),
+    ModelSpec("torch", "nilmtk_contrib.torch", "PatchTST", "nilmtk_contrib.torch.patchtst"),
     ModelSpec("torch", "nilmtk_contrib.torch", "Reformer", "nilmtk_contrib.torch.reformer"),
     ModelSpec("torch", "nilmtk_contrib.torch", "ResNet", "nilmtk_contrib.torch.resnet"),
     ModelSpec("torch", "nilmtk_contrib.torch", "ResNet_classification", "nilmtk_contrib.torch.resnet_classification"),

@@ -13,6 +13,7 @@ from nilmtk_contrib.utils.checkpoints import (
     managed_checkpoint_path,
     save_keras_weights,
     save_metadata,
+    save_metadata_atomic,
     save_torch_state,
     temporary_checkpoint,
     unsupported_persistence,
@@ -62,6 +63,14 @@ def test_build_save_and_load_metadata(tmp_path):
     assert loaded["mains_std"] == 600
     assert loaded["dependencies"] == {"torch": "2.0.0"}
     assert "created_at" in loaded
+
+
+def test_atomic_metadata_publish_leaves_no_temporary_files(tmp_path):
+    save_metadata_atomic(tmp_path, {"generation": 1})
+    save_metadata_atomic(tmp_path, {"generation": 2})
+
+    assert json.loads((tmp_path / "metadata.json").read_text()) == {"generation": 2}
+    assert list(tmp_path.glob(".metadata.json.*")) == []
 
 
 def test_load_metadata_rejects_missing_fields(tmp_path):
