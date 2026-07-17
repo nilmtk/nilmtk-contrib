@@ -24,53 +24,56 @@ from nilmtk_contrib.utils.validation import train_validation_split
 logger = get_logger(__name__)
 _log_print = legacy_print(logger)
 
+
 class DAEModel(nn.Module):
     """
     Convolutional autoencoder for appliance load disaggregation.
     """
+
     def __init__(self, seq_len):
         super().__init__()
         # PyTorch 1.10+ supports padding="same"
-        self.conv1   = nn.Conv1d(1,  8, kernel_size=4, padding="same")
+        self.conv1 = nn.Conv1d(1, 8, kernel_size=4, padding="same")
         self.flatten = nn.Flatten()
-        self.fc1     = nn.Linear(seq_len*8, seq_len*8)
-        self.fc2     = nn.Linear(seq_len*8, 128)
-        self.fc3     = nn.Linear(128, seq_len*8)
+        self.fc1 = nn.Linear(seq_len * 8, seq_len * 8)
+        self.fc2 = nn.Linear(seq_len * 8, 128)
+        self.fc3 = nn.Linear(128, seq_len * 8)
         # unflatten back to (batch, channels=8, seq_len)
         self.seq_len = seq_len
-        self.conv2   = nn.Conv1d(8, 1, kernel_size=4, padding="same")
+        self.conv2 = nn.Conv1d(8, 1, kernel_size=4, padding="same")
 
     def forward(self, x):
         # x: [batch, seq_len, 1]
-        x = x.permute(0,2,1)       # -> [batch, 1, seq_len]
+        x = x.permute(0, 2, 1)  # -> [batch, 1, seq_len]
         x = torch.relu(self.conv1(x))
-        x = self.flatten(x)        # -> [batch, 8*seq_len]
+        x = self.flatten(x)  # -> [batch, 8*seq_len]
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))# -> [batch, 8*seq_len]
+        x = torch.relu(self.fc3(x))  # -> [batch, 8*seq_len]
         x = x.view(-1, 8, self.seq_len)  # -> [batch, 8, seq_len]
-        x = self.conv2(x)          # -> [batch, 1, seq_len]
-        x = x.permute(0,2,1)       # -> [batch, seq_len, 1]
+        x = self.conv2(x)  # -> [batch, 1, seq_len]
+        x = x.permute(0, 2, 1)  # -> [batch, seq_len, 1]
         return x
+
 
 class DAE(TorchDisaggregator):
     """
     Denoising Autoencoder for non-intrusive load monitoring.
-    
+
     This implementation is based on the paper:
     "Neural NILM: Deep Neural Networks Applied to Energy Disaggregation"
     https://arxiv.org/abs/1507.06594
-    
+
     The model uses a denoising autoencoder architecture for energy disaggregation tasks,
     learning to reconstruct individual appliance power consumption from aggregate
     household power measurements.
-    
+
     Architecture Overview:
     - Convolutional encoder layer for feature extraction
     - Fully connected bottleneck layers for dimensionality reduction
     - Convolutional decoder layer for sequence reconstruction
     - Sequence-to-sequence prediction for energy disaggregation
-    
+
     Parameters:
         params (dict): Configuration parameters including:
             - sequence_length (int): Length of input sequences (default: 99)
@@ -82,10 +85,11 @@ class DAE(TorchDisaggregator):
             - save-model-path (str): Path to save trained models
             - pretrained-model-path (str): Path to load pre-trained models
     """
+
     def __init__(self, params=None):
         super().__init__(params, defaults=torch_defaults(mains_mean=1000))
-        self.MODEL_NAME        = "DAE"
-        self.file_prefix       = f"{self.MODEL_NAME.lower()}-temp-weights"
+        self.MODEL_NAME = "DAE"
+        self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         if self.load_model_path:
             self.load_model()
 
@@ -98,27 +102,27 @@ class DAE(TorchDisaggregator):
         Normalizes and windows the input data.
         """
         flat = data.flatten()
-        pad  = (n - flat.size % n) % n
+        pad = (n - flat.size % n) % n
         flat = np.concatenate([flat, np.zeros(pad)])
         if overlap:
             # sliding windows
-            w = np.array([flat[i:i+n] for i in range(len(flat)-n+1)])
+            w = np.array([flat[i : i + n] for i in range(len(flat) - n + 1)])
         else:
             # non-overlapping windows
             w = flat.reshape(-1, n)
-        return ((w - mean)/std).reshape(-1, n, 1)  # normalize and reshape for model
+        return ((w - mean) / std).reshape(-1, n, 1)  # normalize and reshape for model
 
     def denormalize_output(self, data, mean, std):
         """
         Denormalizes the output data.
         """
-        return mean + data*std
+        return mean + data * std
 
     def call_preprocessing(self, mains_lst, subs, method):
         """
         Preprocesses the mains and appliance data.
         """
-        if method == 'train':
+        if method == "train":
             pm, apps = [], []
             for mains in mains_lst:
                 x = self.normalize_input(
@@ -126,14 +130,19 @@ class DAE(TorchDisaggregator):
                     self.sequence_length,
                     self.mains_mean,
                     self.mains_std,
-                    True
+                    True,
                 )
                 pm.append(pd.DataFrame(x.reshape(-1, self.sequence_length)))
             for name, lst in subs:
-                m,s = self.appliance_params[name]['mean'], self.appliance_params[name]['std']
+                m, s = (
+                    self.appliance_params[name]["mean"],
+                    self.appliance_params[name]["std"],
+                )
                 dfs = []
                 for df in lst:
-                    y = self.normalize_input(df.values, self.sequence_length, m, s, True)
+                    y = self.normalize_input(
+                        df.values, self.sequence_length, m, s, True
+                    )
                     dfs.append(pd.DataFrame(y.reshape(-1, self.sequence_length)))
                 apps.append((name, dfs))
             return pm, apps
@@ -146,12 +155,14 @@ class DAE(TorchDisaggregator):
                 self.sequence_length,
                 self.mains_mean,
                 self.mains_std,
-                False
+                False,
             )
             pm.append(pd.DataFrame(x.reshape(-1, self.sequence_length)))
         return pm
 
-    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **_):
+    def partial_fit(
+        self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **_
+    ):
         """
         Trains the model on a chunk of data.
         """
@@ -160,13 +171,15 @@ class DAE(TorchDisaggregator):
 
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
-                train_main, train_appliances, 'train'
+                train_main, train_appliances, "train"
             )
-        mains_arr = pd.concat(train_main, axis=0).values.reshape(-1, self.sequence_length, 1)
+        mains_arr = pd.concat(train_main, axis=0).values.reshape(
+            -1, self.sequence_length, 1
+        )
 
         apps = []
         for name, dfs in train_appliances:
-            arr = pd.concat(dfs,axis=0).values.reshape(-1, self.sequence_length, 1)
+            arr = pd.concat(dfs, axis=0).values.reshape(-1, self.sequence_length, 1)
             apps.append((name, arr))
 
         for name, arr in apps:
@@ -189,15 +202,17 @@ class DAE(TorchDisaggregator):
                 continue
 
             tr_ds = TensorDataset(split.X_train, split.y_train)  # train set
-            tr = DataLoader(tr_ds, batch_size=self.batch_size, shuffle=True)  # train loader
+            tr = DataLoader(
+                tr_ds, batch_size=self.batch_size, shuffle=True
+            )  # train loader
             va = None
             if split.metadata.validation_enabled:
                 va_ds = TensorDataset(split.X_val, split.y_val)  # validation set
                 va = DataLoader(va_ds, batch_size=self.batch_size)  # validation loader
 
-            opt     = optim.Adam(model.parameters())
+            opt = optim.Adam(model.parameters())
             loss_fn = nn.MSELoss()
-            best = float('inf')
+            best = float("inf")
             with temporary_checkpoint(".pt") as ckpt:
                 epochs = tqdm(range(self.n_epochs), desc=name, disable=not self.verbose)
                 for _ in epochs:
@@ -219,7 +234,7 @@ class DAE(TorchDisaggregator):
                                 xb, yb = xb.to(self.device), yb.to(self.device)
                                 vl.append(loss_fn(model(xb), yb).item())
                         if vl:
-                            val_loss = sum(vl)/len(vl)
+                            val_loss = sum(vl) / len(vl)
                             if val_loss < best:
                                 best = val_loss
                                 save_torch_state(model, ckpt)
@@ -243,7 +258,9 @@ class DAE(TorchDisaggregator):
             appliance_params=self.appliance_params,
             mains_mean=self.mains_mean,
             mains_std=self.mains_std,
-            dependencies=collect_dependencies(["nilmtk-contrib", "torch", "numpy", "pandas"]),
+            dependencies=collect_dependencies(
+                ["nilmtk-contrib", "torch", "numpy", "pandas"]
+            ),
         )
         save_metadata(model_folder, metadata)
         for name, m in self.models.items():
@@ -266,47 +283,144 @@ class DAE(TorchDisaggregator):
             logger.warning(
                 "Loading legacy %s model metadata from model.json.", self.MODEL_NAME
             )
-            with open(model_folder / 'model.json') as f:
+            with open(model_folder / "model.json") as f:
                 p = json.load(f)
-        self.sequence_length = p['sequence_length']
-        self.mains_mean      = p['mains_mean']
-        self.mains_std       = p['mains_std']
-        self.appliance_params= p['appliance_params']
+        self.sequence_length = p["sequence_length"]
+        self.mains_mean = p["mains_mean"]
+        self.mains_std = p["mains_std"]
+        self.appliance_params = p["appliance_params"]
         for name in self.appliance_params:
             m = self.return_network()
             load_torch_state(m, model_folder / f"{name}.pt", self.device)
             self.models[name] = m
 
-    def disaggregate_chunk(self, test_main_list, do_preprocessing=True):
-        """
-        Disaggregates a chunk of mains data.
-        """
-        self.require_models()
+    def disaggregate_chunk(self, test_main_list, do_preprocessing=True, model=None):
+        """Disaggregate every sample without exposing preprocessing padding."""
+        models = self.require_models(model)
+        test_main_list = list(test_main_list)
+        if not test_main_list:
+            return []
+
+        output_metadata = []
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, None, 'test'
-            )
+            for position, frame in enumerate(test_main_list):
+                if not hasattr(frame, "index") or not hasattr(frame, "to_numpy"):
+                    raise TypeError(
+                        "Raw DAE inference chunks must be pandas objects with indexes."
+                    )
+                raw = frame.to_numpy()
+                if np.iscomplexobj(raw):
+                    raise TypeError(
+                        f"Inference mains chunk {position} must be real numeric data."
+                    )
+                try:
+                    values = np.asarray(raw, dtype=np.float64)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        f"Inference mains chunk {position} must be real numeric data."
+                    ) from exc
+                if values.ndim == 1:
+                    pass
+                elif values.ndim == 2 and values.shape[1] == 1:
+                    values = values[:, 0]
+                else:
+                    raise ValueError(
+                        f"Inference mains chunk {position} must contain exactly "
+                        "one power column."
+                    )
+                if not np.isfinite(values).all():
+                    raise ValueError(
+                        f"Inference mains chunk {position} must contain only "
+                        "finite values."
+                    )
+                output_metadata.append((frame.index.copy(), len(values)))
+            test_main_list = self.call_preprocessing(test_main_list, None, "test")
+
         results = []
-        for tm in test_main_list:
-            arr = tm.values.reshape(-1, self.sequence_length, 1)
-            ds  = DataLoader(
+        for position, tm in enumerate(test_main_list):
+            try:
+                raw_windows = (
+                    tm.to_numpy() if hasattr(tm, "to_numpy") else np.asarray(tm)
+                )
+                if np.iscomplexobj(raw_windows):
+                    raise ValueError("complex values are unsupported")
+                with np.errstate(over="ignore", invalid="ignore"):
+                    windows = np.asarray(raw_windows, dtype=np.float32)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"Inference windows for chunk {position} must be real numeric data."
+                ) from exc
+            if windows.ndim != 2 or windows.shape[1] != self.sequence_length:
+                raise ValueError(
+                    f"Inference windows for chunk {position} must have shape "
+                    f"[samples, {self.sequence_length}]."
+                )
+            if not np.isfinite(windows).all():
+                raise ValueError(
+                    f"Inference windows for chunk {position} must contain only "
+                    "finite values."
+                )
+            arr = windows.reshape(-1, self.sequence_length, 1)
+            if do_preprocessing:
+                output_index, output_length = output_metadata[position]
+            else:
+                output_length = len(arr) * self.sequence_length
+                output_index = pd.RangeIndex(output_length)
+            ds = DataLoader(
                 TensorDataset(torch.tensor(arr, dtype=torch.float32)),
-                batch_size=self.batch_size
+                batch_size=self.batch_size,
             )
             outd = {}
-            for name, m in self.models.items():
+            for name, m in models.items():
                 preds = []
                 m.eval()
-                with torch.no_grad():
+                with torch.inference_mode():
                     for (xb,) in ds:
                         xb = xb.to(self.device)
-                        p  = m(xb).cpu().numpy()
-                        preds.append(p)
-                p_all = np.concatenate(preds).reshape(-1, self.sequence_length)
+                        prediction = m(xb)
+                        expected_shape = (len(xb), self.sequence_length, 1)
+                        if not isinstance(prediction, torch.Tensor):
+                            raise TypeError(
+                                f"Model for {name!r} must return a torch.Tensor."
+                            )
+                        if prediction.shape != expected_shape:
+                            raise ValueError(
+                                f"Model for {name!r} returned shape "
+                                f"{tuple(prediction.shape)}; expected "
+                                f"{expected_shape}."
+                            )
+                        if not torch.is_floating_point(prediction) or torch.is_complex(
+                            prediction
+                        ):
+                            raise TypeError(
+                                f"Model for {name!r} must return real floating values."
+                            )
+                        if prediction.device != xb.device:
+                            raise ValueError(
+                                f"Model for {name!r} returned values on "
+                                f"{prediction.device}; expected {xb.device}."
+                            )
+                        if not torch.isfinite(prediction).all():
+                            raise RuntimeError(
+                                f"Model for {name!r} returned non-finite values."
+                            )
+                        preds.append(prediction.detach().cpu())
+                if preds:
+                    p_all = torch.cat(preds).numpy().reshape(-1)
+                else:
+                    p_all = np.empty(0, dtype=np.float32)
+                p_all = p_all[:output_length]
                 mean = self.appliance_params[name]["mean"]
                 std = self.appliance_params[name]["std"]
-                p_den = self.denormalize_output(p_all, mean, std).flatten()
-                p_den = np.clip(p_den, 0, None)
-                outd[name] = pd.Series(p_den)
-            results.append(pd.DataFrame(outd, dtype='float32'))
+                with np.errstate(over="ignore", invalid="ignore"):
+                    p_den = self.denormalize_output(p_all.astype(np.float64), mean, std)
+                    p_den = np.clip(p_den, 0, None)
+                if not np.isfinite(p_den).all():
+                    raise RuntimeError(f"Predictions for {name!r} became non-finite.")
+                with np.errstate(over="ignore", invalid="ignore"):
+                    public_values = p_den.astype(np.float32)
+                if not np.isfinite(public_values).all():
+                    raise ValueError(f"Predictions for {name!r} overflow float32.")
+                outd[name] = public_values
+            results.append(pd.DataFrame(outd, index=output_index, dtype="float32"))
         return results
