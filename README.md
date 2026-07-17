@@ -98,21 +98,21 @@ uv pip install "nilmtk-contrib[all] @ git+https://github.com/nilmtk/nilmtk-contr
 Local development (from a clone of this repository):
 
 ```bash
-uv sync --extra dev
+uv sync --frozen --group dev
 ```
 
 Backend development examples:
 
 ```bash
-uv sync --extra dev --extra torch
-uv sync --extra dev --extra tensorflow
-uv sync --extra dev --extra classical
-uv sync --extra dev --extra all
+uv sync --frozen --group dev --extra torch
+uv sync --frozen --group dev --extra tensorflow
+uv sync --frozen --group dev --extra classical
+uv sync --frozen --group dev --extra all
 ```
 
 ### Verify your install
 
-After `uv sync --extra dev`, run a quick sanity check to confirm the package and core tests are in good shape:
+After `uv sync --frozen --group dev`, run a quick sanity check to confirm the package and core tests are in good shape:
 
 ```bash
 uv run python -m compileall -q nilmtk_contrib tests
@@ -122,7 +122,7 @@ uv run python -m pytest -q tests/test_imports.py tests/test_params.py tests/test
 Before launching full experiments, smoke-test the backend you plan to use. Sync the matching extra and run the full test suite—for example, with PyTorch:
 
 ```bash
-uv sync --extra dev --extra torch
+uv sync --frozen --group dev --extra torch
 uv run python -m pytest -q
 ```
 
@@ -243,6 +243,7 @@ docker run --rm nilmtk-contrib:all bash -lc "python -c \"import nilmtk_contrib; 
 |---|---|---|---|
 | `INSTALL_EXTRA` | `all` | `all`, `torch`, `tensorflow`, `classical` | Optional dependency extra to install |
 | `INSTALL_DEV` | `false` | `true`, `false` | Also install `.[dev]` for pytest and tooling |
+| `UV_VERSION` | `0.11.28` | A released uv version | Pin the installer used in the image |
 
 ### Files
 

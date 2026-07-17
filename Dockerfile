@@ -15,10 +15,11 @@ FROM python:3.11-slim-bookworm
 
 ARG INSTALL_EXTRA=all
 ARG INSTALL_DEV=false
+ARG UV_VERSION=0.11.28
 
 LABEL org.opencontainers.image.title="nilmtk-contrib"
-LABEL org.opencontainers.image.description="NILMBench2026 benchmark toolkit with NILMTK-compatible disaggregation models"
-LABEL org.opencontainers.image.source="https://github.com/sustainability-lab/nilmbench"
+LABEL org.opencontainers.image.description="NILMTK-compatible energy-disaggregation models"
+LABEL org.opencontainers.image.source="https://github.com/nilmtk/nilmtk-contrib"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -39,9 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+RUN pip install --no-cache-dir "uv==${UV_VERSION}" \
+    && groupadd --gid 10001 nilmtk \
+    && useradd --create-home --uid 10001 --gid 10001 nilmtk
 
-RUN pip install --no-cache-dir "uv>=0.5"
+WORKDIR /app
 
 # Copy only install inputs first for better layer caching.
 COPY pyproject.toml README.md LICENSE ./
@@ -53,5 +56,9 @@ RUN uv pip install --system ".[${INSTALL_EXTRA}]" \
 # Optional runtime assets (tests, notebooks) live outside the install layer.
 COPY tests/ tests/
 COPY sample_notebooks/ sample_notebooks/
+
+RUN chown -R nilmtk:nilmtk /app
+
+USER nilmtk
 
 CMD ["bash"]
