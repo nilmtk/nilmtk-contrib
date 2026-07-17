@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.21.0"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
@@ -30,7 +30,7 @@ dependencies = []
 
 [project.optional-dependencies]
 tensorflow = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git@6b239d466556fed981f01c442f8ec471c5e2ddc7",
   "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",
@@ -39,7 +39,7 @@ tensorflow = [
   "tensorflow-io-gcs-filesystem==0.31.0"
 ]
 torch = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git@6b239d466556fed981f01c442f8ec471c5e2ddc7",
   "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",
@@ -48,7 +48,7 @@ torch = [
   "tqdm>=4.66"
 ]
 classical = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git@6b239d466556fed981f01c442f8ec471c5e2ddc7",
   "numpy>=1.26.0,<2",
   "pandas",
   "matplotlib",
@@ -58,10 +58,10 @@ classical = [
   "hmmlearn"
 ]
 nilm = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git"
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git@6b239d466556fed981f01c442f8ec471c5e2ddc7"
 ]
 all = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
+  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git@6b239d466556fed981f01c442f8ec471c5e2ddc7",
   "numpy>=1.26.0,<2",
   "pandas",
   "scikit-learn",

@@ -46,12 +46,21 @@ RUN pip install --no-cache-dir "uv==${UV_VERSION}" \
 
 WORKDIR /app
 
-# Copy only install inputs first for better layer caching.
-COPY pyproject.toml README.md LICENSE ./
+# Copy only install inputs first for better layer caching. The lockfile is
+# required: containers must not resolve a different environment at build time.
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY nilmtk_contrib/ nilmtk_contrib/
 
-RUN uv pip install --system ".[${INSTALL_EXTRA}]" \
-    && if [ "${INSTALL_DEV}" = "true" ]; then uv pip install --system ".[dev]"; fi
+RUN if [ "${INSTALL_DEV}" = "true" ]; then \
+        uv export --frozen --group dev --extra "${INSTALL_EXTRA}" \
+            --no-emit-project --output-file /tmp/requirements.txt; \
+    else \
+        uv export --frozen --no-dev --extra "${INSTALL_EXTRA}" \
+            --no-emit-project --output-file /tmp/requirements.txt; \
+    fi \
+    && uv pip install --system --requirements /tmp/requirements.txt \
+    && uv pip install --system --no-deps . \
+    && rm /tmp/requirements.txt
 
 # Optional runtime assets (tests, notebooks) live outside the install layer.
 COPY tests/ tests/

@@ -713,8 +713,8 @@ wheels = [
 
 [[package]]
 name = "nilm-metadata"
-version = "0.2.6.dev4+g9082f10c2"
-source = { git = "https://github.com/nilmtk/nilm_metadata.git#9082f10c20f0120b1ff80db2fc8556dc74ca6a80" }
+version = "0.2.6.dev6+g59c9990de"
+source = { git = "https://github.com/nilmtk/nilm_metadata.git?rev=59c9990de4836d77c0dcd807bd4293e39e0cc314#59c9990de4836d77c0dcd807bd4293e39e0cc314" }
 dependencies = [
     { name = "pandas" },
     { name = "pyyaml" },
@@ -723,7 +723,7 @@ dependencies = [
 [[package]]
 name = "nilmtk"
 version = "0.4.1"
-source = { git = "https://github.com/nilmtk/nilmtk.git#1d6abbd2438bb868bcdb6209a5d73da2b09ef15e" }
+source = { git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7#6b239d466556fed981f01c442f8ec471c5e2ddc7" }
 dependencies = [
     { name = "h5py" },
     { name = "hmmlearn" },
@@ -825,11 +825,11 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'classical'" },
     { name = "matplotlib", marker = "extra == 'tensorflow'" },
     { name = "matplotlib", marker = "extra == 'torch'" },
-    { name = "nilmtk", marker = "extra == 'all'", git = "https://github.com/nilmtk/nilmtk.git" },
-    { name = "nilmtk", marker = "extra == 'classical'", git = "https://github.com/nilmtk/nilmtk.git" },
-    { name = "nilmtk", marker = "extra == 'nilm'", git = "https://github.com/nilmtk/nilmtk.git" },
-    { name = "nilmtk", marker = "extra == 'tensorflow'", git = "https://github.com/nilmtk/nilmtk.git" },
-    { name = "nilmtk", marker = "extra == 'torch'", git = "https://github.com/nilmtk/nilmtk.git" },
+    { name = "nilmtk", marker = "extra == 'all'", git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7" },
+    { name = "nilmtk", marker = "extra == 'classical'", git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7" },
+    { name = "nilmtk", marker = "extra == 'nilm'", git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7" },
+    { name = "nilmtk", marker = "extra == 'tensorflow'", git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7" },
+    { name = "nilmtk", marker = "extra == 'torch'", git = "https://github.com/nilmtk/nilmtk.git?rev=6b239d466556fed981f01c442f8ec471c5e2ddc7" },
     { name = "numpy", marker = "extra == 'all'", specifier = ">=1.26.0,<2" },
     { name = "numpy", marker = "extra == 'classical'", specifier = ">=1.26.0,<2" },
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26.0,<2" },
