@@ -359,35 +359,163 @@ class TCN(TorchDisaggregator):
                     model.load_state_dict(torch.load(filepath, map_location=self.device))
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        """Disaggregates a chunk of mains data."""
-        self.require_models(model)
+        """Disaggregate one point per window without losing raw row indexes."""
+        models = self.require_models(model)
+        test_frames = list(test_main_list)
+        if not test_frames:
+            return []
 
-        # Preprocess test data
+        output_indexes = []
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(test_main_list, submeters_lst=None, method='test')
+            processed_frames = []
+            for position, frame in enumerate(test_frames):
+                if not hasattr(frame, "index") or not hasattr(frame, "to_numpy"):
+                    raise TypeError(
+                        "Raw TCN inference chunks must be pandas objects with indexes."
+                    )
+                raw = frame.to_numpy()
+                if np.iscomplexobj(raw):
+                    raise TypeError(
+                        f"Inference mains chunk {position} must be real numeric data."
+                    )
+                try:
+                    values = np.asarray(raw, dtype=np.float64)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        f"Inference mains chunk {position} must be real numeric data."
+                    ) from exc
+                if values.ndim == 1:
+                    pass
+                elif values.ndim == 2 and values.shape[1] == 1:
+                    values = values[:, 0]
+                else:
+                    raise ValueError(
+                        f"Inference mains chunk {position} must contain exactly "
+                        "one power column."
+                    )
+                if not np.isfinite(values).all():
+                    raise ValueError(
+                        f"Inference mains chunk {position} must contain only "
+                        "finite values."
+                    )
+                output_indexes.append(frame.index.copy())
+                if len(values):
+                    processed_frames.append(
+                        self.call_preprocessing([frame], None, "test")[0]
+                    )
+                else:
+                    processed_frames.append(
+                        pd.DataFrame(
+                            np.empty((0, self.sequence_length), dtype=np.float32)
+                        )
+                    )
+        else:
+            processed_frames = test_frames
 
-        test_predictions = []
-        for test_main in test_main_list:
-            test_main = test_main.values
-            test_main = test_main.reshape((-1, self.sequence_length, 1))
-            
-            # Convert to tensor for Conv1d
-            test_main_tensor = torch.tensor(test_main, dtype=torch.float32).permute(0, 2, 1).to(self.device)
-            
-            disggregation_dict = {}
-            for appliance in self.models:
-                model = self.models[appliance]
-                model.eval()
-                with torch.no_grad():
-                    prediction = model(test_main_tensor).cpu().numpy()
-                    # Denormalize predictions
-                    app_mean = self.appliance_params[appliance]['mean']
-                    app_std = self.appliance_params[appliance]['std']
-                    prediction = prediction * app_std + app_mean
-                    valid_predictions = prediction.flatten()
-                    valid_predictions[valid_predictions < 0] = 0
-                    df = pd.Series(valid_predictions)
-                    disggregation_dict[appliance] = df
-            results = pd.DataFrame(disggregation_dict, dtype='float32')
-            test_predictions.append(results)
-        return test_predictions
+        results = []
+        for position, frame in enumerate(processed_frames):
+            try:
+                raw_windows = (
+                    frame.to_numpy()
+                    if hasattr(frame, "to_numpy")
+                    else np.asarray(frame)
+                )
+                if np.iscomplexobj(raw_windows):
+                    raise ValueError("complex values are unsupported")
+                with np.errstate(over="ignore", invalid="ignore"):
+                    windows = np.asarray(raw_windows, dtype=np.float32)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"Inference windows for chunk {position} must be real numeric data."
+                ) from exc
+            if windows.ndim != 2 or windows.shape[1] != self.sequence_length:
+                raise ValueError(
+                    f"Inference windows for chunk {position} must have shape "
+                    f"[samples, {self.sequence_length}]."
+                )
+            if not np.isfinite(windows).all():
+                raise ValueError(
+                    f"Inference windows for chunk {position} must contain only "
+                    "finite values."
+                )
+
+            output_index = (
+                output_indexes[position]
+                if do_preprocessing
+                else getattr(frame, "index", pd.RangeIndex(len(windows)))
+            )
+            if len(output_index) != len(windows):
+                raise ValueError(
+                    f"Inference mains chunk {position} index length does not match "
+                    "its windows."
+                )
+            loader = DataLoader(
+                TensorDataset(torch.from_numpy(windows).unsqueeze(1)),
+                batch_size=self.batch_size,
+                shuffle=False,
+            )
+
+            predictions = {}
+            for appliance_name, network in models.items():
+                batches = []
+                network.eval()
+                with torch.inference_mode():
+                    for (batch,) in loader:
+                        batch = batch.to(self.device)
+                        prediction = network(batch)
+                        if not isinstance(prediction, torch.Tensor):
+                            raise TypeError(
+                                f"Model for {appliance_name!r} must return "
+                                "a torch.Tensor."
+                            )
+                        expected_shape = (len(batch), 1)
+                        if prediction.shape != expected_shape:
+                            raise ValueError(
+                                f"Model for {appliance_name!r} returned shape "
+                                f"{tuple(prediction.shape)}; expected {expected_shape}."
+                            )
+                        if not torch.is_floating_point(prediction) or torch.is_complex(
+                            prediction
+                        ):
+                            raise TypeError(
+                                f"Model for {appliance_name!r} must return real "
+                                "floating values."
+                            )
+                        if prediction.device != batch.device:
+                            raise ValueError(
+                                f"Model for {appliance_name!r} returned values on "
+                                f"{prediction.device}; expected {batch.device}."
+                            )
+                        if not torch.isfinite(prediction).all():
+                            raise FloatingPointError(
+                                f"Model for {appliance_name!r} returned non-finite "
+                                "values."
+                            )
+                        batches.append(prediction.detach().cpu())
+                normalized = (
+                    torch.cat(batches).numpy().reshape(-1)
+                    if batches
+                    else np.empty(0, dtype=np.float32)
+                )
+                statistics = self.appliance_params[appliance_name]
+                with np.errstate(over="ignore", invalid="ignore"):
+                    denormalized = (
+                        statistics["mean"]
+                        + normalized.astype(np.float64) * statistics["std"]
+                    )
+                    denormalized = np.clip(denormalized, 0, None)
+                if not np.isfinite(denormalized).all():
+                    raise FloatingPointError(
+                        f"Predictions for {appliance_name!r} became non-finite."
+                    )
+                with np.errstate(over="ignore", invalid="ignore"):
+                    public_values = denormalized.astype(np.float32)
+                if not np.isfinite(public_values).all():
+                    raise ValueError(
+                        f"Predictions for {appliance_name!r} overflow float32."
+                    )
+                predictions[appliance_name] = pd.Series(
+                    public_values, index=output_index
+                )
+            results.append(pd.DataFrame(predictions, index=output_index))
+        return results
