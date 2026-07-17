@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  torch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: python -m pip install uv==0.11.28
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --group dev --extra torch
+
+      - name: Validate lock file
+        run: uv lock --check
+
+      - name: Lint
+        run: uv run ruff check nilmtk_contrib tests
+
+      - name: Run unit tests
+        run: uv run python -m pytest -q
+
+      - name: Smoke-test every PyTorch model
+        run: >-
+          uv run python -m pytest tests/test_model_smoke_synthetic.py
+          --run-model-smoke --model-smoke-backend torch
+          --model-smoke-epochs 1 -q
+
+      - name: Build distributions
+        run: uv build
