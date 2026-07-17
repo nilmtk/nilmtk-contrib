@@ -8,11 +8,17 @@ small sequence-to-point regression head.
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
 import math
 from numbers import Real
+import os
 from pathlib import Path
+import re
+import shutil
+import tempfile
+import uuid
 
 import numpy as np
 import pandas as pd
@@ -40,6 +46,8 @@ from nilmtk_contrib.utils.validation import train_validation_split
 
 
 logger = get_logger(__name__)
+
+_CHECKPOINT_FILE_PATTERN = re.compile(r"^patchtst-[0-9a-f]{16}(?:-[0-9a-f]{32})?\.pt$")
 
 _MODEL_CONFIG_FIELDS = (
     "patch_length",
@@ -77,10 +85,23 @@ def _real_array(frame, label):
         raw = frame.to_numpy() if hasattr(frame, "to_numpy") else np.asarray(frame)
         if np.iscomplexobj(raw):
             raise ValueError("complex values are unsupported")
-        values = np.asarray(raw, dtype=np.float32)
+        with np.errstate(over="ignore", invalid="ignore"):
+            values = np.asarray(raw, dtype=np.float32)
+    except OverflowError as exc:
+        raise ValueError(
+            f"{label} contains values that are not representable as float32."
+        ) from exc
     except (TypeError, ValueError) as exc:
         raise TypeError(f"{label} must contain real numeric data.") from exc
     if not np.isfinite(values).all():
+        try:
+            input_is_finite = np.isfinite(raw).all()
+        except TypeError:
+            input_is_finite = True
+        if input_is_finite:
+            raise ValueError(
+                f"{label} contains values that are not representable as float32."
+            )
         raise ValueError(f"{label} must contain only finite values.")
     return values
 
@@ -109,9 +130,50 @@ def _window_matrix(frame, sequence_length, label, *, allow_empty=False):
     return values
 
 
-def _checkpoint_filename(appliance_name):
+def _checkpoint_filename(appliance_name, generation=None):
     digest = hashlib.sha256(appliance_name.encode("utf-8")).hexdigest()[:16]
-    return f"patchtst-{digest}.pt"
+    if generation is None:
+        return f"patchtst-{digest}.pt"
+    return f"patchtst-{digest}-{generation}.pt"
+
+
+def _checkpoint_generation(appliance_name, filename):
+    """Return a generation, ``None`` for legacy names, or ``False`` if unsafe."""
+    if not isinstance(filename, str) or Path(filename).name != filename:
+        return False
+    legacy = _checkpoint_filename(appliance_name)
+    if filename == legacy:
+        return None
+    prefix = legacy[:-3] + "-"
+    if not filename.startswith(prefix) or not filename.endswith(".pt"):
+        return False
+    generation = filename[len(prefix) : -3]
+    if len(generation) != 32 or any(
+        character not in "0123456789abcdef" for character in generation
+    ):
+        return False
+    return generation
+
+
+def _legacy_model_files(model_folder, appliance_names):
+    """Recover fixed-name or unambiguous generation checkpoints without a map."""
+    recovered = OrderedDict()
+    for appliance_name in appliance_names:
+        legacy = model_folder / _checkpoint_filename(appliance_name)
+        candidates = [legacy] if legacy.is_file() else []
+        digest_prefix = legacy.stem + "-"
+        candidates.extend(
+            path
+            for path in model_folder.glob(f"{digest_prefix}*.pt")
+            if _checkpoint_generation(appliance_name, path.name) is not False
+        )
+        if len(candidates) > 1:
+            raise ValueError(
+                f"PatchTST checkpoint has ambiguous model files for {appliance_name!r}."
+            )
+        if candidates:
+            recovered[appliance_name] = candidates[0].name
+    return recovered
 
 
 def _model_state_is_finite(model):
@@ -121,6 +183,72 @@ def _model_state_is_finite(model):
         ) and not torch.isfinite(value).all().item():
             return False
     return True
+
+
+def _snapshot_model_runtime(models):
+    snapshots = OrderedDict()
+    for appliance_name, model in models.items():
+        snapshots[appliance_name] = {
+            "model": model,
+            "state": {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            },
+            "training": model.training,
+            "gradients": {
+                name: None
+                if parameter.grad is None
+                else parameter.grad.detach().clone()
+                for name, parameter in model.named_parameters()
+            },
+        }
+    return snapshots
+
+
+def _restore_model_runtime(snapshots):
+    models = OrderedDict()
+    for appliance_name, snapshot in snapshots.items():
+        model = snapshot["model"]
+        model.load_state_dict(snapshot["state"])
+        for name, parameter in model.named_parameters():
+            gradient = snapshot["gradients"][name]
+            parameter.grad = (
+                None
+                if gradient is None
+                else gradient.to(device=parameter.device, dtype=parameter.dtype).clone()
+            )
+        model.train(snapshot["training"])
+        models[appliance_name] = model
+    return models
+
+
+@contextmanager
+def _isolated_torch_rng(device, seed):
+    """Seed one fit without consuming another instance's global Torch RNG."""
+    if seed is None:
+        yield
+        return
+
+    cuda_devices = []
+    if device.type == "cuda":
+        cuda_devices.append(device.index)
+    mps_state = None
+    mps = getattr(torch, "mps", None)
+    if device.type == "mps" and mps is not None and hasattr(mps, "get_rng_state"):
+        mps_state = mps.get_rng_state()
+
+    with torch.random.fork_rng(devices=cuda_devices):
+        torch.random.default_generator.manual_seed(seed)
+        if device.type == "cuda":
+            with torch.cuda.device(device):
+                torch.cuda.manual_seed(seed)
+        elif device.type == "mps" and mps is not None:
+            mps.manual_seed(seed)
+        try:
+            yield
+        finally:
+            if mps_state is not None:
+                mps.set_rng_state(mps_state)
 
 
 class PatchTSTNetwork(nn.Module):
@@ -211,7 +339,12 @@ class PatchTSTNetwork(nn.Module):
 
 
 class PatchTST(TorchDisaggregator):
-    """PatchTST-inspired sequence-to-point NILM disaggregator."""
+    """PatchTST-inspired sequence-to-point NILM disaggregator.
+
+    Prediction columns follow the installed model mapping's insertion order.
+    New checkpoints preserve that order explicitly; legacy checkpoints use
+    sorted appliance names for deterministic output.
+    """
 
     MODEL_NAME = "PatchTST"
 
@@ -476,12 +609,26 @@ class PatchTST(TorchDisaggregator):
         del current_epoch
         if self.n_epochs == 0:
             raise ValueError("PatchTST partial_fit requires at least one epoch.")
-        inputs, appliance_targets = self._training_arrays(
-            train_main, train_appliances, do_preprocessing
-        )
-        if self.models:
-            self.require_models()
+        appliance_params = deepcopy(self.appliance_params)
+        split_metadata = deepcopy(self.last_split_metadata)
+        model_runtime = _snapshot_model_runtime(self.models)
+        try:
+            with _isolated_torch_rng(self.device, self.seed):
+                inputs, appliance_targets = self._training_arrays(
+                    train_main, train_appliances, do_preprocessing
+                )
+                if self.models:
+                    self.require_models()
+                self._fit_appliance_targets(inputs, appliance_targets)
+                if self.save_model_path:
+                    self.save_model()
+        except Exception:
+            self.appliance_params = appliance_params
+            self.last_split_metadata = split_metadata
+            self.models = _restore_model_runtime(model_runtime)
+            raise
 
+    def _fit_appliance_targets(self, inputs, appliance_targets):
         for appliance_name, targets in appliance_targets:
             split = train_validation_split(
                 inputs,
@@ -498,119 +645,115 @@ class PatchTST(TorchDisaggregator):
                 continue
 
             model = self.models.get(appliance_name)
-            created_model = model is None
-            if created_model:
+            if model is None:
                 model = self.return_network()
                 self.models[appliance_name] = model
-            starting_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
-            }
 
-            try:
-                train_loader = DataLoader(
-                    TensorDataset(
-                        torch.from_numpy(split.X_train),
-                        torch.from_numpy(split.y_train),
-                    ),
-                    batch_size=self.batch_size,
-                    shuffle=True,
-                    generator=(
-                        None
-                        if self.seed is None
-                        else torch.Generator().manual_seed(self.seed)
-                    ),
-                )
-                optimizer = torch.optim.AdamW(
-                    model.parameters(),
-                    lr=self.learning_rate,
-                    weight_decay=self.weight_decay,
-                )
-                best_loss = math.inf
-                best_state = None
+            train_loader = DataLoader(
+                TensorDataset(
+                    torch.from_numpy(split.X_train),
+                    torch.from_numpy(split.y_train),
+                ),
+                batch_size=self.batch_size,
+                shuffle=True,
+                generator=(
+                    None
+                    if self.seed is None
+                    else torch.Generator().manual_seed(self.seed)
+                ),
+            )
+            optimizer = torch.optim.AdamW(
+                model.parameters(),
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay,
+            )
+            best_loss = math.inf
+            best_state = None
 
-                for epoch in range(self.n_epochs):
-                    model.train()
-                    train_loss = torch.zeros((), device=self.device)
-                    train_samples = 0
-                    for batch_inputs, batch_targets in train_loader:
-                        batch_inputs = batch_inputs.to(self.device).unsqueeze(1)
-                        batch_targets = batch_targets.to(self.device)
-                        optimizer.zero_grad(set_to_none=True)
-                        loss = nn.functional.mse_loss(
-                            model(batch_inputs), batch_targets
+            for epoch in range(self.n_epochs):
+                model.train()
+                train_loss = torch.zeros((), device=self.device)
+                train_samples = 0
+                for batch_inputs, batch_targets in train_loader:
+                    batch_inputs = batch_inputs.to(self.device).unsqueeze(1)
+                    batch_targets = batch_targets.to(self.device)
+                    optimizer.zero_grad(set_to_none=True)
+                    loss = nn.functional.mse_loss(model(batch_inputs), batch_targets)
+                    loss.backward()
+                    try:
+                        nn.utils.clip_grad_norm_(
+                            model.parameters(),
+                            self.gradient_clip_norm,
+                            error_if_nonfinite=True,
                         )
-                        loss.backward()
-                        try:
-                            nn.utils.clip_grad_norm_(
-                                model.parameters(),
-                                self.gradient_clip_norm,
-                                error_if_nonfinite=True,
-                            )
-                        except RuntimeError as exc:
-                            raise FloatingPointError(
-                                "Model gradients became non-finite."
-                            ) from exc
-                        optimizer.step()
-                        train_loss += loss.detach() * len(batch_inputs)
-                        train_samples += len(batch_inputs)
-
-                    if not _model_state_is_finite(model):
+                    except RuntimeError as exc:
                         raise FloatingPointError(
-                            "Optimizer step produced non-finite model state."
-                        )
-                    score = (train_loss / train_samples).item()
-                    if split.metadata.validation_enabled:
-                        score = self._validation_loss(model, split.X_val, split.y_val)
-                    if not math.isfinite(score):
-                        raise FloatingPointError("Epoch score became non-finite.")
-                    if score < best_loss:
-                        best_loss = score
-                        best_state = {
-                            key: value.detach().cpu().clone()
-                            for key, value in model.state_dict().items()
-                        }
-                    if self.verbose:
-                        logger.info(
-                            "%s %s epoch %d/%d score=%.6f",
-                            self.MODEL_NAME,
-                            appliance_name,
-                            epoch + 1,
-                            self.n_epochs,
-                            score,
-                        )
+                            "Model gradients became non-finite."
+                        ) from exc
+                    optimizer.step()
+                    train_loss += loss.detach() * len(batch_inputs)
+                    train_samples += len(batch_inputs)
 
-                if best_state is None:
-                    raise RuntimeError("PatchTST training produced no valid state.")
-                model.load_state_dict(best_state)
-                model.to(self.device)
-            except Exception:
-                if created_model:
-                    self.models.pop(appliance_name, None)
-                else:
-                    model.load_state_dict(starting_state)
-                    model.to(self.device)
-                raise
+                if not _model_state_is_finite(model):
+                    raise FloatingPointError(
+                        "Optimizer step produced non-finite model state."
+                    )
+                score = (train_loss / train_samples).item()
+                if split.metadata.validation_enabled:
+                    score = self._validation_loss(model, split.X_val, split.y_val)
+                if not math.isfinite(score):
+                    raise FloatingPointError("Epoch score became non-finite.")
+                if score < best_loss:
+                    best_loss = score
+                    best_state = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.state_dict().items()
+                    }
+                if self.verbose:
+                    logger.info(
+                        "%s %s epoch %d/%d score=%.6f",
+                        self.MODEL_NAME,
+                        appliance_name,
+                        epoch + 1,
+                        self.n_epochs,
+                        score,
+                    )
 
-        if self.save_model_path:
-            self.save_model()
+            if best_state is None:
+                raise RuntimeError("PatchTST training produced no valid state.")
+            model.load_state_dict(best_state)
+            model.to(self.device)
 
     def save_model(self):
         models = self.require_models()
         if not self.save_model_path:
             raise ValueError("save_model_path is required to save PatchTST models.")
+        nonfinite = [
+            appliance_name
+            for appliance_name, model in models.items()
+            if not _model_state_is_finite(model)
+        ]
+        if nonfinite:
+            names = ", ".join(repr(name) for name in nonfinite)
+            raise FloatingPointError(
+                f"Refusing to save non-finite PatchTST model state for {names}."
+            )
+
         model_folder = Path(self.save_model_path)
         model_folder.mkdir(parents=True, exist_ok=True)
-
-        model_files = {
-            appliance_name: _checkpoint_filename(appliance_name)
+        generation = uuid.uuid4().hex
+        model_files = OrderedDict(
+            (
+                appliance_name,
+                _checkpoint_filename(appliance_name, generation),
+            )
             for appliance_name in models
-        }
+        )
         filenames = [filename for _, filename in model_files.items()]
         if len(filenames) != len(set(filenames)):
             raise RuntimeError("Appliance checkpoint filename collision.")
-        for appliance_name, filename in model_files.items():
-            save_torch_state(models[appliance_name], model_folder / filename)
+        if any((model_folder / filename).exists() for filename in filenames):
+            raise RuntimeError("PatchTST checkpoint generation collision.")
 
         metadata = build_metadata(
             model_class=self.MODEL_NAME,
@@ -625,7 +768,49 @@ class PatchTST(TorchDisaggregator):
         )
         metadata["model_config"] = self._model_config()
         metadata["model_files"] = model_files
-        save_metadata(model_folder, metadata)
+        metadata["model_order"] = list(models)
+
+        staging_folder = Path(
+            tempfile.mkdtemp(prefix=".patchtst-stage-", dir=model_folder)
+        )
+        published_files = []
+        committed = False
+        try:
+            for appliance_name, filename in model_files.items():
+                save_torch_state(models[appliance_name], staging_folder / filename)
+            save_metadata(staging_folder, metadata)
+            for filename in filenames:
+                destination = model_folder / filename
+                os.replace(staging_folder / filename, destination)
+                published_files.append(destination)
+            committed = True
+            try:
+                os.replace(
+                    staging_folder / "metadata.json", model_folder / "metadata.json"
+                )
+            except Exception:
+                committed = False
+                raise
+        finally:
+            if not committed:
+                for path in published_files:
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        logger.warning(
+                            "Could not remove unpublished PatchTST weight %s.", path
+                        )
+            shutil.rmtree(staging_folder, ignore_errors=True)
+
+        current_files = set(filenames)
+        for path in model_folder.glob("patchtst-*.pt"):
+            if path.name not in current_files and _CHECKPOINT_FILE_PATTERN.fullmatch(
+                path.name
+            ):
+                try:
+                    path.unlink()
+                except OSError:
+                    logger.warning("Could not remove stale PatchTST weight %s.", path)
 
     def load_model(self):
         if not self.load_model_path:
@@ -641,30 +826,65 @@ class PatchTST(TorchDisaggregator):
         config = metadata.get("model_config")
         if not isinstance(config, Mapping) or set(config) != set(_MODEL_CONFIG_FIELDS):
             raise ValueError("PatchTST checkpoint has an invalid model_config.")
+        checkpoint_params = metadata.get("appliance_params")
+        if not isinstance(checkpoint_params, Mapping) or not all(
+            isinstance(name, str) for name in checkpoint_params
+        ):
+            raise ValueError("PatchTST checkpoint has invalid appliance_params.")
         model_files = metadata.get("model_files")
         if model_files is None:
-            model_files = {
-                appliance_name: _checkpoint_filename(appliance_name)
-                for appliance_name in metadata["appliance_params"]
-                if (model_folder / _checkpoint_filename(appliance_name)).is_file()
-            }
+            saved_order = metadata.get("model_order")
+            if saved_order is None:
+                appliance_names = sorted(checkpoint_params)
+            elif (
+                not isinstance(saved_order, list)
+                or not all(isinstance(name, str) for name in saved_order)
+                or len(saved_order) != len(set(saved_order))
+                or not set(saved_order).issubset(checkpoint_params)
+            ):
+                raise ValueError("PatchTST checkpoint has an invalid model_order.")
+            else:
+                appliance_names = saved_order
+            model_files = _legacy_model_files(model_folder, appliance_names)
         if not isinstance(model_files, Mapping) or not model_files:
             raise ValueError("PatchTST checkpoint has no valid model_files mapping.")
-        if not set(model_files).issubset(metadata["appliance_params"]):
+        if not set(model_files).issubset(checkpoint_params):
             raise ValueError(
                 "PatchTST checkpoint model_files lack matching appliance_params."
             )
+        generations = set()
+        legacy_names = False
         for appliance_name, filename in model_files.items():
-            if (
-                not isinstance(appliance_name, str)
-                or not isinstance(filename, str)
-                or Path(filename).name != filename
-                or filename != _checkpoint_filename(appliance_name)
-            ):
+            if not isinstance(appliance_name, str):
                 raise ValueError(
                     f"PatchTST checkpoint has an unsafe model file for "
                     f"{appliance_name!r}."
                 )
+            generation = _checkpoint_generation(appliance_name, filename)
+            if generation is False:
+                raise ValueError(
+                    f"PatchTST checkpoint has an unsafe model file for "
+                    f"{appliance_name!r}."
+                )
+            if generation is None:
+                legacy_names = True
+            else:
+                generations.add(generation)
+        if generations and (legacy_names or len(generations) != 1):
+            raise ValueError(
+                "PatchTST checkpoint model files mix incompatible generations."
+            )
+
+        model_order = metadata.get("model_order")
+        if model_order is None:
+            model_order = sorted(model_files)
+        if (
+            not isinstance(model_order, list)
+            or not all(isinstance(name, str) for name in model_order)
+            or len(model_order) != len(set(model_order))
+            or set(model_order) != set(model_files)
+        ):
+            raise ValueError("PatchTST checkpoint has an invalid model_order.")
 
         candidate_params = {
             "sequence_length": metadata["sequence_length"],
@@ -681,13 +901,19 @@ class PatchTST(TorchDisaggregator):
         }
         candidate = type(self)(candidate_params)
         loaded = OrderedDict()
-        for appliance_name, filename in model_files.items():
+        for appliance_name in model_order:
+            filename = model_files[appliance_name]
             network = candidate.return_network()
             load_torch_state(
                 network,
                 model_folder / filename,
                 candidate.device,
             )
+            if not _model_state_is_finite(network):
+                raise FloatingPointError(
+                    f"PatchTST checkpoint contains non-finite model state for "
+                    f"{appliance_name!r}."
+                )
             loaded[appliance_name] = network
         candidate.require_models(loaded)
 

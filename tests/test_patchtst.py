@@ -1,5 +1,9 @@
+from collections import OrderedDict
+from copy import deepcopy
 import io
 import json
+import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -264,6 +268,25 @@ def test_inference_rejects_nonfinite_mains(bad):
         model.disaggregate_chunk([mains], model={"fridge": network})
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.full(5, 1e300, dtype=np.float64),
+        np.asarray([10**1000] * 5, dtype=object),
+    ],
+)
+def test_input_overflow_becomes_actionable_validation_without_warning(values):
+    model = PatchTST(
+        _tiny_params(appliance_params={"fridge": {"mean": 42.0, "std": 5.0}})
+    )
+    mains = pd.DataFrame({"power": pd.Series(values, dtype=object)})
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        with pytest.raises(ValueError, match="representable as float32"):
+            model.disaggregate_chunk([mains], model={"fridge": model.return_network()})
+
+
 def test_inference_rejects_nonfinite_model_output():
     class NonFinitePoint(torch.nn.Module):
         def __init__(self):
@@ -417,6 +440,11 @@ def test_nonfinite_optimizer_step_restores_existing_model_exactly():
         )
     )
     model.models["fridge"] = model.return_network()
+    model.models["fridge"].eval()
+    original_gradients = {}
+    for name, parameter in model.models["fridge"].named_parameters():
+        parameter.grad = torch.full_like(parameter, 0.25)
+        original_gradients[name] = parameter.grad.detach().clone()
     original_state = {
         name: value.detach().clone()
         for name, value in model.models["fridge"].state_dict().items()
@@ -427,9 +455,115 @@ def test_nonfinite_optimizer_step_restores_existing_model_exactly():
         model.partial_fit(mains, appliances, do_preprocessing=False)
 
     restored_state = model.models["fridge"].state_dict()
+    assert model.models["fridge"].training is False
     assert all(torch.isfinite(value).all() for value in restored_state.values())
     for name, value in original_state.items():
         torch.testing.assert_close(restored_state[name], value, rtol=0, atol=0)
+    for name, parameter in model.models["fridge"].named_parameters():
+        torch.testing.assert_close(
+            parameter.grad, original_gradients[name], rtol=0, atol=0
+        )
+
+
+def test_failed_raw_training_rolls_back_new_statistics_and_models(monkeypatch):
+    class NonFiniteNetwork(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.ones(1))
+
+        def forward(self, values):
+            return self.bias.expand(len(values), 1) * float("inf")
+
+    model = PatchTST(_tiny_params())
+    monkeypatch.setattr(model, "return_network", NonFiniteNetwork)
+    mains, appliances = _raw_training(samples=7)
+
+    with pytest.raises((FloatingPointError, RuntimeError), match="non-finite"):
+        model.partial_fit(mains, appliances)
+
+    assert model.appliance_params == {}
+    assert model.models == {}
+    assert model.last_split_metadata == {}
+
+
+def test_second_appliance_failure_rolls_back_every_model_and_runtime(monkeypatch):
+    class NonFiniteNetwork(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.ones(1))
+
+        def forward(self, values):
+            return self.bias.expand(len(values), 1) * float("inf")
+
+    statistics = {
+        "fridge": {"mean": 0.0, "std": 1.0},
+        "kettle": {"mean": 0.0, "std": 1.0},
+    }
+    model = PatchTST(_tiny_params(appliance_params=statistics, dropout=0.0))
+    model.models["fridge"] = model.return_network()
+    model.models["fridge"].eval()
+    for parameter in model.models["fridge"].parameters():
+        parameter.grad = torch.full_like(parameter, 0.125)
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.models["fridge"].state_dict().items()
+    }
+    original_gradients = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.models["fridge"].named_parameters()
+    }
+    model.last_split_metadata["previous"] = "sentinel"
+    monkeypatch.setattr(model, "return_network", NonFiniteNetwork)
+    mains, first = _processed_training(samples=7)
+    _, second = _processed_training(samples=7)
+    second = [("kettle", second[0][1])]
+
+    with pytest.raises((FloatingPointError, RuntimeError), match="non-finite"):
+        model.partial_fit(mains, first + second, do_preprocessing=False)
+
+    assert list(model.models) == ["fridge"]
+    assert model.models["fridge"].training is False
+    assert model.appliance_params == statistics
+    assert model.last_split_metadata == {"previous": "sentinel"}
+    for name, value in original_state.items():
+        torch.testing.assert_close(
+            model.models["fridge"].state_dict()[name], value, rtol=0, atol=0
+        )
+    for name, parameter in model.models["fridge"].named_parameters():
+        torch.testing.assert_close(
+            parameter.grad, original_gradients[name], rtol=0, atol=0
+        )
+
+
+def test_checkpoint_failure_at_end_of_partial_fit_rolls_back_memory(
+    tmp_path, monkeypatch
+):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 0.0, "std": 1.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.models["fridge"].eval()
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.models["fridge"].state_dict().items()
+    }
+    mains, appliances = _processed_training(samples=7)
+
+    def fail_save():
+        raise OSError("simulated checkpoint failure")
+
+    monkeypatch.setattr(model, "save_model", fail_save)
+    with pytest.raises(OSError, match="checkpoint failure"):
+        model.partial_fit(mains, appliances, do_preprocessing=False)
+
+    assert model.models["fridge"].training is False
+    for name, value in original_state.items():
+        torch.testing.assert_close(
+            model.models["fridge"].state_dict()[name], value, rtol=0, atol=0
+        )
 
 
 def test_cpu_training_is_deterministic_for_fixed_seed():
@@ -451,6 +585,42 @@ def test_cpu_training_is_deterministic_for_fixed_seed():
     np.testing.assert_array_equal(first_prediction, second_prediction)
     for key, value in first.models["fridge"].state_dict().items():
         torch.testing.assert_close(value, second.models["fridge"].state_dict()[key])
+
+
+def test_fixed_seed_isolated_from_other_live_instance_training():
+    mains, appliances = _processed_training(samples=7)
+    params = _tiny_params(
+        batch_size=2,
+        dropout=0.2,
+        appliance_params={"fridge": {"mean": 0.0, "std": 1.0}},
+    )
+    first = PatchTST(params)
+    first.models["fridge"] = first.return_network()
+    second = PatchTST(params)
+    second.models["fridge"] = deepcopy(first.models["fridge"])
+
+    first.partial_fit(mains, appliances, do_preprocessing=False)
+    second.partial_fit(mains, appliances, do_preprocessing=False)
+
+    for name, value in first.models["fridge"].state_dict().items():
+        torch.testing.assert_close(
+            value,
+            second.models["fridge"].state_dict()[name],
+            rtol=0,
+            atol=0,
+        )
+
+
+def test_fixed_seed_training_restores_process_torch_rng_state():
+    mains, appliances = _processed_training(samples=7)
+    model = PatchTST(
+        _tiny_params(appliance_params={"fridge": {"mean": 0.0, "std": 1.0}})
+    )
+    before = torch.random.get_rng_state().clone()
+
+    model.partial_fit(mains, appliances, do_preprocessing=False)
+
+    torch.testing.assert_close(torch.random.get_rng_state(), before, rtol=0, atol=0)
 
 
 def test_checkpoint_roundtrip_restores_config_predictions_and_safe_filenames(tmp_path):
@@ -483,6 +653,255 @@ def test_checkpoint_roundtrip_restores_config_predictions_and_safe_filenames(tmp
     assert restored._model_config() == model._model_config()
     assert list(restored.models) == [appliance_name]
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_successful_checkpoint_update_publishes_one_complete_new_generation(tmp_path):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+    first_metadata = json.loads(
+        (tmp_path / "metadata.json").read_text(encoding="utf-8")
+    )
+    first_weight = first_metadata["model_files"]["fridge"]
+
+    with torch.no_grad():
+        next(model.models["fridge"].parameters()).add_(1.0)
+    model.save_model()
+    second_metadata = json.loads(
+        (tmp_path / "metadata.json").read_text(encoding="utf-8")
+    )
+    second_weight = second_metadata["model_files"]["fridge"]
+
+    assert second_weight != first_weight
+    assert not (tmp_path / first_weight).exists()
+    assert (tmp_path / second_weight).is_file()
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "metadata.json",
+        second_weight,
+    ]
+    restored = PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+    for name, value in model.models["fridge"].state_dict().items():
+        torch.testing.assert_close(
+            restored.models["fridge"].state_dict()[name], value, rtol=0, atol=0
+        )
+
+
+@pytest.mark.parametrize("failure_point", ["metadata_write", "metadata_publish"])
+def test_failed_checkpoint_publication_preserves_previous_generation(
+    tmp_path, monkeypatch, failure_point
+):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+    original_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+
+    with torch.no_grad():
+        next(model.models["fridge"].parameters()).add_(10.0)
+
+    if failure_point == "metadata_write":
+
+        def fail_metadata(*_args, **_kwargs):
+            raise OSError("simulated metadata write failure")
+
+        monkeypatch.setattr(patchtst, "save_metadata", fail_metadata)
+    else:
+        real_replace = os.replace
+
+        def fail_metadata_publish(source, destination):
+            if os.fspath(source).endswith("metadata.json"):
+                raise OSError("simulated metadata publication failure")
+            return real_replace(source, destination)
+
+        monkeypatch.setattr(patchtst.os, "replace", fail_metadata_publish)
+
+    with pytest.raises(OSError, match="simulated metadata"):
+        model.save_model()
+
+    current_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+    assert current_files == original_files
+    assert not any(
+        path.name.startswith(".patchtst-stage-") for path in tmp_path.iterdir()
+    )
+
+
+def test_failed_multi_model_weight_publication_removes_partial_generation(
+    tmp_path, monkeypatch
+):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={
+                "fridge": {"mean": 42.0, "std": 5.0},
+                "kettle": {"mean": 800.0, "std": 200.0},
+            },
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.models["kettle"] = model.return_network()
+    model.save_model()
+    original_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+    real_replace = os.replace
+    published_weights = 0
+
+    def fail_second_weight(source, destination):
+        nonlocal published_weights
+        if os.fspath(source).endswith(".pt"):
+            published_weights += 1
+            if published_weights == 2:
+                raise OSError("simulated second weight failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(patchtst.os, "replace", fail_second_weight)
+    with pytest.raises(OSError, match="second weight"):
+        model.save_model()
+
+    current_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+    assert current_files == original_files
+
+
+def test_checkpoint_save_rejects_nonfinite_state_without_mutating_disk(tmp_path):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+    original_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+    with torch.no_grad():
+        next(model.models["fridge"].parameters()).reshape(-1)[0] = float("nan")
+
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        model.save_model()
+
+    current_files = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+    assert current_files == original_files
+
+
+def test_checkpoint_roundtrip_preserves_model_and_output_order(tmp_path):
+    statistics = OrderedDict(
+        [
+            ("kettle", {"mean": 800.0, "std": 200.0}),
+            ("fridge", {"mean": 42.0, "std": 5.0}),
+        ]
+    )
+    model = PatchTST(
+        _tiny_params(save_model_path=tmp_path, appliance_params=statistics)
+    )
+    model.models["kettle"] = model.return_network()
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+
+    restored = PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+    mains = pd.DataFrame({"power": np.linspace(80.0, 140.0, 5)})
+    result = restored.disaggregate_chunk([mains])[0]
+
+    assert list(restored.models) == ["kettle", "fridge"]
+    assert list(result.columns) == ["kettle", "fridge"]
+
+
+@pytest.mark.parametrize(
+    "model_order",
+    ["fridge", ["fridge", "fridge"], ["kettle"]],
+)
+def test_checkpoint_rejects_invalid_model_order(tmp_path, model_order):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+    metadata_path = tmp_path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["model_order"] = model_order
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="model_order"):
+        PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+
+
+def test_mappingless_checkpoint_rejects_malformed_order_cleanly(tmp_path):
+    model = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    model.save_model()
+    metadata_path = tmp_path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("model_files")
+    metadata["model_order"] = [{}]
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="model_order"):
+        PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+
+
+def test_nonfinite_checkpoint_is_rejected_without_mutating_runtime(tmp_path):
+    saved = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    saved.models["fridge"] = saved.return_network()
+    saved.save_model()
+    metadata = json.loads((tmp_path / "metadata.json").read_text(encoding="utf-8"))
+    weight_path = tmp_path / metadata["model_files"]["fridge"]
+    state = torch.load(weight_path, map_location="cpu", weights_only=True)
+    next(value for value in state.values() if value.is_floating_point()).reshape(-1)[
+        0
+    ] = float("nan")
+    torch.save(state, weight_path)
+
+    existing = PatchTST(
+        _tiny_params(
+            sequence_length=11,
+            appliance_params={"kettle": {"mean": 800.0, "std": 200.0}},
+        )
+    )
+    existing.models["kettle"] = existing.return_network()
+    original_state = {
+        name: value.detach().clone()
+        for name, value in existing.models["kettle"].state_dict().items()
+    }
+    existing.load_model_path = tmp_path
+
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        existing.load_model()
+
+    assert list(existing.models) == ["kettle"]
+    for name, value in original_state.items():
+        torch.testing.assert_close(
+            existing.models["kettle"].state_dict()[name], value, rtol=0, atol=0
+        )
 
 
 def test_checkpoint_roundtrip_ignores_untrained_appliance_statistics(tmp_path):

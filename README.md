@@ -299,6 +299,12 @@ The table below lists the public model surface. "Verification" describes how the
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
 | PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | Patch-token Transformer adaptation requiring NILM benchmark validation | Nie et al., A Time Series is Worth 64 Words | Sequence-to-point regression head |
 
+PatchTST keeps prediction columns in the installed model mapping's insertion
+order and records that order in new checkpoints. Legacy checkpoints without an
+explicit order load models in sorted appliance-name order. Checkpoint updates
+publish generation-specific weights before atomically replacing metadata, so a
+failed save cannot overwrite the last complete checkpoint.
+
 ## Reference Papers And Codebases
 
 NILM-specific references:
