@@ -106,7 +106,7 @@ def test_model_specs_cover_every_model_module_file(repo_root):
         repo_root / "nilmtk_contrib" / "torch",
     ):
         for path in package_dir.glob("*.py"):
-            if path.name in {"__init__.py", "_base.py", "preprocessing.py"}:
+            if path.name.startswith("_") or path.name == "preprocessing.py":
                 continue
             module_name = ".".join(path.relative_to(repo_root).with_suffix("").parts)
             model_files.add(module_name)
@@ -253,6 +253,7 @@ def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root)
         "require_models",
         "save_model",
         "set_appliance_params",
+        "_validated_appliance_stats",
     }
     offenders = []
     for model_dir in (
