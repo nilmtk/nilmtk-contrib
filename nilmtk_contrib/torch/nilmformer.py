@@ -33,7 +33,6 @@ reproduction claims.
 """
 
 from typing import List, Optional
-from collections import OrderedDict
 import numpy as np
 import pandas as pd
 import torch
@@ -42,8 +41,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from nilmtk.disaggregate import Disaggregator
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -504,7 +503,7 @@ class NILMFormerNetwork(nn.Module):
         return x
 
 
-class NILMFormer(Disaggregator):
+class NILMFormer(TorchDisaggregator):
     """
     NILMFormer: Transformer-based model for non-intrusive load monitoring.
     
@@ -531,12 +530,11 @@ class NILMFormer(Disaggregator):
             - d_model (int): Model dimension (default: 96)
             - n_heads (int): Number of attention heads (default: 8)
             - n_layers (int): Number of transformer layers (default: 6)
-            - n_epochs (int): Number of training epochs (default: 10)
-            - batch_size (int): Training batch size (default: 512)
+            - n_epochs (int): Number of training epochs (default: 100)
+            - batch_size (int): Training batch size (default: 1024)
     """
 
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    def __init__(self, params=None):
         """
         Initialize NILMFormer model with specified parameters following the paper
         
@@ -559,14 +557,15 @@ class NILMFormer(Disaggregator):
             - batch_size: Batch size (default: 1024)
             - learning_rate: Learning rate (default: 1e-4)
         """
-        super().__init__()
-        
+        super().__init__(
+            params,
+            defaults=torch_defaults(n_epochs=100, batch_size=1024),
+        )
+        params = params or {}
         self.MODEL_NAME = "NILMFormer"
-        self.models = OrderedDict()
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
         
         # Model architecture parameters intended to follow NILMFormer defaults.
-        self.sequence_length = params.get('sequence_length', 99)
         self.c_in = params.get('c_in', 1)
         self.c_embedding = params.get('c_embedding', 8)
         self.c_out = params.get('c_out', 1)
@@ -582,19 +581,8 @@ class NILMFormer(Disaggregator):
         self.norm_eps = params.get('norm_eps', 1e-5)
         
         # Training parameters (optimized for NILMFormer)
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.n_epochs = params.get('n_epochs', 100)  # More epochs for transformer
-        self.batch_size = params.get('batch_size', 1024)  # Larger batch size
         self.learning_rate = params.get('learning_rate', 1e-4)  # Lower learning rate
         self.warmup_steps = params.get('warmup_steps', 1000)  # Learning rate warmup
-        
-        # Data parameters
-        self.appliance_params = params.get('appliance_params', {})
-        self.mains_mean = params.get('mains_mean', 1800)
-        self.mains_std = params.get('mains_std', 600)
-        
-        # Device configuration
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         _log_print(f"NILMFormer using device: {self.device}")
         
         if self.sequence_length % 2 == 0:
@@ -842,8 +830,7 @@ class NILMFormer(Disaggregator):
         Disaggregate power consumption for test data using NILMFormer
         """
         
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         test_predictions = []
         for test_mains_df in test_main_list:
@@ -1022,18 +1009,3 @@ class NILMFormer(Disaggregator):
             return predictions * app_std + app_mean
         else:
             return predictions
-
-    def set_appliance_params(self, train_appliances):
-        """Calculate normalization parameters for each appliance"""
-        
-        for (app_name, df_list) in train_appliances:
-            values = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100
-            self.appliance_params.update({
-                app_name: {'mean': app_mean, 'std': app_std}
-            })
-        
-        _log_print("Appliance parameters:", self.appliance_params)

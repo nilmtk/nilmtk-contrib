@@ -4,12 +4,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from collections import OrderedDict
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
-from nilmtk.disaggregate import Disaggregator
 from tqdm import tqdm  # Added for progress bars
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -108,7 +107,7 @@ class NILMDataset(Dataset):
     def __getitem__(self, idx):
         return self.mains[idx], self.appliances[idx]
 
-class BERT(Disaggregator):
+class BERT(TorchDisaggregator):
     """
     BERT-inspired transformer model for non-intrusive load monitoring.
     
@@ -135,24 +134,14 @@ class BERT(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
             - appliance_params (dict): Appliance-specific normalization parameters
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults())
         self.MODEL_NAME = "BERT"
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 99)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.models = OrderedDict()
-        self.mains_mean = 1800
-        self.mains_std = 600
-        self.batch_size = params.get('batch_size', 512)
-        self.appliance_params = params.get('appliance_params', {})
         
         if self.sequence_length % 2 == 0:
             _log_print("Sequence length should be odd!")
             raise SequenceLengthError
             
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
     def return_network(self):
         """Create the BERT-inspired module used by this backend.
         
@@ -295,8 +284,7 @@ class BERT(Disaggregator):
 
     # Remaining methods keep the legacy backend behavior.
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        if model is not None:
-            self.models = model
+        self.require_models(model)
             
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
@@ -393,12 +381,3 @@ class BERT(Disaggregator):
                 new_mains = new_mains.reshape((-1, self.sequence_length))
                 processed_mains_lst.append(pd.DataFrame(new_mains))
             return processed_mains_lst
-    
-    def set_appliance_params(self, train_appliances):
-        for (app_name, df_list) in train_appliances:
-            values = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100
-            self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})

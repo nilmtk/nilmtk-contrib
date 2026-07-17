@@ -1,4 +1,3 @@
-from collections import OrderedDict
 import numpy as np
 import pandas as pd
 import torch
@@ -6,9 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 import math
-from nilmtk.disaggregate import Disaggregator
 
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -286,7 +285,7 @@ class ReformerNet(nn.Module):
         
         return x
 
-class Reformer(Disaggregator):
+class Reformer(TorchDisaggregator):
     """
     Reformer model for non-intrusive load monitoring.
     
@@ -319,21 +318,11 @@ class Reformer(Disaggregator):
             - n_epochs (int): Number of training epochs (default: 10)
             - batch_size (int): Training batch size (default: 512)
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
-        super().__init__()
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults())
+        params = params or {}
         self.MODEL_NAME = "Reformer"
-        self.models = OrderedDict()
         self.file_prefix = f"{self.MODEL_NAME.lower()}-temp-weights"
-        
-        # Extract hyperparameters from params dict
-        self.chunk_wise_training = params.get("chunk_wise_training", False)
-        self.sequence_length = params.get("sequence_length", 99)
-        self.n_epochs = params.get("n_epochs", 10)
-        self.batch_size = params.get("batch_size", 512)
-        self.appliance_params = params.get("appliance_params", {})
-        self.mains_mean = params.get("mains_mean", 1800)
-        self.mains_std = params.get("mains_std", 600)
         
         # Reformer specific parameters
         self.dim = params.get("dim", 512)
@@ -346,8 +335,6 @@ class Reformer(Disaggregator):
         self.dropout = params.get("dropout", 0.1)
         self.axial_position_emb = params.get("axial_position_emb", True)
         self.axial_position_shape = params.get("axial_position_shape", None)
-        
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Sequence length must be odd for proper windowing
         if self.sequence_length % 2 == 0:
@@ -430,19 +417,6 @@ class Reformer(Disaggregator):
                 new_mains = (new_mains - self.mains_mean) / self.mains_std
                 mains_df_list.append(pd.DataFrame(new_mains))
             return mains_df_list
-
-    def set_appliance_params(self, train_appliances):
-        """
-        Computes and sets normalization parameters for each appliance.
-        """
-        for app_name, df_list in train_appliances:
-            values = np.array(pd.concat(df_list, axis=0))
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100
-            self.appliance_params.update({app_name: {'mean': app_mean, 'std': app_std}})
-        _log_print(self.appliance_params)
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, current_epoch=0, **load_kwargs):
         """
@@ -546,8 +520,7 @@ class Reformer(Disaggregator):
         """
         Disaggregates a chunk of mains power data.
         """
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         # Preprocess the test mains such as windowing and normalizing
         if do_preprocessing:

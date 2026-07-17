@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 
-from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,16 +7,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-from collections import OrderedDict
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 
-# Set device
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 class SequenceLengthError(Exception):
     pass
 
@@ -155,7 +151,7 @@ class ResNetModel(nn.Module):
         
         return x
 
-class ResNet(Disaggregator):
+class ResNet(TorchDisaggregator):
     """
     ResNet-based model for non-intrusive load monitoring.
     
@@ -183,19 +179,11 @@ class ResNet(Disaggregator):
             - appliance_params (dict): Appliance-specific normalization parameters
             - load_model_path (str): Path to load pre-trained models
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    INCLUDE_APPLIANCE_EXTREMA = True
+
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults(sequence_length=299))
         self.MODEL_NAME = "ResNet"
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 299)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.models = OrderedDict()
-        self.mains_mean = 1800
-        self.mains_std = 600
-        self.batch_size = params.get('batch_size', 512)
-        self.load_model_path = params.get('load_model_path', None)
-        self.appliance_params = params.get('appliance_params', {})
-        self.device = device
         
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd!")
@@ -367,8 +355,7 @@ class ResNet(Disaggregator):
     
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
-        if model is not None:
-            self.models = model
+        self.require_models(model)
         
         if do_preprocessing:
             _log_print("Preprocessing test data...")
@@ -442,21 +429,3 @@ class ResNet(Disaggregator):
         
         model.apply(init_weights)
         return model
-        
-    def set_appliance_params(self, train_appliances):
-        """Computes and sets normalization parameters for each appliance."""
-        _log_print("Setting appliance parameters...")
-        
-        for (app_name, df_list) in train_appliances:
-            values = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            app_max = np.max(values)
-            app_min = np.min(values)
-            if app_std < 1:
-                app_std = 100
-            self.appliance_params[app_name] = {
-                'mean': app_mean, 'std': app_std, 
-                'max': app_max, 'min': app_min
-            }
-            _log_print(f"  {app_name}: mean={app_mean:.2f}, std={app_std:.2f}")

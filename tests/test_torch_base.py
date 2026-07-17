@@ -23,6 +23,25 @@ DEFAULTS = {
 }
 
 
+def _appliance_params(*names):
+    return {name: {"mean": 1.0, "std": 2.0, "min": 0.0, "max": 3.0} for name in names}
+
+
+def test_torch_defaults_are_complete_isolated_and_typo_safe():
+    pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import torch_defaults
+
+    first = torch_defaults(sequence_length=19)
+    second = torch_defaults()
+    first["appliance_params"]["fridge"] = {"mean": 1.0, "std": 2.0}
+
+    assert first["sequence_length"] == 19
+    assert second == DEFAULTS | {"n_epochs": 10, "batch_size": 512, "device": None}
+    assert second["appliance_params"] == {}
+    with pytest.raises(ValueError, match="typo"):
+        torch_defaults(typo=1)
+
+
 def test_torch_disaggregator_centralizes_common_runtime_state():
     torch = pytest.importorskip("torch")
     from nilmtk_contrib.torch._base import TorchDisaggregator
@@ -196,8 +215,35 @@ def test_resolve_torch_device_defaults_to_cuda_when_available(monkeypatch):
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
 
-    assert resolve_torch_device() == torch.device("cuda")
+    assert resolve_torch_device() == torch.device("cuda:0")
+
+
+def test_resolve_torch_device_resolves_generic_cuda_to_current_index(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import resolve_torch_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
+
+    assert resolve_torch_device("cuda") == torch.device("cuda:1")
+
+
+@pytest.mark.parametrize("current_index", [True, -1, 1, "zero"])
+def test_resolve_torch_device_rejects_invalid_current_cuda_index(
+    monkeypatch, current_index
+):
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import resolve_torch_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: current_index)
+
+    with pytest.raises(RuntimeError, match="current device index"):
+        resolve_torch_device("cuda")
 
 
 @pytest.mark.parametrize("requested", ["", "   ", True, 3, "meta", "cuda:not-an-index"])
@@ -535,7 +581,9 @@ def test_require_models_validates_external_model_mapping():
     torch = pytest.importorskip("torch")
     from nilmtk_contrib.torch._base import TorchDisaggregator
 
-    model = TorchDisaggregator(defaults=DEFAULTS)
+    model = TorchDisaggregator(
+        {"appliance_params": _appliance_params("fridge")}, defaults=DEFAULTS
+    )
     network = torch.nn.Linear(1, 1)
 
     external = {"fridge": network}
@@ -575,7 +623,10 @@ def test_require_models_rejects_atomically_without_erasing_installed_models(
     torch = pytest.importorskip("torch")
     from nilmtk_contrib.torch._base import TorchDisaggregator
 
-    model = TorchDisaggregator(defaults=DEFAULTS)
+    model = TorchDisaggregator(
+        {"appliance_params": _appliance_params("fridge", "kettle")},
+        defaults=DEFAULTS,
+    )
     network = torch.nn.Linear(1, 1)
     installed = model.require_models({"fridge": network})
 
@@ -590,7 +641,10 @@ def test_require_models_rejects_partially_valid_map_atomically():
     torch = pytest.importorskip("torch")
     from nilmtk_contrib.torch._base import TorchDisaggregator
 
-    model = TorchDisaggregator(defaults=DEFAULTS)
+    model = TorchDisaggregator(
+        {"appliance_params": _appliance_params("fridge", "kettle", "bad")},
+        defaults=DEFAULTS,
+    )
     fridge = torch.nn.Linear(1, 1)
     installed = model.require_models({"fridge": fridge})
 
@@ -606,6 +660,114 @@ def test_require_models_rejects_partially_valid_map_atomically():
 
     assert model.models is installed
     assert model.models == OrderedDict([("fridge", fridge)])
+
+
+def test_require_models_rejects_missing_normalization_state_atomically():
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchDisaggregator
+
+    model = TorchDisaggregator(defaults=DEFAULTS)
+
+    with pytest.raises(ValueError, match="normalization parameters"):
+        model.require_models({"fridge": torch.nn.Linear(1, 1)})
+
+    assert model.models == {}
+
+
+def test_require_models_rejects_incompatible_module_device_atomically():
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchDisaggregator
+
+    model = TorchDisaggregator(
+        {"appliance_params": _appliance_params("fridge")}, defaults=DEFAULTS
+    )
+    network = torch.nn.Linear(1, 1, device="meta")
+
+    with pytest.raises(ValueError, match="incompatible device"):
+        model.require_models({"fridge": network})
+
+    assert model.models == {}
+
+
+def test_require_models_distinguishes_cuda_indices_atomically():
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchDisaggregator
+
+    class ReportedParameter:
+        def __init__(self, device):
+            self.device = torch.device(device)
+
+    class DeviceReportingModule(torch.nn.Module):
+        def __init__(self, device):
+            super().__init__()
+            self.reported_parameter = ReportedParameter(device)
+
+        def parameters(self, recurse=True):
+            return iter((self.reported_parameter,))
+
+        def buffers(self, recurse=True):
+            return iter(())
+
+    model = TorchDisaggregator(
+        {"appliance_params": _appliance_params("fridge")}, defaults=DEFAULTS
+    )
+    model.device = torch.device("cuda:0")
+    matching = DeviceReportingModule("cuda:0")
+    installed = model.require_models({"fridge": matching})
+
+    with pytest.raises(ValueError, match="cuda:1.*cuda:0"):
+        model.require_models({"fridge": DeviceReportingModule("cuda:1")})
+
+    assert model.models is installed
+    assert model.models == OrderedDict([("fridge", matching)])
+
+
+@pytest.mark.parametrize(
+    "required_fields",
+    [
+        ["mean"],
+        ("",),
+        (1,),
+    ],
+)
+def test_require_models_rejects_invalid_required_statistics_contract(
+    required_fields,
+):
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchDisaggregator
+
+    class InvalidContractDisaggregator(TorchDisaggregator):
+        REQUIRED_APPLIANCE_STATS = required_fields
+
+    model = InvalidContractDisaggregator(
+        {"appliance_params": _appliance_params("fridge")}, defaults=DEFAULTS
+    )
+
+    with pytest.raises(TypeError, match="REQUIRED_APPLIANCE_STATS"):
+        model.require_models({"fridge": torch.nn.Identity()})
+
+
+def test_appliance_minmax_params_handles_variable_and_constant_targets():
+    pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchDisaggregator
+
+    model = TorchDisaggregator(
+        {
+            "appliance_params": {
+                "variable": {"mean": 2.0, "std": 2.0, "min": 0.0, "max": 5.0},
+                "constant": {"mean": 3.0, "std": 100.0, "min": 3.0, "max": 3.0},
+                "no-extrema": {"mean": 1.0, "std": 2.0},
+            }
+        },
+        defaults=DEFAULTS,
+    )
+
+    assert model.appliance_minmax_params("variable") == (0.0, 5.0, 5.0)
+    assert model.appliance_minmax_params("constant") == (3.0, 3.0, 100.0)
+    with pytest.raises(ValueError, match="missing max, min"):
+        model.appliance_minmax_params("no-extrema")
+    with pytest.raises(ValueError, match="no normalization parameters"):
+        model.appliance_minmax_params("missing")
 
 
 @pytest.mark.parametrize(

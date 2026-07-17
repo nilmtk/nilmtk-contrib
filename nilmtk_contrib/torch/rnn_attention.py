@@ -1,5 +1,4 @@
 from __future__ import print_function, division
-from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,16 +6,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-from collections import OrderedDict
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 
-# Use GPU if available, otherwise fall back to CPU
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 class SequenceLengthError(Exception):
     pass
 
@@ -116,7 +112,7 @@ class RNNAttentionModel(nn.Module):
         
         return x
 
-class RNN_attention(Disaggregator):
+class RNN_attention(TorchDisaggregator):
     """
     RNN with attention mechanism for non-intrusive load monitoring.
     
@@ -142,21 +138,10 @@ class RNN_attention(Disaggregator):
             - chunk_wise_training (bool): Enable chunk-wise training (default: False)
             - appliance_params (dict): Appliance-specific normalization parameters
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    def __init__(self, params=None):
         """Initializes the disaggregator and its hyperparameters."""
+        super().__init__(params, defaults=torch_defaults(sequence_length=19))
         self.MODEL_NAME = "RNN_attention"
-        self.models = OrderedDict()
-        
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 19)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.batch_size = params.get('batch_size', 512)
-        self.load_model_path = params.get('load_model_path', None)
-        self.appliance_params = params.get('appliance_params', {})
-        self.mains_mean = params.get('mains_mean', 1800)
-        self.mains_std = params.get('mains_std', 600)
-        self.device = device
         
         if self.sequence_length % 2 == 0:
             raise SequenceLengthError("Sequence length must be odd for proper windowing.")
@@ -259,8 +244,7 @@ class RNN_attention(Disaggregator):
     
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
-        if model is not None:
-            self.models = model
+        self.require_models(model)
         
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
@@ -354,14 +338,3 @@ class RNN_attention(Disaggregator):
                 new_mains = (new_mains - self.mains_mean) / self.mains_std
                 processed_mains_lst.append(pd.DataFrame(new_mains))
             return processed_mains_lst
-        
-    def set_appliance_params(self, train_appliances):
-        """Computes and sets normalization parameters for each appliance."""
-        for (app_name, df_list) in train_appliances:
-            values = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(values)
-            app_std = np.std(values)
-            if app_std < 1:
-                app_std = 100  # Avoid division by zero for flat signals
-            self.appliance_params[app_name] = {'mean': app_mean, 'std': app_std}
-        _log_print("Appliance parameters set:", self.appliance_params)

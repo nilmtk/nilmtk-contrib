@@ -1,5 +1,4 @@
 from __future__ import print_function, division
-from nilmtk.disaggregate import Disaggregator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,8 +10,8 @@ from collections import OrderedDict
 from nilmtk_contrib.utils.validation import safe_train_test_split as train_test_split
 import copy
 
-# Set device
-from nilmtk_contrib.utils.model import initialize_runtime, legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 from nilmtk_contrib.preprocessing.classification import (
     appliance_threshold,
     classification_metadata,
@@ -21,8 +20,6 @@ from nilmtk_contrib.preprocessing.classification import (
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 class SequenceLengthError(Exception):
     pass
 
@@ -157,7 +154,7 @@ class RNNAttentionClassificationNet(nn.Module):
         
         return output, classification_output, attention_weights
 
-class RNN_attention_classification(Disaggregator):
+class RNN_attention_classification(TorchDisaggregator):
     """
     RNN with attention and classification for non-intrusive load monitoring.
     
@@ -185,20 +182,15 @@ class RNN_attention_classification(Disaggregator):
             - appliance_params (dict): Appliance-specific normalization parameters
             - mains_params (dict): Mains-specific normalization parameters
     """
-    def __init__(self, params):
-        initialize_runtime(self, params, backends=("python", "numpy", "torch"))
+    INCLUDE_APPLIANCE_EXTREMA = True
+    REQUIRED_APPLIANCE_STATS = ("mean", "std", "min", "max")
+
+    def __init__(self, params=None):
+        super().__init__(params, defaults=torch_defaults())
+        params = params or {}
         self.MODEL_NAME = "RNN_attention_classification"
-        self.chunk_wise_training = params.get('chunk_wise_training', False)
-        self.sequence_length = params.get('sequence_length', 99)
-        self.n_epochs = params.get('n_epochs', 10)
-        self.models = OrderedDict()
         self.att_models = OrderedDict()  # Store attention models separately like TensorFlow
-        self.mains_mean = 1800
-        self.mains_std = 600
-        self.batch_size = params.get('batch_size', 512)
-        self.appliance_params = params.get('appliance_params', {})
         self.mains_params = params.get('mains_params', {})
-        self.device = device
         self.classification_threshold = params.get('classification_threshold', params.get('on_power_threshold', 15))
         self.regression_loss_weight = params.get('regression_loss_weight', 1.0)
         self.classification_loss_weight = params.get('classification_loss_weight', 1.0)
@@ -284,10 +276,7 @@ class RNN_attention_classification(Disaggregator):
             appliance_list = []
             for app_index, (app_name, app_df_lst) in enumerate(submeters_lst):
                 if app_name in self.appliance_params:
-                    self.appliance_params[app_name]['mean']
-                    self.appliance_params[app_name]['std']
-                    app_min = self.appliance_params[app_name]['min']
-                    app_max = self.appliance_params[app_name]['max']
+                    app_min, _, app_scale = self.appliance_minmax_params(app_name)
                 else:
                     raise ApplianceNotFoundError(f"Parameters for appliance '{app_name}' not found!")
 
@@ -297,7 +286,7 @@ class RNN_attention_classification(Disaggregator):
                     new_app_readings = np.pad(new_app_readings, (units_to_pad, units_to_pad), 'constant', constant_values=(0, 0))
                     new_app_readings = np.array([new_app_readings[i:i + n] for i in range(len(new_app_readings) - n + 1)])
                     # Normalize with min-max scaling, matching TensorFlow
-                    new_app_readings = (new_app_readings - app_min) / (app_max - app_min)
+                    new_app_readings = (new_app_readings - app_min) / app_scale
                     processed_app_dfs.append(pd.DataFrame(new_app_readings))
 
                 appliance_list.append((app_name, processed_app_dfs))
@@ -325,21 +314,6 @@ class RNN_attention_classification(Disaggregator):
             'min': np.min(all_mains_data),
             'max': np.max(all_mains_data)
         }
-
-    def set_appliance_params(self, train_appliances):
-        """Computes and sets normalization parameters for each appliance."""
-        for (app_name, df_list) in train_appliances:
-            app_data = np.concatenate([df.values for df in df_list])
-            app_mean = np.mean(app_data)
-            app_std = np.std(app_data)
-            if app_std < 1:
-                app_std = 100  # Avoid division by zero for flat signals
-            self.appliance_params[app_name] = {
-                'mean': app_mean,
-                'std': app_std,
-                'min': np.min(app_data),
-                'max': np.max(app_data)
-            }
 
     def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         """Trains the model on a chunk of data."""
@@ -459,8 +433,7 @@ class RNN_attention_classification(Disaggregator):
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data."""
-        if model is not None:
-            self.models = model
+        self.require_models(model)
 
         if do_preprocessing:
             test_main_list = self.call_preprocessing(
@@ -495,8 +468,7 @@ class RNN_attention_classification(Disaggregator):
                 averaged_prediction = sum_arr / counts_arr
 
                 # Denormalize the prediction
-                app_min = self.appliance_params[appliance]['min']
-                app_max = self.appliance_params[appliance]['max']
+                app_min, app_max, _ = self.appliance_minmax_params(appliance)
                 denormalized_prediction = app_min + (averaged_prediction * (app_max - app_min))
                 
                 # Set negative values to zero
