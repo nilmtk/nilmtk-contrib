@@ -85,7 +85,7 @@ def _real_array(frame, label):
     return values
 
 
-def _power_vector(frame, label):
+def _power_vector(frame, label, *, allow_empty=False):
     values = _real_array(frame, label)
     if values.ndim == 1:
         vector = values
@@ -93,18 +93,18 @@ def _power_vector(frame, label):
         vector = values[:, 0]
     else:
         raise ValueError(f"{label} must contain exactly one power column.")
-    if vector.size == 0:
+    if vector.size == 0 and not allow_empty:
         raise ValueError(f"{label} must contain at least one sample.")
     return vector
 
 
-def _window_matrix(frame, sequence_length, label):
+def _window_matrix(frame, sequence_length, label, *, allow_empty=False):
     values = _real_array(frame, label)
     if values.ndim != 2 or values.shape[1] != sequence_length:
         raise ValueError(
             f"{label} must have shape (samples, {sequence_length}); got {values.shape}."
         )
-    if values.shape[0] == 0:
+    if values.shape[0] == 0 and not allow_empty:
         raise ValueError(f"{label} must contain at least one window.")
     return values
 
@@ -112,6 +112,15 @@ def _window_matrix(frame, sequence_length, label):
 def _checkpoint_filename(appliance_name):
     digest = hashlib.sha256(appliance_name.encode("utf-8")).hexdigest()[:16]
     return f"patchtst-{digest}.pt"
+
+
+def _model_state_is_finite(model):
+    for _, value in model.state_dict().items():
+        if (
+            torch.is_floating_point(value) or torch.is_complex(value)
+        ) and not torch.isfinite(value).all().item():
+            return False
+    return True
 
 
 class PatchTSTNetwork(nn.Module):
@@ -173,16 +182,32 @@ class PatchTSTNetwork(nn.Module):
         nn.init.normal_(self.position, mean=0.0, std=0.02)
 
     def forward(self, inputs):
+        if not isinstance(inputs, torch.Tensor):
+            raise TypeError("PatchTSTNetwork inputs must be a torch.Tensor.")
         if inputs.ndim != 3 or inputs.shape[1:] != (1, self.sequence_length):
             raise ValueError(
                 "PatchTSTNetwork expects input shape "
                 f"(batch, 1, {self.sequence_length}); got {tuple(inputs.shape)}."
             )
+        if not torch.is_floating_point(inputs) or torch.is_complex(inputs):
+            raise TypeError("PatchTSTNetwork inputs must be real floating tensors.")
+        expected_device = self.patch_projection.weight.device
+        if inputs.device != expected_device:
+            raise ValueError(
+                f"PatchTSTNetwork input is on {inputs.device}; "
+                f"model is on {expected_device}."
+            )
+        if not torch.isfinite(inputs).all():
+            raise ValueError("PatchTSTNetwork inputs must be finite.")
+        inputs = inputs.to(dtype=self.patch_projection.weight.dtype)
         padded = nn.functional.pad(inputs, (0, self.patch_stride), mode="replicate")
         patches = padded.unfold(-1, self.patch_length, self.patch_stride)
         tokens = self.patch_projection(patches.squeeze(1)) + self.position
         encoded = self.encoder(tokens)
-        return self.head(encoded.flatten(start_dim=1))
+        output = self.head(encoded.flatten(start_dim=1))
+        if not torch.isfinite(output).all():
+            raise RuntimeError("PatchTSTNetwork produced non-finite output.")
+        return output
 
 
 class PatchTST(TorchDisaggregator):
@@ -335,6 +360,16 @@ class PatchTST(TorchDisaggregator):
         if not appliance_entries:
             raise ValueError("Training requires at least one appliance target.")
 
+        missing_statistics = [
+            entry
+            for entry in appliance_entries
+            if entry[0] not in self.appliance_params
+        ]
+        if not do_preprocessing and missing_statistics:
+            raise ValueError(
+                "Preprocessed training requires appliance_params for every target."
+            )
+
         if do_preprocessing:
             mains_vectors = [
                 _power_vector(frame, f"mains chunk {index}")
@@ -364,11 +399,6 @@ class PatchTST(TorchDisaggregator):
                             "must have aligned indexes."
                         )
 
-            missing_statistics = [
-                entry
-                for entry in appliance_entries
-                if entry[0] not in self.appliance_params
-            ]
             if missing_statistics:
                 self.set_appliance_params(missing_statistics)
             processed_main, processed_appliances = self.call_preprocessing(
@@ -396,6 +426,17 @@ class PatchTST(TorchDisaggregator):
                     raise ValueError(
                         f"Processed mains and {appliance_name!r} target chunk "
                         f"{index} must be aligned."
+                    )
+                main_index = getattr(processed_main[index], "index", None)
+                target_index = getattr(frame, "index", None)
+                if (
+                    main_index is not None
+                    and target_index is not None
+                    and not main_index.equals(target_index)
+                ):
+                    raise ValueError(
+                        f"Processed mains and {appliance_name!r} target chunk "
+                        f"{index} must have aligned indexes."
                     )
                 targets.append(target)
             target_arrays.append((appliance_name, np.concatenate(targets)))
@@ -433,6 +474,8 @@ class PatchTST(TorchDisaggregator):
         **_,
     ):
         del current_epoch
+        if self.n_epochs == 0:
+            raise ValueError("PatchTST partial_fit requires at least one epoch.")
         inputs, appliance_targets = self._training_arrays(
             train_main, train_appliances, do_preprocessing
         )
@@ -440,10 +483,6 @@ class PatchTST(TorchDisaggregator):
             self.require_models()
 
         for appliance_name, targets in appliance_targets:
-            model = self.models.get(appliance_name)
-            if model is None:
-                model = self.return_network()
-                self.models[appliance_name] = model
             split = train_validation_split(
                 inputs,
                 targets,
@@ -458,75 +497,100 @@ class PatchTST(TorchDisaggregator):
             if not split.metadata.should_train:
                 continue
 
-            train_loader = DataLoader(
-                TensorDataset(
-                    torch.from_numpy(split.X_train),
-                    torch.from_numpy(split.y_train),
-                ),
-                batch_size=self.batch_size,
-                shuffle=True,
-                generator=(
-                    None
-                    if self.seed is None
-                    else torch.Generator().manual_seed(self.seed)
-                ),
-            )
-            optimizer = torch.optim.AdamW(
-                model.parameters(),
-                lr=self.learning_rate,
-                weight_decay=self.weight_decay,
-            )
-            best_loss = math.inf
-            best_state = None
+            model = self.models.get(appliance_name)
+            created_model = model is None
+            if created_model:
+                model = self.return_network()
+                self.models[appliance_name] = model
+            starting_state = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
 
-            for epoch in range(self.n_epochs):
-                model.train()
-                train_loss = torch.zeros((), device=self.device)
-                train_samples = 0
-                for batch_inputs, batch_targets in train_loader:
-                    batch_inputs = batch_inputs.to(self.device).unsqueeze(1)
-                    batch_targets = batch_targets.to(self.device)
-                    optimizer.zero_grad(set_to_none=True)
-                    loss = nn.functional.mse_loss(model(batch_inputs), batch_targets)
-                    loss.backward()
-                    try:
-                        nn.utils.clip_grad_norm_(
-                            model.parameters(),
-                            self.gradient_clip_norm,
-                            error_if_nonfinite=True,
+            try:
+                train_loader = DataLoader(
+                    TensorDataset(
+                        torch.from_numpy(split.X_train),
+                        torch.from_numpy(split.y_train),
+                    ),
+                    batch_size=self.batch_size,
+                    shuffle=True,
+                    generator=(
+                        None
+                        if self.seed is None
+                        else torch.Generator().manual_seed(self.seed)
+                    ),
+                )
+                optimizer = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=self.learning_rate,
+                    weight_decay=self.weight_decay,
+                )
+                best_loss = math.inf
+                best_state = None
+
+                for epoch in range(self.n_epochs):
+                    model.train()
+                    train_loss = torch.zeros((), device=self.device)
+                    train_samples = 0
+                    for batch_inputs, batch_targets in train_loader:
+                        batch_inputs = batch_inputs.to(self.device).unsqueeze(1)
+                        batch_targets = batch_targets.to(self.device)
+                        optimizer.zero_grad(set_to_none=True)
+                        loss = nn.functional.mse_loss(
+                            model(batch_inputs), batch_targets
                         )
-                    except RuntimeError as exc:
+                        loss.backward()
+                        try:
+                            nn.utils.clip_grad_norm_(
+                                model.parameters(),
+                                self.gradient_clip_norm,
+                                error_if_nonfinite=True,
+                            )
+                        except RuntimeError as exc:
+                            raise FloatingPointError(
+                                "Model gradients became non-finite."
+                            ) from exc
+                        optimizer.step()
+                        train_loss += loss.detach() * len(batch_inputs)
+                        train_samples += len(batch_inputs)
+
+                    if not _model_state_is_finite(model):
                         raise FloatingPointError(
-                            "Model gradients became non-finite."
-                        ) from exc
-                    optimizer.step()
-                    train_loss += loss.detach() * len(batch_inputs)
-                    train_samples += len(batch_inputs)
+                            "Optimizer step produced non-finite model state."
+                        )
+                    score = (train_loss / train_samples).item()
+                    if split.metadata.validation_enabled:
+                        score = self._validation_loss(model, split.X_val, split.y_val)
+                    if not math.isfinite(score):
+                        raise FloatingPointError("Epoch score became non-finite.")
+                    if score < best_loss:
+                        best_loss = score
+                        best_state = {
+                            key: value.detach().cpu().clone()
+                            for key, value in model.state_dict().items()
+                        }
+                    if self.verbose:
+                        logger.info(
+                            "%s %s epoch %d/%d score=%.6f",
+                            self.MODEL_NAME,
+                            appliance_name,
+                            epoch + 1,
+                            self.n_epochs,
+                            score,
+                        )
 
-                score = (train_loss / train_samples).item()
-                if split.metadata.validation_enabled:
-                    score = self._validation_loss(model, split.X_val, split.y_val)
-                if not math.isfinite(score):
-                    raise FloatingPointError("Epoch score became non-finite.")
-                if score < best_loss:
-                    best_loss = score
-                    best_state = {
-                        key: value.detach().cpu().clone()
-                        for key, value in model.state_dict().items()
-                    }
-                if self.verbose:
-                    logger.info(
-                        "%s %s epoch %d/%d score=%.6f",
-                        self.MODEL_NAME,
-                        appliance_name,
-                        epoch + 1,
-                        self.n_epochs,
-                        score,
-                    )
-
-            if best_state is not None:
+                if best_state is None:
+                    raise RuntimeError("PatchTST training produced no valid state.")
                 model.load_state_dict(best_state)
-            model.to(self.device)
+                model.to(self.device)
+            except Exception:
+                if created_model:
+                    self.models.pop(appliance_name, None)
+                else:
+                    model.load_state_dict(starting_state)
+                    model.to(self.device)
+                raise
 
         if self.save_model_path:
             self.save_model()
@@ -538,11 +602,15 @@ class PatchTST(TorchDisaggregator):
         model_folder = Path(self.save_model_path)
         model_folder.mkdir(parents=True, exist_ok=True)
 
-        filenames = [_checkpoint_filename(name) for name in models]
+        model_files = {
+            appliance_name: _checkpoint_filename(appliance_name)
+            for appliance_name in models
+        }
+        filenames = [filename for _, filename in model_files.items()]
         if len(filenames) != len(set(filenames)):
             raise RuntimeError("Appliance checkpoint filename collision.")
-        for appliance_name, model in models.items():
-            save_torch_state(model, model_folder / _checkpoint_filename(appliance_name))
+        for appliance_name, filename in model_files.items():
+            save_torch_state(models[appliance_name], model_folder / filename)
 
         metadata = build_metadata(
             model_class=self.MODEL_NAME,
@@ -556,6 +624,7 @@ class PatchTST(TorchDisaggregator):
             ),
         )
         metadata["model_config"] = self._model_config()
+        metadata["model_files"] = model_files
         save_metadata(model_folder, metadata)
 
     def load_model(self):
@@ -572,6 +641,30 @@ class PatchTST(TorchDisaggregator):
         config = metadata.get("model_config")
         if not isinstance(config, Mapping) or set(config) != set(_MODEL_CONFIG_FIELDS):
             raise ValueError("PatchTST checkpoint has an invalid model_config.")
+        model_files = metadata.get("model_files")
+        if model_files is None:
+            model_files = {
+                appliance_name: _checkpoint_filename(appliance_name)
+                for appliance_name in metadata["appliance_params"]
+                if (model_folder / _checkpoint_filename(appliance_name)).is_file()
+            }
+        if not isinstance(model_files, Mapping) or not model_files:
+            raise ValueError("PatchTST checkpoint has no valid model_files mapping.")
+        if not set(model_files).issubset(metadata["appliance_params"]):
+            raise ValueError(
+                "PatchTST checkpoint model_files lack matching appliance_params."
+            )
+        for appliance_name, filename in model_files.items():
+            if (
+                not isinstance(appliance_name, str)
+                or not isinstance(filename, str)
+                or Path(filename).name != filename
+                or filename != _checkpoint_filename(appliance_name)
+            ):
+                raise ValueError(
+                    f"PatchTST checkpoint has an unsafe model file for "
+                    f"{appliance_name!r}."
+                )
 
         candidate_params = {
             "sequence_length": metadata["sequence_length"],
@@ -588,11 +681,11 @@ class PatchTST(TorchDisaggregator):
         }
         candidate = type(self)(candidate_params)
         loaded = OrderedDict()
-        for appliance_name in candidate.appliance_params:
+        for appliance_name, filename in model_files.items():
             network = candidate.return_network()
             load_torch_state(
                 network,
-                model_folder / _checkpoint_filename(appliance_name),
+                model_folder / filename,
                 candidate.device,
             )
             loaded[appliance_name] = network
@@ -607,29 +700,40 @@ class PatchTST(TorchDisaggregator):
         self.require_models(candidate.models)
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        self.require_models(model)
+        models = self.require_models(model)
         test_frames = list(test_main_list)
         if not test_frames:
             return []
 
         indexes = []
         if do_preprocessing:
+            processed = []
             for index, frame in enumerate(test_frames):
-                values = _power_vector(frame, f"mains chunk {index}")
+                values = _power_vector(frame, f"mains chunk {index}", allow_empty=True)
                 frame_index = getattr(frame, "index", None)
                 indexes.append(
                     frame_index
                     if frame_index is not None
                     else pd.RangeIndex(len(values))
                 )
-            processed = self.call_preprocessing(test_frames, method="test")
+                if len(values):
+                    processed.append(self.call_preprocessing([frame], method="test")[0])
+                else:
+                    processed.append(
+                        pd.DataFrame(
+                            np.empty((0, self.sequence_length), dtype=np.float32)
+                        )
+                    )
         else:
             processed = test_frames
 
         results = []
         for index, frame in enumerate(processed):
             windows = _window_matrix(
-                frame, self.sequence_length, f"mains chunk {index}"
+                frame,
+                self.sequence_length,
+                f"mains chunk {index}",
+                allow_empty=True,
             )
             output_index = (
                 indexes[index]
@@ -646,32 +750,62 @@ class PatchTST(TorchDisaggregator):
                 shuffle=False,
             )
             predictions = {}
-            for appliance_name, network in self.models.items():
+            for appliance_name, network in models.items():
                 network.eval()
                 batches = []
                 with torch.inference_mode():
                     for (batch,) in loader:
                         prediction = network(batch.to(self.device).unsqueeze(1))
+                        if not isinstance(prediction, torch.Tensor):
+                            raise TypeError(
+                                f"Model for {appliance_name!r} must return "
+                                "a torch.Tensor."
+                            )
                         if prediction.shape != (len(batch), 1):
                             raise ValueError(
                                 f"Model for {appliance_name!r} returned shape "
                                 f"{tuple(prediction.shape)}; expected ({len(batch)}, 1)."
+                            )
+                        if not torch.is_floating_point(prediction) or torch.is_complex(
+                            prediction
+                        ):
+                            raise TypeError(
+                                f"Model for {appliance_name!r} must return real "
+                                "floating values."
+                            )
+                        if prediction.device != self.device:
+                            raise ValueError(
+                                f"Model for {appliance_name!r} returned values on "
+                                f"{prediction.device}; expected {self.device}."
                             )
                         if not torch.isfinite(prediction).all():
                             raise FloatingPointError(
                                 f"Model for {appliance_name!r} returned non-finite values."
                             )
                         batches.append(prediction.detach().cpu())
-                normalized = torch.cat(batches).numpy().reshape(-1)
+                if batches:
+                    normalized = torch.cat(batches).numpy().reshape(-1)
+                else:
+                    normalized = np.empty(0, dtype=np.float32)
                 statistics = self.appliance_params[appliance_name]
-                denormalized = statistics["mean"] + normalized * statistics["std"]
-                denormalized = np.clip(denormalized, 0, None)
+                with np.errstate(over="ignore", invalid="ignore"):
+                    denormalized = (
+                        statistics["mean"]
+                        + normalized.astype(np.float64) * statistics["std"]
+                    )
+                    denormalized = np.clip(denormalized, 0, None)
                 if not np.isfinite(denormalized).all():
                     raise FloatingPointError(
                         f"Predictions for {appliance_name!r} became non-finite."
                     )
+                with np.errstate(over="ignore", invalid="ignore"):
+                    public_values = denormalized.astype(np.float32)
+                if not np.isfinite(public_values).all():
+                    raise ValueError(
+                        f"Predictions for {appliance_name!r} overflow float32."
+                    )
                 predictions[appliance_name] = pd.Series(
-                    denormalized.astype(np.float32, copy=False), index=output_index
+                    public_values, index=output_index
                 )
             results.append(pd.DataFrame(predictions, index=output_index))
         return results

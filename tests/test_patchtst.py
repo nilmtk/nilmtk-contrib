@@ -121,6 +121,50 @@ def test_network_has_finite_gradients_for_flat_and_varying_batches():
     assert all(torch.isfinite(gradient).all() for gradient in gradients)
 
 
+def test_network_validates_tensor_dtype_device_and_finiteness():
+    network = PatchTSTNetwork(
+        9,
+        patch_length=3,
+        patch_stride=2,
+        d_model=8,
+        n_heads=2,
+        n_layers=1,
+        d_ff=16,
+        dropout=0.0,
+    )
+
+    with pytest.raises(TypeError, match="torch.Tensor"):
+        network(np.zeros((1, 1, 9), dtype=np.float32))
+    with pytest.raises(TypeError, match="real floating"):
+        network(torch.zeros((1, 1, 9), dtype=torch.int64))
+    with pytest.raises(ValueError, match="finite"):
+        network(torch.full((1, 1, 9), float("nan")))
+    with pytest.raises(ValueError, match="model is on cpu"):
+        network(torch.empty((1, 1, 9), device="meta"))
+
+    output = network(torch.zeros((2, 1, 9), dtype=torch.float64))
+    assert output.dtype == torch.float32
+    assert torch.isfinite(output).all()
+
+
+def test_network_rejects_nonfinite_output():
+    network = PatchTSTNetwork(
+        9,
+        patch_length=3,
+        patch_stride=2,
+        d_model=8,
+        n_heads=2,
+        n_layers=1,
+        d_ff=16,
+        dropout=0.0,
+    )
+    with torch.no_grad():
+        network.head[-1].bias.fill_(float("inf"))
+
+    with pytest.raises(RuntimeError, match="non-finite output"):
+        network(torch.zeros((1, 1, 9)))
+
+
 def test_training_rejects_misaligned_chunk_counts_lengths_and_indexes():
     model = PatchTST(_tiny_params())
     mains, appliances = _raw_training()
@@ -238,6 +282,91 @@ def test_inference_rejects_nonfinite_model_output():
         model.disaggregate_chunk([mains], model={"fridge": NonFinitePoint()})
 
 
+@pytest.mark.parametrize(
+    "kind, error, message",
+    [
+        ("array", TypeError, "torch.Tensor"),
+        ("shape", ValueError, "returned shape"),
+        ("integer", TypeError, "real floating"),
+        ("device", ValueError, "expected cpu"),
+    ],
+)
+def test_inference_rejects_invalid_external_model_output(kind, error, message):
+    class BadPoint(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.zeros(1))
+
+        def forward(self, values):
+            if kind == "array":
+                return np.zeros((len(values), 1), dtype=np.float32)
+            if kind == "shape":
+                return torch.zeros((len(values), 2), device=values.device)
+            if kind == "integer":
+                return torch.zeros(
+                    (len(values), 1), dtype=torch.int64, device=values.device
+                )
+            return torch.empty((len(values), 1), device="meta")
+
+    model = PatchTST(
+        _tiny_params(appliance_params={"fridge": {"mean": 42.0, "std": 5.0}})
+    )
+    mains = pd.DataFrame({"power": np.full(5, 120.0)})
+
+    with pytest.raises(error, match=message):
+        model.disaggregate_chunk([mains], model={"fridge": BadPoint()})
+
+
+def test_inference_supports_empty_raw_and_processed_chunks_without_model_call():
+    class FailIfCalled(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.zeros(1))
+
+        def forward(self, values):
+            raise AssertionError("empty inference must not call the model")
+
+    model = PatchTST(
+        _tiny_params(appliance_params={"fridge": {"mean": 42.0, "std": 5.0}})
+    )
+    network = {"fridge": FailIfCalled()}
+    raw_index = pd.DatetimeIndex([], name="time")
+    raw = pd.DataFrame({"power": pd.Series(index=raw_index, dtype=np.float32)})
+    processed_index = pd.Index([], dtype=np.int64, name="window")
+    processed = pd.DataFrame(
+        np.empty((0, model.sequence_length), dtype=np.float32),
+        index=processed_index,
+    )
+
+    raw_result = model.disaggregate_chunk([raw], model=network)[0]
+    processed_result = model.disaggregate_chunk(
+        [processed], model=network, do_preprocessing=False
+    )[0]
+
+    assert raw_result.index.equals(raw_index)
+    assert processed_result.index.equals(processed_index)
+    assert list(raw_result.columns) == ["fridge"]
+    assert list(processed_result.columns) == ["fridge"]
+
+
+def test_inference_rejects_finite_values_that_overflow_public_float32():
+    class OnePoint(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.ones(1))
+
+        def forward(self, values):
+            return self.bias.expand(len(values), 1)
+
+    model = PatchTST(
+        _tiny_params(appliance_params={"fridge": {"mean": 0.0, "std": 1e300}})
+    )
+    mains = pd.DataFrame({"power": np.full(5, 120.0)})
+
+    with pytest.raises(ValueError, match="overflow float32"):
+        model.disaggregate_chunk([mains], model={"fridge": OnePoint()})
+
+
 def test_processed_shape_and_alignment_are_checked_before_training():
     model = PatchTST(
         _tiny_params(appliance_params={"fridge": {"mean": 0.0, "std": 1.0}})
@@ -250,6 +379,57 @@ def test_processed_shape_and_alignment_are_checked_before_training():
     short_target = appliances[0][1][0].iloc[:-1]
     with pytest.raises(ValueError, match="aligned"):
         model.partial_fit(mains, [("fridge", [short_target])], do_preprocessing=False)
+
+    shifted_target = appliances[0][1][0].copy()
+    shifted_target.index = shifted_target.index + 1
+    with pytest.raises(ValueError, match="aligned indexes"):
+        model.partial_fit(mains, [("fridge", [shifted_target])], do_preprocessing=False)
+
+
+def test_processed_training_requires_precomputed_appliance_statistics():
+    model = PatchTST(_tiny_params())
+    mains, appliances = _processed_training(samples=5)
+
+    with pytest.raises(ValueError, match="appliance_params"):
+        model.partial_fit(mains, appliances, do_preprocessing=False)
+
+    assert model.appliance_params == {}
+    assert model.models == {}
+
+
+def test_zero_epoch_training_fails_without_installing_state():
+    model = PatchTST(_tiny_params(n_epochs=0))
+    mains, appliances = _raw_training(samples=5)
+
+    with pytest.raises(ValueError, match="at least one epoch"):
+        model.partial_fit(mains, appliances)
+
+    assert model.appliance_params == {}
+    assert model.models == {}
+
+
+def test_nonfinite_optimizer_step_restores_existing_model_exactly():
+    model = PatchTST(
+        _tiny_params(
+            batch_size=1,
+            learning_rate=1e308,
+            appliance_params={"fridge": {"mean": 0.0, "std": 1.0}},
+        )
+    )
+    model.models["fridge"] = model.return_network()
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.models["fridge"].state_dict().items()
+    }
+    mains, appliances = _processed_training(samples=5)
+
+    with pytest.raises((FloatingPointError, RuntimeError), match="non-finite"):
+        model.partial_fit(mains, appliances, do_preprocessing=False)
+
+    restored_state = model.models["fridge"].state_dict()
+    assert all(torch.isfinite(value).all() for value in restored_state.values())
+    for name, value in original_state.items():
+        torch.testing.assert_close(restored_state[name], value, rtol=0, atol=0)
 
 
 def test_cpu_training_is_deterministic_for_fixed_seed():
@@ -303,6 +483,79 @@ def test_checkpoint_roundtrip_restores_config_predictions_and_safe_filenames(tmp
     assert restored._model_config() == model._model_config()
     assert list(restored.models) == [appliance_name]
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_checkpoint_roundtrip_ignores_untrained_appliance_statistics(tmp_path):
+    appliance_params = {
+        "fridge": {"mean": 42.0, "std": 5.0},
+        "kettle": {"mean": 800.0, "std": 200.0},
+    }
+    model = PatchTST(
+        _tiny_params(save_model_path=tmp_path, appliance_params=appliance_params)
+    )
+    model.models["fridge"] = model.return_network()
+    mains = pd.DataFrame({"power": np.linspace(80.0, 140.0, 5)})
+    expected = model.disaggregate_chunk([mains])[0]
+    model.save_model()
+
+    metadata_path = tmp_path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert set(metadata["appliance_params"]) == {"fridge", "kettle"}
+    assert set(metadata["model_files"]) == {"fridge"}
+
+    restored = PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+    assert set(restored.appliance_params) == {"fridge", "kettle"}
+    assert list(restored.models) == ["fridge"]
+    np.testing.assert_array_equal(restored.disaggregate_chunk([mains])[0], expected)
+
+    metadata.pop("model_files")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    legacy_restored = PatchTST({"device": "cpu", "pretrained_model_path": tmp_path})
+    assert set(legacy_restored.appliance_params) == {"fridge", "kettle"}
+    assert list(legacy_restored.models) == ["fridge"]
+    np.testing.assert_array_equal(
+        legacy_restored.disaggregate_chunk([mains])[0], expected
+    )
+
+
+def test_failed_checkpoint_load_preserves_existing_runtime_state(tmp_path):
+    saved = PatchTST(
+        _tiny_params(
+            save_model_path=tmp_path,
+            appliance_params={"fridge": {"mean": 42.0, "std": 5.0}},
+        )
+    )
+    saved.models["fridge"] = saved.return_network()
+    saved.save_model()
+    metadata = json.loads((tmp_path / "metadata.json").read_text(encoding="utf-8"))
+    (tmp_path / metadata["model_files"]["fridge"]).unlink()
+
+    existing = PatchTST(
+        _tiny_params(
+            sequence_length=11,
+            appliance_params={"kettle": {"mean": 800.0, "std": 200.0}},
+        )
+    )
+    existing.models["kettle"] = existing.return_network()
+    original_config = existing._model_config()
+    original_statistics = dict(existing.appliance_params)
+    original_state = {
+        name: value.detach().clone()
+        for name, value in existing.models["kettle"].state_dict().items()
+    }
+    existing.load_model_path = tmp_path
+
+    with pytest.raises(FileNotFoundError):
+        existing.load_model()
+
+    assert existing.sequence_length == 11
+    assert existing._model_config() == original_config
+    assert existing.appliance_params == original_statistics
+    assert list(existing.models) == ["kettle"]
+    for name, value in original_state.items():
+        torch.testing.assert_close(
+            existing.models["kettle"].state_dict()[name], value, rtol=0, atol=0
+        )
 
 
 def test_checkpoint_rejects_incomplete_architecture_metadata(tmp_path):
