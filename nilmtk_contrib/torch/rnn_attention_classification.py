@@ -435,9 +435,11 @@ class RNN_attention_classification(TorchDisaggregator):
         """Disaggregates a chunk of mains data."""
         self.require_models(model)
 
+        raw_indexes = None
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, submeters_lst=None, method='test')
+            test_main_list, raw_indexes = self.preprocess_raw_inference_chunks(
+                test_main_list
+            )
 
         test_predictions = []
         for test_mains_df in test_main_list:
@@ -479,4 +481,6 @@ class RNN_attention_classification(TorchDisaggregator):
             results = pd.DataFrame(disggregation_dict, dtype='float32')
             test_predictions.append(results)
 
+        if raw_indexes is not None:
+            return self.align_raw_inference_predictions(test_predictions, raw_indexes)
         return test_predictions

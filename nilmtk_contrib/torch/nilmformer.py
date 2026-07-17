@@ -832,21 +832,26 @@ class NILMFormer(TorchDisaggregator):
         
         self.require_models(model)
 
+        raw_indexes = None
+        if do_preprocessing:
+            test_main_list, raw_indexes = self.preprocess_raw_inference_chunks(
+                test_main_list
+            )
+
         test_predictions = []
-        for test_mains_df in test_main_list:
+        for chunk_position, test_mains_df in enumerate(test_main_list):
             disggregation_dict = {}
             
             # Store original length before any preprocessing
-            original_length = len(test_mains_df)
+            original_length = (
+                len(raw_indexes[chunk_position])
+                if raw_indexes is not None
+                else len(test_mains_df)
+            )
             
             if do_preprocessing:
-                # Use the standard preprocessing pipeline
-                processed_mains_list = self.call_preprocessing(
-                    [test_mains_df], submeters_lst=None, method='test')
-                processed_mains_df = processed_mains_list[0]
-                
                 # Convert preprocessed data to proper format
-                test_main_values = processed_mains_df.values  # Already shaped correctly
+                test_main_values = test_mains_df.values  # Already shaped correctly
                 test_main_tensor = torch.tensor(
                     test_main_values.reshape((-1, 1, self.sequence_length)), 
                     dtype=torch.float32
@@ -930,6 +935,8 @@ class NILMFormer(TorchDisaggregator):
             results = pd.DataFrame(disggregation_dict, dtype='float32')
             test_predictions.append(results)
 
+        if raw_indexes is not None:
+            return self.align_raw_inference_predictions(test_predictions, raw_indexes)
         return test_predictions
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
