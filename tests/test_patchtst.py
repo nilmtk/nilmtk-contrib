@@ -90,8 +90,12 @@ def test_patchtst_rejects_patch_gaps():
     ("overrides", "message"),
     [
         ({"n_epochs": 0}, "n_epochs"),
+        ({"mains_mean": float("nan")}, "mains_mean"),
+        ({"mains_mean": float("inf")}, "mains_mean"),
         ({"mains_std": float("nan")}, "mains_std"),
+        ({"mains_std": float("inf")}, "mains_std"),
         ({"mains_std": -1.0}, "mains_std"),
+        ({"mains_std": True}, "mains_std"),
     ],
 )
 def test_patchtst_rejects_invalid_training_parameters(overrides, message):
