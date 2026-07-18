@@ -4,26 +4,22 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
+import json
 from numbers import Integral, Real
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
-from nilmtk.disaggregate import Disaggregator
 
-from nilmtk_contrib.torch._base import resolve_torch_device
+from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
 from nilmtk_contrib.torch._data import power_vector
 from nilmtk_contrib.torch._semi_markov import semi_markov_viterbi
 from nilmtk_contrib.torch._state_fitting import assign_states, fit_state_means
-from nilmtk_contrib.utils.checkpoints import unsupported_persistence
-from nilmtk_contrib.utils.model import initialize_runtime
-from nilmtk_contrib.utils.params import (
-    DEFAULT_ALIASES,
-    get_param,
-    validate_positive_int,
-)
+from nilmtk_contrib.utils.checkpoints import save_json_atomic
+from nilmtk_contrib.utils.params import get_param, validate_positive_int
 
 
 @dataclass(frozen=True)
@@ -44,6 +40,18 @@ class _HSMMParameters:
     right_censored_segments: int
 
 
+_ARTIFACT_FILENAME = "hsmm.json"
+_ARTIFACT_SCHEMA_VERSION = 1
+_CONFIG_FIELDS = (
+    "num_states",
+    "max_duration",
+    "pseudocount",
+    "variance_floor",
+    "kmeans_max_iterations",
+)
+_PARAMETER_FIELDS = {field.name for field in fields(_HSMMParameters)}
+
+
 def _positive_finite(name, value) -> float:
     if (
         isinstance(value, bool)
@@ -53,6 +61,201 @@ def _positive_finite(name, value) -> float:
     ):
         raise ValueError(f"{name} must be a positive finite number.")
     return float(value)
+
+
+def _positive_integer(name, value) -> int:
+    return validate_positive_int(name, value)
+
+
+def _count_vector(name, values, length) -> tuple[int, ...]:
+    if not isinstance(values, (list, tuple)) or len(values) != length:
+        raise ValueError(f"{name} must contain exactly {length} counts.")
+    result = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+            raise ValueError(f"{name} must contain non-negative integers.")
+        result.append(int(value))
+    return tuple(result)
+
+
+def _finite_vector(name, values, length, *, positive=False, non_negative=False):
+    if not isinstance(values, (list, tuple)) or len(values) != length:
+        raise ValueError(f"{name} must contain exactly {length} values.")
+    result = []
+    for value in values:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, Real)
+            or not math.isfinite(value)
+            or (positive and value <= 0)
+            or (non_negative and value < 0)
+        ):
+            qualifier = (
+                "positive finite"
+                if positive
+                else "non-negative finite"
+                if non_negative
+                else "finite"
+            )
+            raise ValueError(f"{name} must contain {qualifier} values.")
+        result.append(float(value))
+    return tuple(result)
+
+
+def _matrix(name, values, rows, columns, converter):
+    if not isinstance(values, (list, tuple)) or len(values) != rows:
+        raise ValueError(f"{name} must contain exactly {rows} rows.")
+    return tuple(
+        converter(f"{name}[{index}]", row, columns)
+        for index, row in enumerate(values)
+    )
+
+
+def _validate_fitted_model(model, *, num_states, max_duration) -> None:
+    if not isinstance(model, _HSMMParameters):
+        raise TypeError("HSMM model values must be fitted HSMM parameters.")
+    state_means = _finite_vector(
+        "state_means", model.state_means, num_states, non_negative=True
+    )
+    if any(left >= right for left, right in zip(state_means, state_means[1:])):
+        raise ValueError("state_means must be strictly increasing.")
+    _finite_vector(
+        "aggregate_means", model.aggregate_means, num_states, non_negative=True
+    )
+    _finite_vector(
+        "aggregate_variances", model.aggregate_variances, num_states, positive=True
+    )
+    initial = _finite_vector(
+        "initial_probabilities", model.initial_probabilities, num_states, positive=True
+    )
+    transitions = _matrix(
+        "transition_probabilities",
+        model.transition_probabilities,
+        num_states,
+        num_states,
+        lambda name, row, length: _finite_vector(
+            name, row, length, non_negative=True
+        ),
+    )
+    durations = _matrix(
+        "duration_probabilities",
+        model.duration_probabilities,
+        num_states,
+        max_duration,
+        lambda name, row, length: _finite_vector(name, row, length, positive=True),
+    )
+    if not math.isclose(sum(initial), 1.0, rel_tol=1e-6, abs_tol=1e-6):
+        raise ValueError("initial_probabilities must sum to one.")
+    for state, row in enumerate(transitions):
+        if row[state] != 0 or any(
+            probability <= 0
+            for other, probability in enumerate(row)
+            if other != state
+        ):
+            raise ValueError(
+                "transition_probabilities must have a zero diagonal and positive "
+                "off-diagonal values."
+            )
+        if not math.isclose(sum(row), 1.0, rel_tol=1e-6, abs_tol=1e-6):
+            raise ValueError("transition_probabilities rows must sum to one.")
+    if any(
+        not math.isclose(sum(row), 1.0, rel_tol=1e-6, abs_tol=1e-6)
+        for row in durations
+    ):
+        raise ValueError("duration_probabilities rows must sum to one.")
+
+    state_counts = _count_vector("state_counts", model.state_counts, num_states)
+    if any(count == 0 for count in state_counts):
+        raise ValueError("state_counts must show at least one sample in every state.")
+    initial_counts = _count_vector("initial_counts", model.initial_counts, num_states)
+    transition_counts = _matrix(
+        "transition_counts",
+        model.transition_counts,
+        num_states,
+        num_states,
+        _count_vector,
+    )
+    duration_counts = _matrix(
+        "duration_counts",
+        model.duration_counts,
+        num_states,
+        max_duration,
+        _count_vector,
+    )
+    num_samples = _positive_integer("num_samples", model.num_samples)
+    num_chunks = _positive_integer("num_chunks", model.num_chunks)
+    num_segments = _positive_integer("num_segments", model.num_segments)
+    right_censored = model.right_censored_segments
+    if (
+        isinstance(right_censored, bool)
+        or not isinstance(right_censored, Integral)
+        or not 0 <= right_censored <= num_segments
+    ):
+        raise ValueError(
+            "right_censored_segments must be an integer between zero and num_segments."
+        )
+    if any(row[state] != 0 for state, row in enumerate(transition_counts)):
+        raise ValueError("transition_counts must have a zero diagonal.")
+    if num_segments < num_chunks:
+        raise ValueError("num_segments must be at least num_chunks.")
+    expected_totals = (
+        (sum(state_counts), num_samples, "state_counts"),
+        (sum(initial_counts), num_chunks, "initial_counts"),
+        (
+            sum(map(sum, transition_counts)),
+            num_segments - num_chunks,
+            "transition_counts",
+        ),
+        (sum(map(sum, duration_counts)), num_segments, "duration_counts"),
+    )
+    for observed, expected, name in expected_totals:
+        if observed != expected:
+            raise ValueError(f"{name} total is inconsistent with fitted metadata.")
+
+
+def _parameters_from_payload(payload, *, num_states, max_duration):
+    if not isinstance(payload, Mapping) or set(payload) != _PARAMETER_FIELDS:
+        raise ValueError("HSMM artifact has invalid fitted-parameter fields.")
+    try:
+        parameters = _HSMMParameters(
+            state_means=tuple(payload["state_means"]),
+            aggregate_means=tuple(payload["aggregate_means"]),
+            aggregate_variances=tuple(payload["aggregate_variances"]),
+            initial_probabilities=tuple(payload["initial_probabilities"]),
+            transition_probabilities=tuple(
+                tuple(row) for row in payload["transition_probabilities"]
+            ),
+            duration_probabilities=tuple(
+                tuple(row) for row in payload["duration_probabilities"]
+            ),
+            state_counts=tuple(payload["state_counts"]),
+            initial_counts=tuple(payload["initial_counts"]),
+            transition_counts=tuple(tuple(row) for row in payload["transition_counts"]),
+            duration_counts=tuple(tuple(row) for row in payload["duration_counts"]),
+            num_samples=payload["num_samples"],
+            num_chunks=payload["num_chunks"],
+            num_segments=payload["num_segments"],
+            right_censored_segments=payload["right_censored_segments"],
+        )
+    except (TypeError, KeyError) as exc:
+        raise ValueError("HSMM artifact fitted parameters are malformed.") from exc
+    _validate_fitted_model(
+        parameters, num_states=num_states, max_duration=max_duration
+    )
+    return parameters
+
+
+def _reject_json_constant(value):
+    raise ValueError(f"Invalid JSON constant {value!r}.")
+
+
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key {key!r}.")
+        result[key] = value
+    return result
 
 
 def _as_power_tensor(frame, label) -> torch.Tensor:
@@ -179,7 +382,7 @@ def _fit_hsmm(
     ):
         raise RuntimeError("HSMM emission fitting produced non-finite parameters.")
 
-    return _HSMMParameters(
+    fitted = _HSMMParameters(
         state_means=tuple(float(value) for value in state_means),
         aggregate_means=tuple(float(value) for value in aggregate_means),
         aggregate_variances=tuple(float(value) for value in aggregate_variances),
@@ -203,9 +406,13 @@ def _fit_hsmm(
         num_segments=num_segments,
         right_censored_segments=right_censored_segments,
     )
+    _validate_fitted_model(
+        fitted, num_states=num_states, max_duration=max_duration
+    )
+    return fitted
 
 
-def _decode_block(values, model: _HSMMParameters, device) -> np.ndarray:
+def _decode_sequence(values, model: _HSMMParameters, device) -> np.ndarray:
     observations = torch.as_tensor(values, dtype=torch.float64, device=device)
     state_means = torch.tensor(model.state_means, dtype=torch.float64, device=device)
     aggregate_means = torch.tensor(
@@ -237,16 +444,14 @@ def _decode_block(values, model: _HSMMParameters, device) -> np.ndarray:
     return state_means[path.states].to(dtype=torch.float32).cpu().numpy()
 
 
-class HSMM(Disaggregator):
+class HSMM(TorchStateSpaceDisaggregator):
     """Explicit-duration Gaussian HSMM fitted from aligned appliance labels."""
 
     MODEL_NAME = "HSMM"
 
     def __init__(self, params=None):
+        super().__init__(params)
         params = {} if params is None else params
-        if not isinstance(params, Mapping):
-            raise TypeError("params must be a mapping or None.")
-        super().__init__()
         self.num_states = validate_positive_int(
             "num_states", get_param(params, "num_states", 2)
         )
@@ -265,42 +470,103 @@ class HSMM(Disaggregator):
             "kmeans_max_iterations",
             get_param(params, "kmeans_max_iterations", 100),
         )
-        self.device = resolve_torch_device(get_param(params, "device"))
         if self.device.type == "mps":
             raise ValueError("HSMM supports CPU and CUDA; float64 MPS is unsupported.")
-        self.seed = get_param(params, "seed")
-        self.verbose = get_param(params, "verbose", False)
-        if self.seed is not None and (
-            isinstance(self.seed, bool) or not isinstance(self.seed, Integral)
-        ):
-            raise ValueError("seed must be an integer or None.")
-        if not isinstance(self.verbose, bool):
-            raise ValueError("verbose must be a boolean.")
-        self.chunk_wise_training = False
-        self.save_model_path = get_param(
-            params,
-            "save_model_path",
-            aliases=DEFAULT_ALIASES["save_model_path"],
-        )
-        self.load_model_path = get_param(
-            params,
-            "pretrained_model_path",
-            aliases=DEFAULT_ALIASES["pretrained_model_path"],
-        )
-        self.models = OrderedDict()
-        initialize_runtime(
-            self,
-            {"seed": self.seed, "verbose": self.verbose},
-            backends=("python", "numpy", "torch"),
-        )
+        if self.chunk_wise_training:
+            raise ValueError("HSMM does not support chunk_wise_training.")
         if self.load_model_path:
             self.load_model(self.load_model_path)
 
-    def save_model(self, *_, **__):
-        unsupported_persistence(self.MODEL_NAME)
+    def _validate_model_record(self, appliance_name, model):
+        del appliance_name
+        _validate_fitted_model(
+            model,
+            num_states=self.num_states,
+            max_duration=self.max_duration,
+        )
 
-    def load_model(self, *_, **__):
-        unsupported_persistence(self.MODEL_NAME)
+    def save_model(self, path=None):
+        target = path if path is not None else self.save_model_path
+        if target is None:
+            raise ValueError("HSMM save_model requires a checkpoint directory.")
+        models = self.require_models()
+        serialized_models = {}
+        for appliance_name, fitted in models.items():
+            serialized_models[appliance_name] = asdict(fitted)
+        payload = {
+            "schema_version": _ARTIFACT_SCHEMA_VERSION,
+            "model_class": self.MODEL_NAME,
+            "config": {name: getattr(self, name) for name in _CONFIG_FIELDS},
+            "models": serialized_models,
+        }
+        save_json_atomic(Path(target) / _ARTIFACT_FILENAME, payload)
+
+    def load_model(self, path=None):
+        source = path if path is not None else self.load_model_path
+        if source is None:
+            raise ValueError("HSMM load_model requires a checkpoint directory.")
+        artifact_path = Path(source) / _ARTIFACT_FILENAME
+        try:
+            with artifact_path.open(encoding="utf-8") as handle:
+                payload = json.load(
+                    handle,
+                    parse_constant=_reject_json_constant,
+                    object_pairs_hook=_unique_json_object,
+                )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"Could not load a valid HSMM artifact: {exc}") from exc
+        if not isinstance(payload, Mapping) or set(payload) != {
+            "schema_version",
+            "model_class",
+            "config",
+            "models",
+        }:
+            raise ValueError("HSMM artifact has invalid top-level fields.")
+        if (
+            isinstance(payload["schema_version"], bool)
+            or not isinstance(payload["schema_version"], Integral)
+            or payload["schema_version"] != _ARTIFACT_SCHEMA_VERSION
+        ):
+            raise ValueError("HSMM artifact has an unsupported schema_version.")
+        if payload["model_class"] != self.MODEL_NAME:
+            raise ValueError("HSMM artifact model_class does not match HSMM.")
+        config = payload["config"]
+        if not isinstance(config, Mapping) or set(config) != set(_CONFIG_FIELDS):
+            raise ValueError("HSMM artifact has invalid configuration fields.")
+        num_states = _positive_integer("num_states", config["num_states"])
+        if num_states < 2:
+            raise ValueError("num_states must be at least two.")
+        max_duration = _positive_integer("max_duration", config["max_duration"])
+        pseudocount = _positive_finite("pseudocount", config["pseudocount"])
+        variance_floor = _positive_finite(
+            "variance_floor", config["variance_floor"]
+        )
+        kmeans_max_iterations = _positive_integer(
+            "kmeans_max_iterations", config["kmeans_max_iterations"]
+        )
+        model_payloads = payload["models"]
+        if not isinstance(model_payloads, Mapping) or not model_payloads:
+            raise ValueError("HSMM artifact must contain at least one appliance model.")
+        loaded = OrderedDict()
+        for appliance_name, fitted_payload in model_payloads.items():
+            if (
+                not isinstance(appliance_name, str)
+                or not appliance_name.strip()
+                or appliance_name != appliance_name.strip()
+                or appliance_name in loaded
+            ):
+                raise ValueError("HSMM artifact has an invalid appliance name.")
+            loaded[appliance_name] = _parameters_from_payload(
+                fitted_payload,
+                num_states=num_states,
+                max_duration=max_duration,
+            )
+        self.num_states = num_states
+        self.max_duration = max_duration
+        self.pseudocount = pseudocount
+        self.variance_floor = variance_floor
+        self.kmeans_max_iterations = kmeans_max_iterations
+        self.models = loaded
 
     def partial_fit(
         self,
@@ -366,25 +632,7 @@ class HSMM(Disaggregator):
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         if not isinstance(do_preprocessing, bool):
             raise ValueError("do_preprocessing must be a boolean.")
-        models = self.models if model is None else model
-        if not isinstance(models, Mapping) or not models:
-            raise RuntimeError("HSMM requires a trained model mapping.")
-        for appliance_name, fitted in models.items():
-            if not isinstance(appliance_name, str) or not appliance_name.strip():
-                raise ValueError(
-                    "HSMM model appliance names must be non-empty strings."
-                )
-            if not isinstance(fitted, _HSMMParameters):
-                raise TypeError("HSMM model values must be fitted HSMM parameters.")
-            if len(fitted.state_means) != self.num_states:
-                raise ValueError("HSMM model state count does not match configuration.")
-            if any(
-                len(probabilities) != self.max_duration
-                for probabilities in fitted.duration_probabilities
-            ):
-                raise ValueError(
-                    "HSMM model duration cap does not match configuration."
-                )
+        models = self.require_models(model)
         results = []
         for chunk_index, frame in enumerate(test_main_list):
             values = power_vector(frame, f"mains chunk {chunk_index}", allow_empty=True)
@@ -393,17 +641,9 @@ class HSMM(Disaggregator):
             output_index = _frame_index(frame, len(values))
             columns = OrderedDict()
             for appliance_name, fitted in models.items():
-                blocks = [
-                    _decode_block(
-                        values[start : start + self.max_duration],
-                        fitted,
-                        self.device,
-                    )
-                    for start in range(0, len(values), self.max_duration)
-                ]
                 prediction = (
-                    np.concatenate(blocks).astype(np.float32, copy=False)
-                    if blocks
+                    _decode_sequence(values, fitted, self.device)
+                    if len(values)
                     else np.empty(0, dtype=np.float32)
                 )
                 columns[appliance_name] = pd.Series(prediction, index=output_index)

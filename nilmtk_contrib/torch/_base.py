@@ -16,7 +16,11 @@ import torch
 from nilmtk.disaggregate import Disaggregator
 
 from nilmtk_contrib.utils.model import initialize_runtime
-from nilmtk_contrib.utils.params import normalize_common_params
+from nilmtk_contrib.utils.params import (
+    DEFAULT_ALIASES,
+    get_param,
+    normalize_common_params,
+)
 
 
 SUPPORTED_DEVICE_TYPES = frozenset({"cpu", "cuda", "mps"})
@@ -294,6 +298,74 @@ def compute_appliance_stats(
     if not statistics:
         raise ValueError("At least one appliance target is required.")
     return statistics
+
+
+class TorchStateSpaceDisaggregator(Disaggregator):
+    """Shared runtime for PyTorch state-space models without fake neural options."""
+
+    def __init__(self, params=None):
+        if params is None:
+            params = {}
+        if not isinstance(params, Mapping):
+            raise TypeError("params must be a mapping or None.")
+        seed = get_param(params, "seed")
+        verbose = get_param(params, "verbose", False)
+        chunk_wise_training = get_param(params, "chunk_wise_training", False)
+        if seed is not None and (
+            isinstance(seed, bool) or not isinstance(seed, Integral)
+        ):
+            raise ValueError("seed must be an integer or None.")
+        if not isinstance(verbose, bool):
+            raise ValueError("verbose must be a boolean.")
+        if not isinstance(chunk_wise_training, bool):
+            raise ValueError("chunk_wise_training must be a boolean.")
+
+        super().__init__()
+        initialize_runtime(
+            self,
+            {"seed": seed, "verbose": verbose},
+            backends=("python", "numpy", "torch"),
+        )
+        self.device = resolve_torch_device(get_param(params, "device"))
+        self.seed = seed
+        self.verbose = verbose
+        self.chunk_wise_training = chunk_wise_training
+        self.save_model_path = get_param(
+            params,
+            "save_model_path",
+            aliases=DEFAULT_ALIASES["save_model_path"],
+        )
+        self.load_model_path = get_param(
+            params,
+            "pretrained_model_path",
+            aliases=DEFAULT_ALIASES["pretrained_model_path"],
+        )
+        self.models = OrderedDict()
+
+    def _validate_model_record(self, appliance_name, model):
+        del appliance_name, model
+        raise NotImplementedError("State-space subclasses must validate model records.")
+
+    def require_models(self, models=None):
+        """Validate and optionally install a detached state-space model mapping."""
+        install_models = models is not None
+        candidate = models if install_models else self.models
+        if not isinstance(candidate, Mapping):
+            raise TypeError("models must be a mapping of appliance names to records.")
+        if not candidate:
+            if install_models:
+                raise ValueError("models must contain at least one appliance model.")
+            model_name = getattr(self, "MODEL_NAME", self.__class__.__name__)
+            raise RuntimeError(f"{model_name} requires a trained or loaded model.")
+
+        validated = OrderedDict()
+        for appliance_name, model in candidate.items():
+            _validate_appliance_name(appliance_name, label="Model appliance")
+            self._validate_model_record(appliance_name, model)
+            validated[appliance_name] = model
+        if install_models:
+            self.models = validated
+        return validated
 
 
 class TorchDisaggregator(Disaggregator):

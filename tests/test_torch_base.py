@@ -67,6 +67,75 @@ def test_torch_disaggregator_centralizes_common_runtime_state():
     assert model.models == OrderedDict()
 
 
+def test_state_space_base_centralizes_only_relevant_runtime_state():
+    torch = pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
+
+    model = TorchStateSpaceDisaggregator(
+        {
+            "device": "cpu",
+            "seed": 7,
+            "verbose": True,
+            "save_model_path": "/tmp/save",
+            "pretrained_model_path": "/tmp/load",
+        }
+    )
+
+    assert model.device == torch.device("cpu")
+    assert model.seed == 7
+    assert model.verbose is True
+    assert model.chunk_wise_training is False
+    assert model.save_model_path == "/tmp/save"
+    assert model.load_model_path == "/tmp/load"
+    assert model.models == OrderedDict()
+    assert not hasattr(model, "sequence_length")
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ([], "params"),
+        ({"seed": True}, "seed"),
+        ({"verbose": 1}, "verbose"),
+        ({"chunk_wise_training": 1}, "chunk_wise_training"),
+    ],
+)
+def test_state_space_base_rejects_invalid_common_state(params, message):
+    pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        TorchStateSpaceDisaggregator(params)
+
+
+def test_state_space_model_installation_is_validated_detached_and_transactional():
+    pytest.importorskip("torch")
+    from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
+
+    class PositiveRecordModel(TorchStateSpaceDisaggregator):
+        MODEL_NAME = "PositiveRecord"
+
+        def _validate_model_record(self, appliance_name, model):
+            del appliance_name
+            if not isinstance(model, int) or model <= 0:
+                raise ValueError("record must be a positive integer")
+
+    model = PositiveRecordModel({"device": "cpu"})
+    with pytest.raises(RuntimeError, match="trained or loaded"):
+        model.require_models()
+
+    external = {"fridge": 1}
+    installed = model.require_models(external)
+    external["kettle"] = 2
+
+    assert installed == {"fridge": 1}
+    assert model.models == {"fridge": 1}
+    original = model.models
+    with pytest.raises(ValueError, match="positive integer"):
+        model.require_models({"fridge": 0})
+    assert model.models is original
+
+
 @pytest.mark.parametrize(
     ("params", "error", "message"),
     [

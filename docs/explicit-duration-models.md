@@ -38,15 +38,18 @@ The private `nilmtk_contrib.torch._hsmm` layer now fits the classical model
 from aligned mains and appliance chunks. It shares deterministic ordered state
 fitting with LBM, learns initial and between-segment transition probabilities,
 an explicit duration histogram for each state, and Gaussian aggregate
-emissions conditioned on the labeled appliance state. Inference splits long
-chunks only at the configured duration cap and sends every block through the
-exact shared Viterbi recurrence.
+emissions conditioned on the labeled appliance state. Inference sends each
+complete input chunk through the exact shared Viterbi recurrence; the duration
+cap limits one state's dwell time but does not introduce artificial reset
+boundaries.
 
 The fitter is intentionally supervised and one-target-at-a-time. It is a
 small, benchmarkable baseline, not a claim to reproduce the factorial
-multi-appliance inference or timing features of TE-FHSMM. Model persistence is
-fail-closed until the next artifact PR, and the class remains private until a
-real-data T0 run succeeds.
+multi-appliance inference or timing features of TE-FHSMM. The public `HSMM`
+export stores fitted parameters in a validated, schema-versioned JSON artifact;
+it does not load executable pickle data. A private real-data gate on the
+corrected REDD T0 split passed before public export. Official multi-seed results
+remain a separate NILMbench publication step.
 
 ## Neural scoring layer
 
@@ -64,6 +67,6 @@ model. The full NILMTK training wrapper remains a separate PR so optimizer,
 windowing, checkpointing, and real-data validation do not get hidden inside
 the numerical-kernel review.
 
-Persistence, public export, the neural model, and NILMbench entries remain
-separate PRs. Neither model enters the public catalog until its complete
-training/inference contract and real-data T0 have passed.
+The neural wrapper and NILMbench entries remain separate PRs. The neural scorer
+does not enter the public catalog until its complete training, persistence, and
+real-data contracts pass.
