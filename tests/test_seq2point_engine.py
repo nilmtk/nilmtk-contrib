@@ -59,6 +59,29 @@ class L1TinyDisaggregator(TinyDisaggregator):
         return nn.functional.l1_loss(prediction, target)
 
 
+class TargetAwareTinyDisaggregator(TinyDisaggregator):
+    def __init__(self, params=None):
+        self.configuration_calls = []
+        super().__init__(params)
+
+    def configure_network(self, network, appliance_name):
+        statistics = self._validated_appliance_stats(
+            appliance_name, self.REQUIRED_APPLIANCE_STATS
+        )
+        network.target_statistics = (statistics["mean"], statistics["std"])
+        self.configuration_calls.append(appliance_name)
+
+    def training_loss(self, network, batch_inputs, batch_targets, appliance_name):
+        statistics = self.appliance_params[appliance_name]
+        assert network.target_statistics == (
+            statistics["mean"],
+            statistics["std"],
+        )
+        return super().training_loss(
+            network, batch_inputs, batch_targets, appliance_name
+        )
+
+
 def _params(**overrides):
     return {
         "device": "cpu",
@@ -218,6 +241,20 @@ def test_training_loss_hook_reuses_the_engine_lifecycle():
     assert {name for name, _ in model.loss_calls} == {"fridge"}
     assert sum(size for _, size in model.loss_calls) > 0
     assert model.last_split_metadata["fridge"].should_train
+
+
+def test_target_aware_network_hook_runs_before_training_and_inference():
+    model = TargetAwareTinyDisaggregator(_params())
+    mains = _raw([10, 12, 14, 16, 18, 20, 22, 24])
+    target = _raw([2, 4, 6, 8, 10, 12, 14, 16])
+
+    model.partial_fit([mains], [("fridge", [target])])
+    predictions = model.disaggregate_chunk([mains])[0]
+    assert model.disaggregate_chunk([]) == []
+
+    assert model.configuration_calls == ["fridge", "fridge"]
+    assert predictions.index.equals(mains.index)
+    assert np.isfinite(predictions["fridge"]).all()
 
 
 @pytest.mark.parametrize(
