@@ -10,6 +10,10 @@ from nilmtk_contrib.torch._seq2point import (
     SequenceToPointTorchDisaggregator,
     finite_number,
 )
+from nilmtk_contrib.torch._window_features import (
+    WINDOW_FEATURE_NAMES,
+    window_summary_features,
+)
 from nilmtk_contrib.torch.dlinear import DLinearNetwork
 from nilmtk_contrib.torch.moderntcn import ModernTCNNetwork
 from nilmtk_contrib.torch.timesnet import TimesNetNetwork
@@ -17,15 +21,7 @@ from nilmtk_contrib.utils.params import get_param, validate_positive_int
 
 
 EXPERT_NAMES = ("DLinear", "ModernTCN", "TimesNet")
-GATE_FEATURES = (
-    "center",
-    "mean",
-    "standard_deviation",
-    "minimum",
-    "maximum",
-    "mean_absolute_difference",
-    "end_to_start_change",
-)
+GATE_FEATURES = WINDOW_FEATURE_NAMES
 
 
 class NILMMoEGate(nn.Module):
@@ -60,43 +56,11 @@ class NILMMoEGate(nn.Module):
 
     def summary_features(self, inputs):
         """Return the seven normalized features used by the routing gate."""
-        if not isinstance(inputs, torch.Tensor):
-            raise TypeError("NILMMoEGate inputs must be a torch.Tensor.")
-        expected_shape = (1, self.sequence_length)
-        if inputs.ndim != 3 or inputs.shape[1:] != expected_shape:
-            raise ValueError(
-                "NILMMoEGate expects input shape "
-                f"(batch, 1, {self.sequence_length}); got {tuple(inputs.shape)}."
-            )
-        if not torch.is_floating_point(inputs) or torch.is_complex(inputs):
-            raise TypeError("NILMMoEGate inputs must be real floating tensors.")
-        device = self.input_layer.weight.device
-        if inputs.device != device:
-            raise ValueError(
-                f"NILMMoEGate input is on {inputs.device}; model is on {device}."
-            )
-        if not torch.isfinite(inputs).all():
-            raise ValueError("NILMMoEGate inputs must be finite.")
-        inputs = inputs.to(dtype=self.input_layer.weight.dtype)
-        center = inputs[:, :, self.sequence_length // 2]
-        mean = inputs.mean(dim=-1)
-        standard_deviation = inputs.std(dim=-1, unbiased=False)
-        minimum = inputs.amin(dim=-1)
-        maximum = inputs.amax(dim=-1)
-        differences = inputs.diff(dim=-1)
-        mean_absolute_difference = differences.abs().mean(dim=-1)
-        end_to_start_change = inputs[:, :, -1] - inputs[:, :, 0]
-        return torch.cat(
-            (
-                center,
-                mean,
-                standard_deviation,
-                minimum,
-                maximum,
-                mean_absolute_difference,
-                end_to_start_change,
-            ),
-            dim=1,
+        return window_summary_features(
+            inputs,
+            sequence_length=self.sequence_length,
+            reference=self.input_layer.weight,
+            owner="NILMMoEGate",
         )
 
     def forward(self, inputs):

@@ -15,6 +15,7 @@ _EXPORTS = {
     "NILMMoE": ("nilmtk_contrib.torch.nilmmoe", "NILMMoE"),
     "PatchTST": ("nilmtk_contrib.torch.patchtst", "PatchTST"),
     "Reformer": ("nilmtk_contrib.torch.reformer", "Reformer"),
+    "ResidualMoE": ("nilmtk_contrib.torch.residual_moe", "ResidualMoE"),
     "ResNet": ("nilmtk_contrib.torch.resnet", "ResNet"),
     "ResNet_classification": (
         "nilmtk_contrib.torch.resnet_classification",

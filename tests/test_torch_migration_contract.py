@@ -34,6 +34,7 @@ DEFAULTS_BY_MODULE = {
     "nilmtk_contrib.torch.nilmmoe": ExpectedDefaults(299, 10, 128, 1800, 600),
     "nilmtk_contrib.torch.patchtst": ExpectedDefaults(99, 10, 128, 1800, 600),
     "nilmtk_contrib.torch.reformer": ExpectedDefaults(99, 10, 512, 1800, 600),
+    "nilmtk_contrib.torch.residual_moe": ExpectedDefaults(299, 10, 128, 1800, 600),
     "nilmtk_contrib.torch.resnet": ExpectedDefaults(299, 10, 512, 1800, 600),
     "nilmtk_contrib.torch.resnet_classification": ExpectedDefaults(
         99, 10, 512, 1800, 600

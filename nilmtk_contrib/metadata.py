@@ -37,6 +37,7 @@ MODEL_CATALOG = (
     ModelCatalogEntry("NILMMoE", "torch", "nilmtk_contrib.torch.nilmmoe", "NILMMoE", "nilmtk_contrib.torch"),
     ModelCatalogEntry("PatchTST", "torch", "nilmtk_contrib.torch.patchtst", "PatchTST", "nilmtk_contrib.torch"),
     ModelCatalogEntry("Reformer", "torch", "nilmtk_contrib.torch.reformer", "Reformer", "nilmtk_contrib.torch"),
+    ModelCatalogEntry("ResidualMoE", "torch", "nilmtk_contrib.torch.residual_moe", "ResidualMoE", "nilmtk_contrib.torch"),
     ModelCatalogEntry("ResNet", "torch", "nilmtk_contrib.torch.resnet", "ResNet", "nilmtk_contrib.torch"),
     ModelCatalogEntry("ResNet_classification", "torch", "nilmtk_contrib.torch.resnet_classification", "ResNet_classification", "nilmtk_contrib.torch"),
     ModelCatalogEntry("RNN", "torch", "nilmtk_contrib.torch.rnn", "RNN", "nilmtk_contrib.torch"),
