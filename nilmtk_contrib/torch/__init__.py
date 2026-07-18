@@ -12,6 +12,7 @@ _EXPORTS = {
     "MSDC": ("nilmtk_contrib.torch.msdc", "MSDC"),
     "ModernTCN": ("nilmtk_contrib.torch.moderntcn", "ModernTCN"),
     "NILMFormer": ("nilmtk_contrib.torch.nilmformer", "NILMFormer"),
+    "NILMMoE": ("nilmtk_contrib.torch.nilmmoe", "NILMMoE"),
     "PatchTST": ("nilmtk_contrib.torch.patchtst", "PatchTST"),
     "Reformer": ("nilmtk_contrib.torch.reformer", "Reformer"),
     "ResNet": ("nilmtk_contrib.torch.resnet", "ResNet"),
