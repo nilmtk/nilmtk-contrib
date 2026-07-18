@@ -44,6 +44,7 @@ DEFAULTS_BY_MODULE = {
     ),
     "nilmtk_contrib.torch.seq2point": ExpectedDefaults(99, 10, 512, 1800, 600),
     "nilmtk_contrib.torch.seq2seq": ExpectedDefaults(99, 10, 512, 1800, 600),
+    "nilmtk_contrib.torch.sgn": ExpectedDefaults(299, 10, 16, 1800, 600),
     "nilmtk_contrib.torch.timesnet": ExpectedDefaults(299, 10, 128, 1800, 600),
 }
 
