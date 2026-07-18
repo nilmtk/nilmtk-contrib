@@ -304,6 +304,7 @@ The table below lists the public model surface. "Verification" describes how the
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
 | NILMMoE | PyTorch | `nilmtk_contrib.torch.NILMMoE` | Experimental input-conditioned mixture; benchmark claims require NILMbench result bundles | This repository | Blends DLinear, ModernTCN, and TimesNet with a load-balanced softmax gate |
 | PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | PatchTST-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Nie et al., PatchTST | PyTorch backend |
+| ResidualMoE | PyTorch | `nilmtk_contrib.torch.ResidualMoE` | Experimental conservative residual mixture; benchmark claims require NILMbench result bundles | This repository | Starts exactly at TimesNet and learns a bounded signed correction from PatchTST and ModernTCN |
 
 ## Reference Papers And Codebases
 

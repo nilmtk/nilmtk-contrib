@@ -49,6 +49,7 @@ TORCH_MODEL_SPECS = (
     ModelSpec("torch", "nilmtk_contrib.torch", "NILMMoE", "nilmtk_contrib.torch.nilmmoe"),
     ModelSpec("torch", "nilmtk_contrib.torch", "PatchTST", "nilmtk_contrib.torch.patchtst"),
     ModelSpec("torch", "nilmtk_contrib.torch", "Reformer", "nilmtk_contrib.torch.reformer"),
+    ModelSpec("torch", "nilmtk_contrib.torch", "ResidualMoE", "nilmtk_contrib.torch.residual_moe"),
     ModelSpec("torch", "nilmtk_contrib.torch", "ResNet", "nilmtk_contrib.torch.resnet"),
     ModelSpec("torch", "nilmtk_contrib.torch", "ResNet_classification", "nilmtk_contrib.torch.resnet_classification"),
     ModelSpec("torch", "nilmtk_contrib.torch", "RNN", "nilmtk_contrib.torch.rnn"),
