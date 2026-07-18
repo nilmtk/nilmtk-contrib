@@ -14,6 +14,7 @@ from nilmtk_contrib.utils.checkpoints import (
     save_keras_weights,
     save_metadata,
     save_metadata_atomic,
+    save_json_atomic,
     save_torch_state,
     temporary_checkpoint,
     unsupported_persistence,
@@ -71,6 +72,21 @@ def test_atomic_metadata_publish_leaves_no_temporary_files(tmp_path):
 
     assert json.loads((tmp_path / "metadata.json").read_text()) == {"generation": 2}
     assert list(tmp_path.glob(".metadata.json.*")) == []
+
+
+def test_atomic_json_is_deterministic_host_readable_and_rejects_nan(tmp_path):
+    path = tmp_path / "nested" / "artifact.json"
+
+    save_json_atomic(path, {"z": 2, "a": 1})
+    first = path.read_bytes()
+    save_json_atomic(path, {"a": 1, "z": 2})
+
+    assert path.read_bytes() == first
+    assert path.stat().st_mode & 0o777 == 0o644
+    assert list(path.parent.glob(".artifact.json.*")) == []
+    with pytest.raises(ValueError, match="Out of range float values"):
+        save_json_atomic(path, {"invalid": float("nan")})
+    assert path.read_bytes() == first
 
 
 def test_load_metadata_rejects_missing_fields(tmp_path):

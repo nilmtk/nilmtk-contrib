@@ -80,8 +80,29 @@ Training is deterministic and PyTorch-only:
   overflow are rejected rather than silently repaired.
 
 The resulting metadata is JSON-safe and includes every fitted probability,
-summary statistic, source window, and the appliance emission variance. Model
-artifact persistence remains part of the wrapper PR.
+raw HMM count, summary statistic, source window, and the appliance emission
+variance.
+
+## Artifact contract
+
+The private `nilmtk_contrib.torch._lbm_artifacts` layer stores a collection of
+fitted appliances in one schema-versioned JSON file. JSON is intentional here:
+an LBM artifact is a small, read-mostly scientific record rather than a
+concurrently updated results database. It remains inspectable, diffable, and
+portable without adding SQLite migrations or another runtime dependency.
+
+Saving uses a same-directory temporary file, `fsync`, and atomic replacement.
+Loading has a size limit, exact field schemas, and a SHA-256 payload checksum;
+it never invokes `pickle` or executable deserialization. Raw initial,
+transition, and cycle counts are retained so their smoothed probabilities can
+be recomputed. The loader also rechecks source boundaries, leakage policy,
+HMM validity, and induced Markov reward moments. Saving revalidates the bundle
+at the persistence boundary, and the reconstructed numeric sequences are
+immutable.
+
+The checksum detects accidental corruption, not malicious authorship. It is
+not a signature: provenance still depends on trusted dataset fingerprints and
+the future benchmark run manifest.
 
 ## What this first kernel does not claim
 
@@ -94,7 +115,6 @@ disaggregator nor included in the model catalog. It does not yet:
 - infer the non-negative piecewise-smooth unknown-load signal;
 - return the paper's separate latent appliance signals rather than the
   collapsed state-mean prediction;
-- save and validate a model artifact with dataset/protocol provenance;
 - reproduce the paper's HES-to-UK-DALE experiment;
 - establish accuracy, speed, or parity on a real NILMbench task.
 
@@ -110,10 +130,15 @@ a tested numerical primitive with a reproduced scientific method.
    probabilities, cycle categories, and daily energy/duration priors from
    training data only. Use explicit pseudocounts and reject underspecified
    population data rather than silently leaking test-house statistics.
-3. **LBM inference wrapper.** Add variance alternation and the non-negative
+3. **Validated artifacts.** Persist one schema-checked JSON bundle with raw
+   probability counts, source provenance, deterministic bytes, and semantic
+   validation on both load and save.
+4. **NILMTK adapter.** Convert timestamped NILMTK chunks into the private
+   training contract without relaxing the leakage or dense-window checks.
+5. **LBM inference wrapper.** Add variance alternation and the non-negative
    total-variation unknown-load block, then expose `partial_fit` and
    `disaggregate_chunk`.
-4. **Scientific validation.** Compare the relaxation against tiny enumerated
+6. **Scientific validation.** Compare the relaxation against tiny enumerated
    cases; run T0 on real REDD; then run the full cross-building protocol before
    adding a leaderboard claim.
 

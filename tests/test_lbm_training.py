@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from itertools import product
 import json
 import math
@@ -11,63 +11,18 @@ torch = pytest.importorskip("torch")
 from nilmtk_contrib.torch._lbm import solve_structured_relaxation  # noqa: E402
 from nilmtk_contrib.torch._lbm_training import (  # noqa: E402
     ApplianceTrainingWindow,
-    SourceWindow,
     _fit_summary,
     _markov_reward_moments,
     assert_disjoint_sources,
     fit_lbm_appliance,
 )
-
-
-FINGERPRINT = "sha256:" + "a" * 64
-POWER_WINDOWS = (
-    [0, 1, 0, 2, 0, 1],
-    [1, 0, 2, 1, 0, 2],
-    [2, 1, 0, 1, 2, 0],
-    [0, 90, 100, 100, 0, 0],
-    [0, 0, 95, 105, 0, 0],
-    [0, 110, 100, 0, 0, 0],
-    [0, 90, 0, 100, 0, 0],
-    [0, 80, 0, 110, 0, 0],
-    [0, 100, 0, 90, 0, 0],
+from lbm_training_data import (  # noqa: E402
+    FINGERPRINT,
+    POWER_WINDOWS,
+    source_window as _source,
+    tensor as _tensor,
+    training_windows as _windows,
 )
-
-
-def _source(index, *, building="1", start=None, end=None, **overrides):
-    start_value = start or datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
-        hours=index
-    )
-    if isinstance(start_value, str):
-        start_time = datetime.fromisoformat(start_value.replace("Z", "+00:00"))
-    else:
-        start_time = start_value
-    period = overrides.get("sample_period_seconds", 60)
-    end_value = end or start_time + timedelta(seconds=6 * max(period, 1))
-    params = {
-        "dataset": "REDD",
-        "dataset_version": "nilmtk-converted-v1",
-        "data_uri": "https://example.org/redd.h5",
-        "data_fingerprint": FINGERPRINT,
-        "building": building,
-        "start": (
-            start_value if isinstance(start_value, str) else start_value.isoformat()
-        ),
-        "end": end_value if isinstance(end_value, str) else end_value.isoformat(),
-        "sample_period_seconds": 60,
-    }
-    params.update(overrides)
-    return SourceWindow(**params)
-
-
-def _windows():
-    return tuple(
-        ApplianceTrainingWindow(_source(index), power)
-        for index, power in enumerate(POWER_WINDOWS)
-    )
-
-
-def _tensor(value):
-    return torch.as_tensor(value, dtype=torch.float64)
 
 
 def test_fitter_builds_a_kernel_ready_appliance_with_complete_metadata():
@@ -94,12 +49,18 @@ def test_fitter_builds_a_kernel_ready_appliance_with_complete_metadata():
     assert result.num_samples == 54
     assert result.window_length == 6
     assert result.sample_period_seconds == 60
+    assert sum(result.state_counts) == 54
+    assert result.initial_counts == (9, 0)
+    assert sum(sum(row) for row in result.transition_counts) == 45
     assert result.cycle_counts == (3, 3, 3)
     assert result.emission_variance > 0
 
     metadata = result.metadata()
     assert json.loads(json.dumps(metadata)) == metadata
     assert metadata["schema_version"] == 1
+    assert metadata["initial_counts"] == [9, 0]
+    assert sum(sum(row) for row in metadata["transition_counts"]) == 45
+    assert metadata["off_state"] == 0
     assert metadata["evaluation_sources"] == []
     assert metadata["allow_temporal_evaluation"] is False
     assert metadata["sources"][0]["data_fingerprint"] == FINGERPRINT
@@ -107,6 +68,7 @@ def test_fitter_builds_a_kernel_ready_appliance_with_complete_metadata():
         "energy_wh",
         "duration_minutes",
     ]
+    assert [summary["weight"] for summary in metadata["summaries"]] == [1.0, 1.0]
 
     inferred = solve_structured_relaxation(
         POWER_WINDOWS[3],

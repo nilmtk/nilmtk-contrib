@@ -113,23 +113,30 @@ def save_metadata(path, metadata):
 def save_metadata_atomic(path, metadata):
     """Atomically publish metadata as the commit marker for a checkpoint set."""
     folder = Path(path)
-    folder.mkdir(parents=True, exist_ok=True)
+    save_json_atomic(folder / METADATA_FILENAME, metadata)
+
+
+def save_json_atomic(path, payload):
+    """Atomically replace a JSON file with deterministic, host-readable output."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
             "w",
             encoding="utf-8",
-            dir=folder,
-            prefix=f".{METADATA_FILENAME}.",
+            dir=target.parent,
+            prefix=f".{target.name}.",
             delete=False,
         ) as handle:
-            json.dump(metadata, handle, indent=2, sort_keys=True)
+            json.dump(payload, handle, allow_nan=False, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
             temporary = Path(handle.name)
-        os.replace(temporary, folder / METADATA_FILENAME)
+        os.replace(temporary, target)
         temporary = None
+        target.chmod(0o644)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
