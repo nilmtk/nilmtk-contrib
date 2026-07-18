@@ -523,8 +523,11 @@ class Reformer(TorchDisaggregator):
         self.require_models(model)
 
         # Preprocess the test mains such as windowing and normalizing
+        raw_indexes = None
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(test_main_list, submeters_lst=None, method='test')
+            test_main_list, raw_indexes = self.preprocess_raw_inference_chunks(
+                test_main_list
+            )
 
         test_predictions = []
         for test_main in test_main_list:
@@ -548,4 +551,6 @@ class Reformer(TorchDisaggregator):
                     disggregation_dict[appliance] = df
             results = pd.DataFrame(disggregation_dict, dtype='float32')
             test_predictions.append(results)
-        return test_predictions
+        if raw_indexes is not None:
+            return self.align_raw_inference_predictions(test_predictions, raw_indexes)
+        return self.validate_inference_predictions(test_predictions)

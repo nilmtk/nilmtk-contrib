@@ -12,9 +12,11 @@ import math
 from numbers import Integral, Real
 
 import numpy as np
+import pandas as pd
 import torch
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.torch._data import power_vector
 from nilmtk_contrib.utils.model import initialize_runtime
 from nilmtk_contrib.utils.params import (
     DEFAULT_ALIASES,
@@ -448,6 +450,122 @@ class TorchDisaggregator(Disaggregator):
             include_extrema=self.INCLUDE_APPLIANCE_EXTREMA,
         )
         self.appliance_params.update(statistics)
+
+    def preprocess_raw_inference_chunks(self, test_main_list):
+        """Preprocess raw pandas chunks while retaining their output indexes.
+
+        NILMTK expects one prediction row for every raw mains row. Legacy torch
+        preprocessors replace the caller's index while constructing windows, so
+        inference must retain that index separately and restore it only after the
+        model has produced an exactly matching number of rows.
+        """
+        if isinstance(test_main_list, (str, bytes, pd.Series, pd.DataFrame)):
+            raise TypeError(
+                "Raw inference chunks must be an iterable of pandas objects."
+            )
+        try:
+            raw_chunks = list(test_main_list)
+        except TypeError as exc:
+            raise TypeError(
+                "Raw inference chunks must be an iterable of pandas objects."
+            ) from exc
+
+        raw_indexes = []
+        for position, chunk in enumerate(raw_chunks):
+            if not isinstance(chunk, pd.DataFrame):
+                raise TypeError(
+                    f"Raw inference chunk {position} must be a pandas DataFrame."
+                )
+            power_vector(chunk, f"Raw inference chunk {position}")
+            raw_indexes.append(chunk.index.copy())
+
+        processed_chunks = self.call_preprocessing(
+            raw_chunks, submeters_lst=None, method="test"
+        )
+        if isinstance(processed_chunks, (str, bytes, pd.Series, pd.DataFrame)):
+            raise TypeError("Test preprocessing must return an iterable of chunks.")
+        try:
+            processed_chunks = list(processed_chunks)
+        except TypeError as exc:
+            raise TypeError(
+                "Test preprocessing must return an iterable of chunks."
+            ) from exc
+        if len(processed_chunks) != len(raw_chunks):
+            raise ValueError(
+                "Test preprocessing changed the number of inference chunks: "
+                f"expected {len(raw_chunks)}, got {len(processed_chunks)}."
+            )
+        return processed_chunks, tuple(raw_indexes)
+
+    @staticmethod
+    def validate_inference_predictions(predictions):
+        """Validate public prediction frames for every inference path."""
+        if isinstance(predictions, (str, bytes, pd.Series, pd.DataFrame)):
+            raise TypeError("Inference predictions must be an iterable of DataFrames.")
+        try:
+            predictions = list(predictions)
+        except TypeError as exc:
+            raise TypeError(
+                "Inference predictions must be an iterable of DataFrames."
+            ) from exc
+        for position, prediction in enumerate(predictions):
+            if not isinstance(prediction, pd.DataFrame):
+                raise TypeError(
+                    f"Inference prediction {position} must be a pandas DataFrame."
+                )
+            if not len(prediction.columns) or prediction.columns.has_duplicates:
+                raise ValueError(
+                    f"Inference prediction {position} must have unique columns."
+                )
+            for column in prediction.columns:
+                _validate_appliance_name(column, label="Prediction appliance")
+                values = prediction[column].to_numpy()
+                if (
+                    pd.api.types.is_bool_dtype(values.dtype)
+                    or pd.api.types.is_complex_dtype(values.dtype)
+                    or not pd.api.types.is_numeric_dtype(values.dtype)
+                ):
+                    raise TypeError(
+                        f"Inference prediction {position} column {column!r} must "
+                        "contain real numeric values."
+                    )
+                try:
+                    finite = np.isfinite(values)
+                except TypeError as exc:
+                    raise TypeError(
+                        f"Inference prediction {position} column {column!r} must "
+                        "contain real numeric values."
+                    ) from exc
+                if not finite.all():
+                    raise ValueError(
+                        f"Inference prediction {position} column {column!r} "
+                        "contains non-finite values."
+                    )
+        return predictions
+
+    @classmethod
+    def align_raw_inference_predictions(cls, predictions, raw_indexes):
+        """Restore raw indexes, failing closed on missing or extra rows/chunks."""
+        predictions = cls.validate_inference_predictions(predictions)
+        if len(predictions) != len(raw_indexes):
+            raise ValueError(
+                "Inference changed the number of chunks: "
+                f"expected {len(raw_indexes)}, got {len(predictions)}."
+            )
+
+        aligned = []
+        for position, (prediction, raw_index) in enumerate(
+            zip(predictions, raw_indexes, strict=True)
+        ):
+            if len(prediction) != len(raw_index):
+                raise ValueError(
+                    f"Inference prediction {position} has {len(prediction)} rows; "
+                    f"expected {len(raw_index)} raw rows."
+                )
+            prediction = prediction.copy()
+            prediction.index = raw_index
+            aligned.append(prediction)
+        return aligned
 
     def _validated_appliance_stats(self, appliance_name, required_fields):
         """Return validated statistics required by one model appliance."""

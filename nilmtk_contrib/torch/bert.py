@@ -285,10 +285,12 @@ class BERT(TorchDisaggregator):
     # Remaining methods keep the legacy backend behavior.
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         self.require_models(model)
-            
+
+        raw_indexes = None
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(
-                test_main_list, submeters_lst=None, method='test')
+            test_main_list, raw_indexes = self.preprocess_raw_inference_chunks(
+                test_main_list
+            )
                 
         test_predictions = []
         for test_mains_df in test_main_list:
@@ -334,7 +336,9 @@ class BERT(TorchDisaggregator):
             results = pd.DataFrame(disggregation_dict, dtype='float32')
             test_predictions.append(results)
             
-        return test_predictions
+        if raw_indexes is not None:
+            return self.align_raw_inference_predictions(test_predictions, raw_indexes)
+        return self.validate_inference_predictions(test_predictions)
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
         if method == 'train':            
