@@ -47,6 +47,18 @@ class TinyDisaggregator(SequenceToPointTorchDisaggregator):
         return TinyNetwork(self.sequence_length).to(self.device)
 
 
+class L1TinyDisaggregator(TinyDisaggregator):
+    def __init__(self, params=None):
+        self.loss_calls = []
+        super().__init__(params)
+
+    def training_loss(self, network, batch_inputs, batch_targets, appliance_name):
+        self.loss_calls.append((appliance_name, len(batch_inputs)))
+        prediction = self._checked_prediction(network, batch_inputs, appliance_name)
+        target = batch_targets.to(self.device)
+        return nn.functional.l1_loss(prediction, target)
+
+
 def _params(**overrides):
     return {
         "device": "cpu",
@@ -193,6 +205,49 @@ def test_raw_training_validates_alignment_and_trains_a_finite_model():
     assert model.last_split_metadata["fridge"].should_train
     assert predictions.index.equals(mains.index)
     assert np.isfinite(predictions["fridge"]).all()
+
+
+def test_training_loss_hook_reuses_the_engine_lifecycle():
+    model = L1TinyDisaggregator(_params(appliance_params={}))
+    mains = _raw([10, 12, 14, 16, 18, 20, 22, 24])
+    target = _raw([2, 4, 6, 8, 10, 12, 14, 16])
+
+    model.partial_fit([mains], [("fridge", [target])])
+
+    assert model.loss_calls
+    assert {name for name, _ in model.loss_calls} == {"fridge"}
+    assert sum(size for _, size in model.loss_calls) > 0
+    assert model.last_split_metadata["fridge"].should_train
+
+
+@pytest.mark.parametrize(
+    ("result", "error", "message"),
+    [
+        (object(), TypeError, "torch.Tensor"),
+        (torch.ones(1, requires_grad=True), ValueError, "scalar"),
+        (torch.ones((), dtype=torch.int64), TypeError, "real floating"),
+        (
+            torch.full((), float("inf"), requires_grad=True),
+            FloatingPointError,
+            "non-finite",
+        ),
+        (torch.ones(()), ValueError, "autograd"),
+        (
+            torch.ones((), device="meta", requires_grad=True),
+            ValueError,
+            "expected cpu",
+        ),
+    ],
+)
+def test_training_loss_hook_fails_closed(result, error, message, monkeypatch):
+    model = TinyDisaggregator(_params())
+    network = model.return_network()
+    inputs = torch.ones(2, model.sequence_length)
+    targets = torch.ones(2, 1)
+    monkeypatch.setattr(model, "training_loss", lambda *_: result)
+
+    with pytest.raises(error, match=message):
+        model._checked_training_loss(network, inputs, targets, "fridge")
 
 
 def test_raw_training_rejects_misaligned_indexes_before_mutating_state():
