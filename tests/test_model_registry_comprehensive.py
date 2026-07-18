@@ -250,10 +250,12 @@ def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root)
         "load_model",
         "modules",
         "named_parameters",
+        "register_buffer",
         "require_models",
         "save_model",
         "set_appliance_params",
         "_validated_appliance_stats",
+        "_checked_model_output",
     }
     offenders = []
     for model_dir in (
