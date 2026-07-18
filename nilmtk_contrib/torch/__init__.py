@@ -29,6 +29,7 @@ _EXPORTS = {
     "Seq2Seq": ("nilmtk_contrib.torch.seq2seq", "Seq2Seq"),
     "SGN": ("nilmtk_contrib.torch.sgn", "SGN"),
     "TCN": ("nilmtk_contrib.torch.TCN", "TCN"),
+    "TSMixer": ("nilmtk_contrib.torch.tsmixer", "TSMixer"),
     "TimesNet": ("nilmtk_contrib.torch.timesnet", "TimesNet"),
     "WindowGRU": ("nilmtk_contrib.torch.WindowGRU", "WindowGRU"),
 }
