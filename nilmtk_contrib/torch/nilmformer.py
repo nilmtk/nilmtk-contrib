@@ -42,6 +42,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
+from nilmtk_contrib.torch._data import _float32_array
 from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
 
 logger = module_logger(__name__)
@@ -826,118 +827,119 @@ class NILMFormer(TorchDisaggregator):
         _log_print(f"Training completed for {appliance_name}")
 
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
-        """
-        Disaggregate power consumption for test data using NILMFormer
-        """
-        
-        self.require_models(model)
+        """Disaggregate one point per supplied or preprocessed input window."""
+        models = self.require_models(model)
 
         raw_indexes = None
         if do_preprocessing:
             test_main_list, raw_indexes = self.preprocess_raw_inference_chunks(
                 test_main_list
             )
+        else:
+            test_main_list = list(test_main_list)
 
         test_predictions = []
         for chunk_position, test_mains_df in enumerate(test_main_list):
-            disggregation_dict = {}
-            
-            # Store original length before any preprocessing
+            windows = _float32_array(
+                test_mains_df, f"Inference windows for chunk {chunk_position}"
+            )
+            if windows.ndim != 2 or windows.shape[1] != self.sequence_length:
+                raise ValueError(
+                    f"Inference windows for chunk {chunk_position} must have shape "
+                    f"[samples, {self.sequence_length}]."
+                )
             original_length = (
                 len(raw_indexes[chunk_position])
                 if raw_indexes is not None
-                else len(test_mains_df)
+                else len(windows)
             )
-            
-            if do_preprocessing:
-                # Convert preprocessed data to proper format
-                test_main_values = test_mains_df.values  # Already shaped correctly
-                test_main_tensor = torch.tensor(
-                    test_main_values.reshape((-1, 1, self.sequence_length)), 
-                    dtype=torch.float32
-                )  # (N, 1, L)
-            else:
-                # Manual preprocessing if needed
-                test_main_values = test_mains_df.values.flatten()
-                n = self.sequence_length
-                units_to_pad = n // 2
-                test_main_values = np.pad(
-                    test_main_values, (units_to_pad, units_to_pad),
-                    'constant', constant_values=(0, 0)
+            if raw_indexes is not None and len(windows) != original_length:
+                raise ValueError(
+                    f"NILMFormer preprocessing produced {len(windows)} windows for "
+                    f"{original_length} raw rows in chunk {chunk_position}."
                 )
-                test_main_values = np.array([
-                    test_main_values[i:i + n] for i in range(len(test_main_values) - n + 1)
-                ])
-                test_main_values = (test_main_values - self.mains_mean) / self.mains_std
-                test_main_tensor = torch.tensor(
-                    test_main_values.reshape((-1, 1, self.sequence_length)),
-                    dtype=torch.float32
-                )
-            
+            test_main_tensor = torch.from_numpy(windows).unsqueeze(1)
+
             # Create exogenous temporal features for test data
-            n_samples = test_main_tensor.shape[0]
-            test_exogenous = self.create_exogene_features(n_samples, self.sequence_length)
-            
+            test_exogenous = self.create_exogene_features(
+                len(test_main_tensor), self.sequence_length
+            )
+
             # Prepare input: concatenate main power with exogenous features
-            test_input = torch.cat([test_main_tensor, test_exogenous], dim=1)  # (B, 1 + c_embedding, L)
+            test_input = torch.cat([test_main_tensor, test_exogenous], dim=1)
             test_input_tensor = test_input.to(self.device)
 
-            for appliance in self.models:
-                model = self.models[appliance]
-                model.eval()
-                
-                with torch.no_grad():
-                    # Process in batches to avoid memory issues
-                    predictions = []
+            disaggregation = {}
+            for appliance, network in models.items():
+                network.eval()
+                predictions = []
+                with torch.inference_mode():
                     for i in range(0, len(test_input_tensor), self.batch_size):
-                        batch = test_input_tensor[i:i+self.batch_size]
-                        pred_batch = model(batch)  # Shape: (B, c_out, L)
-                        predictions.append(pred_batch.cpu().numpy())
-                    
-                    prediction = np.concatenate(predictions, axis=0)  # (N, c_out, L)
-
-                # Extract middle predictions for sequence-to-point conversion
-                middle_idx = self.sequence_length // 2
-                point_predictions = prediction[:, 0, middle_idx]  # (N,)
-                
-                # Reconstruct full sequence using correct overlapping window logic
-                padding = self.sequence_length // 2
-                reconstructed_length = original_length  # Use original length!
-                sum_arr = np.zeros(reconstructed_length + 2 * padding)
-                counts_arr = np.zeros(reconstructed_length + 2 * padding)
-                
-                # Place predictions at correct positions
-                for i, pred_value in enumerate(point_predictions):
-                    target_idx = i + padding  # Account for padding offset
-                    if target_idx < len(sum_arr):
-                        sum_arr[target_idx] += pred_value
-                        counts_arr[target_idx] += 1
-                
-                # Average overlapping predictions and extract original sequence
-                valid_mask = counts_arr > 0
-                final_prediction = np.zeros_like(sum_arr)
-                final_prediction[valid_mask] = sum_arr[valid_mask] / counts_arr[valid_mask]
-                
-                # Extract the original sequence (remove padding)
-                final_prediction = final_prediction[padding:padding + original_length]
-                
+                        batch = test_input_tensor[i : i + self.batch_size]
+                        prediction = network(batch)
+                        expected_shape = (
+                            len(batch),
+                            1,
+                            self.sequence_length,
+                        )
+                        if not isinstance(prediction, torch.Tensor):
+                            raise TypeError(
+                                f"Model for {appliance!r} must return a tensor."
+                            )
+                        if tuple(prediction.shape) != expected_shape:
+                            raise ValueError(
+                                f"Model for {appliance!r} returned shape "
+                                f"{tuple(prediction.shape)}; expected {expected_shape}."
+                            )
+                        if (
+                            not torch.is_floating_point(prediction)
+                            or torch.is_complex(prediction)
+                        ):
+                            raise TypeError(
+                                f"Model for {appliance!r} must return real floating "
+                                "values."
+                            )
+                        if prediction.device != batch.device:
+                            raise ValueError(
+                                f"Model for {appliance!r} returned values on "
+                                f"{prediction.device}; expected {batch.device}."
+                            )
+                        if not torch.isfinite(prediction).all():
+                            raise FloatingPointError(
+                                f"Model for {appliance!r} returned non-finite values."
+                            )
+                        predictions.append(prediction.detach().float().cpu())
+                point_predictions = (
+                    torch.cat(predictions)[:, 0, self.sequence_length // 2].numpy()
+                    if predictions
+                    else np.empty(0, dtype=np.float32)
+                )
+                if len(point_predictions) != original_length:
+                    raise ValueError(
+                        f"NILMFormer produced {len(point_predictions)} predictions "
+                        f"for {original_length} rows in chunk {chunk_position}."
+                    )
                 # Denormalize the predictions
-                if appliance in self.appliance_params:
-                    app_mean = self.appliance_params[appliance]['mean']
-                    app_std = self.appliance_params[appliance]['std']
-                    final_prediction = final_prediction * app_std + app_mean
-                
-                # Clip negative values
-                final_prediction_clipped = np.where(final_prediction > 0, final_prediction, 0)
-                df = pd.Series(final_prediction_clipped)
-                disggregation_dict[appliance] = df
+                statistics = self.appliance_params[appliance]
+                with np.errstate(over="ignore", invalid="ignore"):
+                    values = np.clip(
+                        point_predictions.astype(np.float64) * statistics["std"]
+                        + statistics["mean"],
+                        0,
+                        None,
+                    ).astype(np.float32)
+                if not np.isfinite(values).all():
+                    raise FloatingPointError(
+                        f"Predictions for {appliance!r} became non-finite."
+                    )
+                disaggregation[appliance] = values
 
-            results = pd.DataFrame(disggregation_dict, dtype='float32')
+            results = pd.DataFrame(disaggregation, dtype="float32")
             test_predictions.append(results)
 
         if raw_indexes is not None:
             return self.align_raw_inference_predictions(test_predictions, raw_indexes)
-        return test_predictions
+        return self.validate_inference_predictions(test_predictions)
 
     def call_preprocessing(self, mains_lst, submeters_lst, method):
         """Preprocess data for training or testing"""

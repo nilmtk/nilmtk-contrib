@@ -259,6 +259,7 @@ def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root)
         "save_model",
         "set_appliance_params",
         "train",
+        "validate_inference_predictions",
         "_validated_appliance_stats",
         "_checked_model_output",
     }

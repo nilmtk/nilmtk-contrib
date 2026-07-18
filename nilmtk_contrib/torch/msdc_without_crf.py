@@ -543,6 +543,33 @@ class MSDC(TorchDisaggregator):
                 with torch.no_grad():
                     # Forward pass through MSDC
                     power_preds, state_preds = model(test_main_tensor)
+                    for output_name, output in (
+                        ("power predictions", power_preds),
+                        ("state predictions", state_preds),
+                    ):
+                        if not isinstance(output, torch.Tensor):
+                            raise TypeError(
+                                f"MSDC {output_name} for {appliance!r} must be a "
+                                "tensor."
+                            )
+                        if (
+                            not torch.is_floating_point(output)
+                            or torch.is_complex(output)
+                        ):
+                            raise TypeError(
+                                f"MSDC {output_name} for {appliance!r} must contain "
+                                "real floating values."
+                            )
+                        if output.device != test_main_tensor.device:
+                            raise ValueError(
+                                f"MSDC {output_name} for {appliance!r} uses "
+                                f"{output.device}; expected {test_main_tensor.device}."
+                            )
+                        if not torch.isfinite(output).all():
+                            raise FloatingPointError(
+                                f"MSDC {output_name} for {appliance!r} contains "
+                                "non-finite values."
+                            )
                     
                     # Reshape predictions
                     batch_size = power_preds.shape[0]
@@ -557,7 +584,7 @@ class MSDC(TorchDisaggregator):
                     
                     # Extract center values (middle of each window)
                     center_idx = self.out_len // 2
-                    pred = predicted_power[:, center_idx].cpu().numpy()
+                    pred = predicted_power[:, center_idx].float().cpu().numpy()
                     
                     # Denormalize predictions
                     pred = pred * self.appliance_params[appliance]['std'] + self.appliance_params[appliance]['mean']
@@ -576,7 +603,7 @@ class MSDC(TorchDisaggregator):
         
         if raw_indexes is not None:
             return self.align_raw_inference_predictions(test_predictions, raw_indexes)
-        return test_predictions
+        return self.validate_inference_predictions(test_predictions)
     
     def call_preprocessing(self, mains_lst, submeters_lst, method):
         """

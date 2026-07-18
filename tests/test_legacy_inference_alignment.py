@@ -43,9 +43,11 @@ APPLIANCE_PARAMS = {
 class FakeNetwork(torch.nn.Module):
     """Cheap deterministic outputs matching the legacy adapters' signatures."""
 
-    def __init__(self, mode, sequence_length=SEQUENCE_LENGTH, num_states=2):
+    def __init__(
+        self, mode, sequence_length=SEQUENCE_LENGTH, num_states=2, value=0.0
+    ):
         super().__init__()
-        self.bias = torch.nn.Parameter(torch.zeros(1))
+        self.bias = torch.nn.Parameter(torch.tensor([value], dtype=torch.float32))
         self.mode = mode
         self.sequence_length = sequence_length
         self.num_states = num_states
@@ -113,10 +115,10 @@ MODEL_CASES = [
     pytest.param(Seq2Seq, "sequence", id="seq2seq"),
     pytest.param(WindowGRU, "point", id="window-gru"),
 ]
-ROW_COUNT_CASES = [case for case in MODEL_CASES if case.values[0] is not NILMFormer]
+ROW_COUNT_CASES = MODEL_CASES
 
 
-def _model(model_class, mode):
+def _model(model_class, mode, *, value=0.0):
     params = {
         "device": "cpu",
         "sequence_length": SEQUENCE_LENGTH,
@@ -131,7 +133,11 @@ def _model(model_class, mode):
         model.num_states = 2
         model._get_appliance_config = lambda appliance: None
     model.models = OrderedDict(
-        fridge=FakeNetwork(mode, num_states=getattr(model, "num_states", 2))
+        fridge=FakeNetwork(
+            mode,
+            num_states=getattr(model, "num_states", 2),
+            value=value,
+        )
     )
     return model
 
@@ -221,7 +227,7 @@ def test_raw_inference_fails_closed_when_model_returns_wrong_row_count(
     model = _model(model_class, mode)
     _install_fake_preprocessor(model, mode, row_delta=-1)
 
-    with pytest.raises(ValueError, match="expected 7 raw rows"):
+    with pytest.raises(ValueError, match="(expected 7 raw rows|for 7 raw rows)"):
         model.disaggregate_chunk([_raw_chunk()])
 
 
@@ -238,6 +244,20 @@ def test_helper_fails_closed_on_invalid_raw_chunks_and_preprocessor_chunk_count(
         model.preprocess_raw_inference_chunks(pd.DataFrame({"power": [1.0]}))
     with pytest.raises(TypeError, match="chunk 0"):
         model.preprocess_raw_inference_chunks([np.zeros(3)])
+    with pytest.raises(TypeError, match="chunk 0"):
+        model.preprocess_raw_inference_chunks([pd.Series([1.0])])
+    with pytest.raises(ValueError, match="one power column"):
+        model.preprocess_raw_inference_chunks(
+            [pd.DataFrame({"a": [1.0], "b": [2.0]})]
+        )
+    with pytest.raises(ValueError, match="finite"):
+        model.preprocess_raw_inference_chunks(
+            [pd.DataFrame({"power": [np.nan]})]
+        )
+    with pytest.raises(ValueError, match="at least one sample"):
+        model.preprocess_raw_inference_chunks(
+            [pd.DataFrame({"power": pd.Series(dtype="float32")})]
+        )
     with pytest.raises(ValueError, match="expected 1, got 0"):
         model.preprocess_raw_inference_chunks([_raw_chunk(1)])
 
@@ -288,8 +308,6 @@ def test_preprocessed_inference_does_not_apply_raw_alignment(model_class, mode):
             np.zeros((rows, SEQUENCE_LENGTH), dtype=np.float32),
             index=pd.Index(np.arange(50, 50 + rows), name="window"),
         )
-    elif mode == "nilmformer":
-        windows = _raw_chunk()
     else:
         windows = pd.DataFrame(
             np.zeros((RAW_LENGTH, SEQUENCE_LENGTH), dtype=np.float32),
@@ -298,5 +316,28 @@ def test_preprocessed_inference_does_not_apply_raw_alignment(model_class, mode):
 
     result = model.disaggregate_chunk([windows], do_preprocessing=False)[0]
 
-    assert len(result) == RAW_LENGTH
-    assert isinstance(result.index, pd.RangeIndex)
+    expected_length = len(windows) if mode == "nilmformer" else RAW_LENGTH
+    assert len(result) == expected_length
+    if model_class in {MSDC, MSDCWithoutCRF}:
+        assert result.index.equals(windows.index)
+    else:
+        assert isinstance(result.index, pd.RangeIndex)
+
+
+@pytest.mark.parametrize("model_class,mode", MODEL_CASES)
+def test_preprocessed_inference_rejects_nonfinite_predictions(model_class, mode):
+    model = _model(model_class, mode, value=float("inf"))
+    if mode in {
+        "sequence",
+        "resnet_classification",
+        "rnn_attention_classification",
+    }:
+        rows = RAW_LENGTH - SEQUENCE_LENGTH + 1
+    else:
+        rows = RAW_LENGTH
+    windows = pd.DataFrame(
+        np.zeros((rows, SEQUENCE_LENGTH), dtype=np.float32)
+    )
+
+    with pytest.raises((FloatingPointError, ValueError), match="non-finite"):
+        model.disaggregate_chunk([windows], do_preprocessing=False)

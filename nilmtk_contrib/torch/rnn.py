@@ -231,7 +231,7 @@ class RNN(TorchDisaggregator):
             test_predictions.append(results)
         if raw_indexes is not None:
             return self.align_raw_inference_predictions(test_predictions, raw_indexes)
-        return test_predictions
+        return self.validate_inference_predictions(test_predictions)
 
     def return_network(self):
         """Returns a new, initialized RNNModel instance."""

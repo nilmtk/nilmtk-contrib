@@ -16,6 +16,7 @@ import pandas as pd
 import torch
 from nilmtk.disaggregate import Disaggregator
 
+from nilmtk_contrib.torch._data import power_vector
 from nilmtk_contrib.utils.model import initialize_runtime
 from nilmtk_contrib.utils.params import (
     DEFAULT_ALIASES,
@@ -471,11 +472,11 @@ class TorchDisaggregator(Disaggregator):
 
         raw_indexes = []
         for position, chunk in enumerate(raw_chunks):
-            if not isinstance(chunk, (pd.Series, pd.DataFrame)):
+            if not isinstance(chunk, pd.DataFrame):
                 raise TypeError(
-                    f"Raw inference chunk {position} must be a pandas Series or "
-                    "DataFrame."
+                    f"Raw inference chunk {position} must be a pandas DataFrame."
                 )
+            power_vector(chunk, f"Raw inference chunk {position}")
             raw_indexes.append(chunk.index.copy())
 
         processed_chunks = self.call_preprocessing(
@@ -497,8 +498,8 @@ class TorchDisaggregator(Disaggregator):
         return processed_chunks, tuple(raw_indexes)
 
     @staticmethod
-    def align_raw_inference_predictions(predictions, raw_indexes):
-        """Restore raw indexes, failing closed on missing or extra rows/chunks."""
+    def validate_inference_predictions(predictions):
+        """Validate public prediction frames for every inference path."""
         if isinstance(predictions, (str, bytes, pd.Series, pd.DataFrame)):
             raise TypeError("Inference predictions must be an iterable of DataFrames.")
         try:
@@ -507,26 +508,17 @@ class TorchDisaggregator(Disaggregator):
             raise TypeError(
                 "Inference predictions must be an iterable of DataFrames."
             ) from exc
-        if len(predictions) != len(raw_indexes):
-            raise ValueError(
-                "Inference changed the number of chunks: "
-                f"expected {len(raw_indexes)}, got {len(predictions)}."
-            )
-
-        aligned = []
-        for position, (prediction, raw_index) in enumerate(
-            zip(predictions, raw_indexes, strict=True)
-        ):
+        for position, prediction in enumerate(predictions):
             if not isinstance(prediction, pd.DataFrame):
                 raise TypeError(
                     f"Inference prediction {position} must be a pandas DataFrame."
                 )
-            if len(prediction) != len(raw_index):
+            if not len(prediction.columns) or prediction.columns.has_duplicates:
                 raise ValueError(
-                    f"Inference prediction {position} has {len(prediction)} rows; "
-                    f"expected {len(raw_index)} raw rows."
+                    f"Inference prediction {position} must have unique columns."
                 )
             for column in prediction.columns:
+                _validate_appliance_name(column, label="Prediction appliance")
                 values = prediction[column].to_numpy()
                 if (
                     pd.api.types.is_bool_dtype(values.dtype)
@@ -549,6 +541,27 @@ class TorchDisaggregator(Disaggregator):
                         f"Inference prediction {position} column {column!r} "
                         "contains non-finite values."
                     )
+        return predictions
+
+    @classmethod
+    def align_raw_inference_predictions(cls, predictions, raw_indexes):
+        """Restore raw indexes, failing closed on missing or extra rows/chunks."""
+        predictions = cls.validate_inference_predictions(predictions)
+        if len(predictions) != len(raw_indexes):
+            raise ValueError(
+                "Inference changed the number of chunks: "
+                f"expected {len(raw_indexes)}, got {len(predictions)}."
+            )
+
+        aligned = []
+        for position, (prediction, raw_index) in enumerate(
+            zip(predictions, raw_indexes, strict=True)
+        ):
+            if len(prediction) != len(raw_index):
+                raise ValueError(
+                    f"Inference prediction {position} has {len(prediction)} rows; "
+                    f"expected {len(raw_index)} raw rows."
+                )
             prediction = prediction.copy()
             prediction.index = raw_index
             aligned.append(prediction)
