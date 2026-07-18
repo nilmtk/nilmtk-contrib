@@ -302,6 +302,7 @@ The table below lists the public model surface. "Verification" describes how the
 | MSDC without CRF | PyTorch | `nilmtk_contrib.torch.msdc_without_crf.MSDC` | MSDC ablation | MSDC paper/source implementation | No-CRF ablation, not the canonical MSDC path |
 | ModernTCN | PyTorch | `nilmtk_contrib.torch.ModernTCN` | ModernTCN-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Luo and Wang, ModernTCN | PyTorch backend |
 | NILMFormer | PyTorch | `nilmtk_contrib.torch.NILMFormer` | NILMFormer implementation requiring experiment validation for new claims | Petralia et al., NILMFormer | PyTorch backend |
+| NILMMoE | PyTorch | `nilmtk_contrib.torch.NILMMoE` | Experimental input-conditioned mixture; benchmark claims require NILMbench result bundles | This repository | Blends DLinear, ModernTCN, and TimesNet with a load-balanced softmax gate |
 | PatchTST | PyTorch | `nilmtk_contrib.torch.PatchTST` | PatchTST-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Nie et al., PatchTST | PyTorch backend |
 
 ## Reference Papers And Codebases
