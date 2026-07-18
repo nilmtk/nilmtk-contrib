@@ -575,16 +575,25 @@ class MSDC(TorchDisaggregator):
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         """Disaggregates a chunk of mains data using the trained models."""
         self.require_models(model)
+        test_main_list = list(test_main_list)
+        output_indexes = [
+            getattr(frame, "index", pd.RangeIndex(len(frame))).copy()
+            for frame in test_main_list
+        ]
         
         # Preprocess test data
         if do_preprocessing:
-            test_main_list = self.call_preprocessing(test_main_list, submeters_lst=None, method='test')
+            test_main_list = self.call_preprocessing(
+                test_main_list, submeters_lst=None, method="test"
+            )
         
         test_predictions = []
-        for test_main in test_main_list:
+        for chunk_index, (test_main, output_index) in enumerate(
+            zip(test_main_list, output_indexes, strict=True)
+        ):
             test_main = test_main.values
             test_main = test_main.reshape((-1, self.sequence_length, 1))
-            disggregation_dict = {}
+            disaggregation = {}
             
             test_main_tensor = torch.FloatTensor(test_main).to(self.device)
             
@@ -616,9 +625,20 @@ class MSDC(TorchDisaggregator):
                     pred = pred * self.appliance_params[appliance]['std'] + self.appliance_params[appliance]['mean']
                     pred = np.where(pred > 0, pred, 0)  # Ensure non-negative power
                 
-                disggregation_dict[appliance] = pred
-            
-            test_predictions.append(pd.DataFrame(disggregation_dict, dtype='float32'))
+                disaggregation[appliance] = pred
+
+            if any(
+                len(prediction) != len(output_index)
+                for _, prediction in disaggregation.items()
+            ):
+                raise RuntimeError(
+                    f"MSDC prediction length does not match input chunk {chunk_index}."
+                )
+            test_predictions.append(
+                pd.DataFrame(
+                    disaggregation, index=output_index, dtype="float32"
+                )
+            )
         
         return test_predictions
     
