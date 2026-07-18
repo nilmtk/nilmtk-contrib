@@ -114,6 +114,8 @@ class LBMTrainingResult:
     window_length: int
     sample_period_seconds: int
     state_counts: tuple[int, ...]
+    initial_counts: tuple[int, ...]
+    transition_counts: tuple[tuple[int, ...], ...]
     cycle_counts: tuple[int, ...]
     emission_variance: float
     pseudocount: float
@@ -131,13 +133,16 @@ class LBMTrainingResult:
             summaries.append(
                 {
                     "name": name,
-                    "state_weights": torch.as_tensor(summary.state_weights).tolist(),
+                    "state_weights": torch.as_tensor(
+                        summary.state_weights, dtype=torch.float64
+                    ).tolist(),
                     "conditional_means": torch.as_tensor(
-                        summary.conditional_means
+                        summary.conditional_means, dtype=torch.float64
                     ).tolist(),
                     "conditional_variance": summary.conditional_variance,
                     "induced_mean": summary.induced_mean,
                     "induced_variance": summary.induced_variance,
+                    "weight": summary.weight,
                 }
             )
         return {
@@ -150,17 +155,22 @@ class LBMTrainingResult:
             "num_samples": self.num_samples,
             "window_length": self.window_length,
             "sample_period_seconds": self.sample_period_seconds,
-            "state_means": torch.as_tensor(self.appliance.state_means).tolist(),
+            "state_means": torch.as_tensor(
+                self.appliance.state_means, dtype=torch.float64
+            ).tolist(),
             "initial_probabilities": torch.as_tensor(
-                self.appliance.initial_probabilities
+                self.appliance.initial_probabilities, dtype=torch.float64
             ).tolist(),
             "transition_probabilities": torch.as_tensor(
-                self.appliance.transition_probabilities
+                self.appliance.transition_probabilities, dtype=torch.float64
             ).tolist(),
+            "off_state": self.appliance.off_state,
             "cycle_probabilities": torch.as_tensor(
-                self.appliance.cycle_probabilities
+                self.appliance.cycle_probabilities, dtype=torch.float64
             ).tolist(),
             "state_counts": list(self.state_counts),
+            "initial_counts": list(self.initial_counts),
+            "transition_counts": [list(row) for row in self.transition_counts],
             "cycle_counts": list(self.cycle_counts),
             "emission_variance": self.emission_variance,
             "pseudocount": self.pseudocount,
@@ -601,6 +611,10 @@ def fit_lbm_appliance(
         window_length=window_length,
         sample_period_seconds=sample_period,
         state_counts=tuple(int(value) for value in state_counts),
+        initial_counts=tuple(int(value) for value in initial_counts),
+        transition_counts=tuple(
+            tuple(int(value) for value in row) for row in transition_counts
+        ),
         cycle_counts=tuple(int(value) for value in cycle_counts),
         emission_variance=emission_variance,
         pseudocount=pseudocount,
