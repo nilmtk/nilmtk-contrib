@@ -396,14 +396,13 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
             targets_by_appliance.append((appliance_name, np.concatenate(targets)))
         return np.concatenate(main_chunks), targets_by_appliance
 
-    def _checked_prediction(self, network, batch, appliance_name):
-        prediction = network(batch.to(self.device).unsqueeze(1))
+    def _checked_model_output(self, prediction, batch_size, appliance_name):
         if not isinstance(prediction, torch.Tensor):
             raise TypeError(f"Model for {appliance_name!r} must return a torch.Tensor.")
-        if prediction.shape != (len(batch), 1):
+        if prediction.shape != (batch_size, 1):
             raise ValueError(
                 f"Model for {appliance_name!r} returned shape "
-                f"{tuple(prediction.shape)}; expected ({len(batch)}, 1)."
+                f"{tuple(prediction.shape)}; expected ({batch_size}, 1)."
             )
         if not torch.is_floating_point(prediction) or torch.is_complex(prediction):
             raise TypeError(
@@ -419,6 +418,42 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
                 f"Model for {appliance_name!r} returned non-finite values."
             )
         return prediction
+
+    def _checked_prediction(self, network, batch, appliance_name):
+        prediction = network(batch.to(self.device).unsqueeze(1))
+        return self._checked_model_output(prediction, len(batch), appliance_name)
+
+    def training_loss(self, network, batch_inputs, batch_targets, appliance_name):
+        """Return the scalar optimization objective for one training batch.
+
+        Architecture subclasses may override this hook for auxiliary objectives
+        while retaining the engine's optimization, rollback, and persistence
+        contracts.  Custom hooks must validate any additional network outputs.
+        """
+        prediction = self._checked_prediction(network, batch_inputs, appliance_name)
+        target = batch_targets.to(self.device)
+        return nn.functional.mse_loss(prediction, target)
+
+    def _checked_training_loss(
+        self, network, batch_inputs, batch_targets, appliance_name
+    ):
+        loss = self.training_loss(network, batch_inputs, batch_targets, appliance_name)
+        if not isinstance(loss, torch.Tensor):
+            raise TypeError("training_loss must return a torch.Tensor.")
+        if loss.shape != ():
+            raise ValueError("training_loss must return a scalar tensor.")
+        if not torch.is_floating_point(loss) or torch.is_complex(loss):
+            raise TypeError("training_loss must return a real floating tensor.")
+        if loss.device != self.device:
+            raise ValueError(
+                f"training_loss returned a value on {loss.device}; "
+                f"expected {self.device}."
+            )
+        if not torch.isfinite(loss):
+            raise FloatingPointError("Training loss became non-finite.")
+        if not loss.requires_grad:
+            raise ValueError("training_loss must participate in autograd.")
+        return loss
 
     def _score(self, network, inputs, targets, appliance_name):
         loader = DataLoader(
@@ -480,11 +515,9 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
             count = 0
             for batch_inputs, batch_targets in loader:
                 optimizer.zero_grad(set_to_none=True)
-                prediction = self._checked_prediction(
-                    network, batch_inputs, appliance_name
+                loss = self._checked_training_loss(
+                    network, batch_inputs, batch_targets, appliance_name
                 )
-                target = batch_targets.to(self.device)
-                loss = nn.functional.mse_loss(prediction, target)
                 loss.backward()
                 try:
                     nn.utils.clip_grad_norm_(
