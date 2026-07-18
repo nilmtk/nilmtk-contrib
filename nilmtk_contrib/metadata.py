@@ -45,6 +45,7 @@ MODEL_CATALOG = (
     ModelCatalogEntry("Seq2Seq", "torch", "nilmtk_contrib.torch.seq2seq", "Seq2Seq", "nilmtk_contrib.torch"),
     ModelCatalogEntry("SGN", "torch", "nilmtk_contrib.torch.sgn", "SGN", "nilmtk_contrib.torch"),
     ModelCatalogEntry("TCN", "torch", "nilmtk_contrib.torch.TCN", "TCN", "nilmtk_contrib.torch"),
+    ModelCatalogEntry("TSMixer", "torch", "nilmtk_contrib.torch.tsmixer", "TSMixer", "nilmtk_contrib.torch"),
     ModelCatalogEntry("TimesNet", "torch", "nilmtk_contrib.torch.timesnet", "TimesNet", "nilmtk_contrib.torch"),
     ModelCatalogEntry("WindowGRU", "torch", "nilmtk_contrib.torch.WindowGRU", "WindowGRU", "nilmtk_contrib.torch"),
 )

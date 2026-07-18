@@ -295,6 +295,7 @@ The table below lists the public model surface. "Verification" describes how the
 | ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | ConvLSTM-inspired NILM adaptation | Shi et al., ConvLSTM | Generic spatiotemporal architecture adapted to NILM |
 | TCN | PyTorch | `nilmtk_contrib.torch.TCN` | Generic TCN sequence-modeling baseline adapted to NILM | Bai, Kolter, and Koltun, TCN | PyTorch backend |
 | SGN | PyTorch | `nilmtk_contrib.torch.SGN` | Subtask-gated sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Shin et al., SGN | Uses a raw-power-correct soft on/off gate and auxiliary classification loss |
+| TSMixer | PyTorch | `nilmtk_contrib.torch.TSMixer` | All-MLP sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Chen et al., TSMixer | Mixes along time and feature dimensions without attention or recurrence |
 | TimesNet | PyTorch | `nilmtk_contrib.torch.TimesNet` | TimesNet-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Wu et al., TimesNet | PyTorch backend |
 | Reformer | PyTorch | `nilmtk_contrib.torch.Reformer` | Reformer-inspired NILM adaptation | Kitaev, Kaiser, and Levskaya, Reformer | Efficient Transformer architecture adapted to NILM |
 | MSDC | PyTorch | `nilmtk_contrib.torch.MSDC` | NILM paper implementation requiring experiment validation for new claims | MSDC dual-CNN NILM paper | Canonical CRF-enabled implementation path |
@@ -320,6 +321,7 @@ NILM-specific references:
 - Luo and Wang, "ModernTCN: A Modern Pure Convolution Structure for General Time Series Analysis", ICLR 2024, https://openreview.net/forum?id=vpJMJerXHU.
 - Zeng et al., "Are Transformers Effective for Time Series Forecasting?", AAAI 2023, https://arxiv.org/abs/2205.13504.
 - Shin et al., "Subtask Gated Networks for Non-Intrusive Load Monitoring", AAAI 2019, https://doi.org/10.1609/aaai.v33i01.33011150.
+- Chen et al., "TSMixer: An All-MLP Architecture for Time Series Forecasting", TMLR 2023, https://arxiv.org/abs/2303.06053.
 - Wu et al., "TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis", ICLR 2023, https://openreview.net/forum?id=ju_Uqw384Oq.
 
 Generic architecture references:
