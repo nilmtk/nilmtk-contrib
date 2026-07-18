@@ -32,6 +32,22 @@ core will support both planned models:
 2. a neural semi-Markov model whose compact temporal encoder learns emission
    scores while exact decoding still enforces duration and transition structure.
 
-The classical model, neural model, and NILMbench entries remain separate PRs.
-Neither model enters the public catalog until its complete training/inference
-wrapper and real-data T0 have passed.
+## Classical fitting layer
+
+The private `nilmtk_contrib.torch._hsmm` layer now fits the classical model
+from aligned mains and appliance chunks. It shares deterministic ordered state
+fitting with LBM, learns initial and between-segment transition probabilities,
+an explicit duration histogram for each state, and Gaussian aggregate
+emissions conditioned on the labeled appliance state. Inference splits long
+chunks only at the configured duration cap and sends every block through the
+exact shared Viterbi recurrence.
+
+The fitter is intentionally supervised and one-target-at-a-time. It is a
+small, benchmarkable baseline, not a claim to reproduce the factorial
+multi-appliance inference or timing features of TE-FHSMM. Model persistence is
+fail-closed until the next artifact PR, and the class remains private until a
+real-data T0 run succeeds.
+
+Persistence, public export, the neural model, and NILMbench entries remain
+separate PRs. Neither model enters the public catalog until its complete
+training/inference contract and real-data T0 have passed.

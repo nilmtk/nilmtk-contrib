@@ -21,6 +21,10 @@ from nilmtk_contrib.torch._lbm import (
     _finite_real,
     _positive_int,
 )
+from nilmtk_contrib.torch._state_fitting import (
+    assign_states as _assign_states,
+    fit_state_means as _fit_state_means,
+)
 
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}")
@@ -309,57 +313,6 @@ def _source_sort_key(source: SourceWindow):
         str(source.building),
         source.interval,
     )
-
-
-def _fit_state_means(
-    windows: Sequence[torch.Tensor],
-    *,
-    num_states: int,
-    max_iterations: int,
-) -> torch.Tensor:
-    values = torch.sort(torch.cat(tuple(windows))).values
-    unique = torch.unique(values, sorted=True)
-    if unique.numel() < num_states:
-        raise ValueError(
-            f"Training power contains {unique.numel()} unique values; "
-            f"at least num_states={num_states} are required."
-        )
-    initial_indices = (
-        torch.linspace(
-            0,
-            unique.numel() - 1,
-            steps=num_states,
-            dtype=torch.float64,
-        )
-        .round()
-        .to(torch.long)
-    )
-    centers = unique[initial_indices]
-    previous_assignments = None
-    for _ in range(max_iterations):
-        assignments = torch.argmin(torch.abs(values[:, None] - centers[None, :]), dim=1)
-        if previous_assignments is not None and torch.equal(
-            assignments, previous_assignments
-        ):
-            break
-        counts = torch.bincount(assignments, minlength=num_states)
-        if bool((counts == 0).any()):
-            raise RuntimeError("Deterministic state fitting produced an empty cluster.")
-        centers = torch.stack(
-            [values[assignments == state].mean() for state in range(num_states)]
-        )
-        if not bool(torch.isfinite(centers).all()):
-            raise RuntimeError(
-                "State fitting produced non-finite means; rescale the power data."
-            )
-        previous_assignments = assignments
-    else:
-        raise RuntimeError("Deterministic state fitting did not converge.")
-    return torch.sort(centers).values
-
-
-def _assign_states(values: torch.Tensor, means: torch.Tensor) -> torch.Tensor:
-    return torch.argmin(torch.abs(values[:, None] - means[None, :]), dim=1)
 
 
 def _smoothed_probabilities(counts: torch.Tensor, pseudocount: float) -> torch.Tensor:
