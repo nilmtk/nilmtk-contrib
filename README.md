@@ -1,39 +1,24 @@
-# NILMTK-Contrib with NILMBench2026
+# nilmtk-contrib
 
-This is the `nilmtk-contrib` repository, extended with the NILMBench2026 benchmark contribution.
+This repository contains maintained NILMTK-compatible disaggregation models.
+Use it to run, test, or contribute an algorithm.
 
-The repository has two connected parts:
+## Which repository should I use?
 
-- **NILMTK-Contrib package work**: the reusable `nilmtk_contrib` Python package with NILMTK-compatible disaggregation models, preprocessing utilities, experiment workflows, optional backend extras, tests, and Docker packaging. The package is designed for use with NILMTK's rapid experimentation API and includes classical, TensorFlow, and PyTorch model backends.
-- **NILMBench2026 contribution**: the benchmark and reproducibility work built on top of `nilmtk-contrib`. NILMBench2026 evaluates sixteen NILM models across regression accuracy, event detection, computational efficiency, and generalization on public NILM datasets at both 1-minute and 15-minute resolutions.
+| Task | Repository |
+| --- | --- |
+| Convert or inspect data; work with meters, preprocessing, or metrics | [NILMTK core](https://github.com/nilmtk/nilmtk) |
+| Define appliance names, synonyms, meter relationships, or dataset schema | [NILM Metadata](https://github.com/nilmtk/nilm_metadata) |
+| Run or contribute a disaggregation model | **nilmtk-contrib — this repository** |
+| Run T1/T2/T3 protocols or publish a leaderboard result | [NILMbench](https://github.com/nilmtk/nilmbench) |
 
-NILMBench2026 uses the modernized `nilmtk-contrib` package in this repository as its implementation base. The benchmark contribution also documents the modernization and extension of the NILMTK ecosystem, including PyTorch model implementations, containerized workflows, and reproducible experiment setup.
-
-This repository is based on the original [`nilmtk-contrib`](https://github.com/nilmtk/nilmtk-contrib) repository and extends it for the NILMBench2026 benchmark.
-
-The repository is associated with two papers:
-
-Kuloor, Singh, Dhru, and Batra, "NILMBench2026: A Benchmark for Energy Disaggregation", BuildSys 2026, DOI: https://doi.org/10.1145/3744256.3812587.
-
-Batra, Kukunuri, Pandey, Malakar, Kumar, Krystalakos, Zhong, Meira, and Parson, "Towards Reproducible State-of-the-Art Energy Disaggregation", BuildSys 2019, DOI: https://doi.org/10.1145/3360322.3360844.
+The [NILMTK start page](https://nilmtk.github.io/) gives the supported install,
+Docker, citation, and contribution routes for the whole ecosystem.
 
 ## Citation
 
-If you find our research useful, please consider citing:
-
-```bibtex
-@inproceedings{kuloor2026nilmbench,
-  title     = {NILMBench2026: A Benchmark for Energy Disaggregation},
-  author    = {Kuloor, Aayush and Singh, Anurag and Dhru, Harsh and Batra, Nipun},
-  booktitle = {Proceedings of the 13th ACM International Conference on Systems for
-               Energy-Efficient Buildings, Cities, and Transportation (BuildSys '26)},
-  year      = {2026},
-  doi       = {10.1145/3744256.3812587},
-  publisher = {ACM},
-  address   = {Banff, AB, Canada}
-}
-```
-
+If you use this model suite or its rapid experimentation interface, cite the
+nilmtk-contrib paper:
 
 ```bibtex
 @inproceedings{10.1145/3360322.3360844,
@@ -54,117 +39,128 @@ If you find our research useful, please consider citing:
 }
 ```
 
-## Runtime Requirements
+Also cite the original paper for every model and dataset you use. Cite the
+[NILMBench2026 paper](https://doi.org/10.1145/3744256.3812587) only when using
+its protocols, runner, or leaderboard results.
 
-- Python `>=3.11,<3.12`.
-- Install a backend extra before importing or training backend-specific models.
-- NILMTK-compatible datasets are required for real experiments, notebook runs, and benchmark reproduction.
-- Model training and benchmark comparisons should be run in controlled server environments with the relevant backend, dataset, and hardware available.
+## Install and verify
 
-Python 3.12 and newer are not supported by the current package metadata because TensorFlow and NILMTK compatibility must be verified first.
+The supported environment is Python `>=3.11,<3.12`. Use Python 3.11.
 
-## Installation
-
-Minimal install for package metadata and lightweight imports:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
 
 ```bash
-uv pip install git+https://github.com/nilmtk/nilmtk-contrib.git
+uv venv --python 3.11
+source .venv/bin/activate
+UV_TORCH_BACKEND=cpu uv pip install \
+  "nilmtk-contrib[torch] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+python -c "from nilmtk_contrib.torch import Seq2PointTorch; print('ready')"
 ```
 
-TensorFlow backend:
+On Windows PowerShell, activate the environment with
+`.venv\Scripts\Activate.ps1`.
+
+Choose a different extra only when you need that backend:
+
+| Extra | Use it for |
+| --- | --- |
+| `torch` | PyTorch models, including current time-series and MoE models |
+| `tensorflow` | TensorFlow/Keras models |
+| `classical` | AFHMM, AFHMM-SAC, and DSC |
+| `all` | All three backends; largest install |
+| `nilm` | NILMTK integration without a model backend |
+
+Replace `torch` in the install command with the required extra. A bare install
+contains package metadata and dependency-light utilities; it cannot train a
+backend model.
+
+## Run a model
+
+Public model imports are listed in the [model table](#models). For example:
+
+```python
+from nilmtk_contrib.torch import Seq2PointTorch
+
+model = Seq2PointTorch(
+    {
+        "sequence_length": 99,
+        "n_epochs": 1,
+        "batch_size": 32,
+        "device": "cpu",
+        "seed": 0,
+    }
+)
+```
+
+Training requires NILMTK-compatible mains and appliance data. The
+[`sample_notebooks`](sample_notebooks) directory shows the rapid experimentation
+API. Use [NILMbench](https://github.com/nilmtk/nilmbench) when the goal is a
+comparable published result rather than an exploratory run.
+
+## Development
 
 ```bash
-uv pip install "nilmtk-contrib[tensorflow] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+git clone https://github.com/nilmtk/nilmtk-contrib.git
+cd nilmtk-contrib
+uv sync --frozen --group dev --extra torch
+uv run ruff check nilmtk_contrib tests scripts
+uv run pytest -q
+uv build
 ```
 
-PyTorch backend:
+CI also smoke-tests every exported PyTorch model for one epoch. Run that gate
+locally when model discovery, shared preprocessing, or the base class changes:
 
 ```bash
-uv pip install "nilmtk-contrib[torch] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
+uv run pytest tests/test_model_smoke_synthetic.py \
+  --run-model-smoke --model-smoke-backend torch \
+  --model-smoke-epochs 1 -q
 ```
 
-Classical backend:
+## Add a model
 
-```bash
-uv pip install "nilmtk-contrib[classical] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
-```
+Keep a model PR focused on the implementation. It should:
 
-All model backends:
+1. use the shared validation, preprocessing, checkpoint, device, seed, and
+   logging utilities instead of copying them;
+2. expose the model lazily from the backend package;
+3. test defaults, parameter validation, short/partial chunks, serialization,
+   determinism, CPU inference, and the intended CUDA path;
+4. enter the all-model smoke test and public model table;
+5. cite the original model paper and state clearly when an architecture is a
+   NILM adaptation rather than a paper-faithful reproduction.
 
-```bash
-uv pip install "nilmtk-contrib[all] @ git+https://github.com/nilmtk/nilmtk-contrib.git"
-```
-
-Local development (from a clone of this repository):
-
-```bash
-uv sync --extra dev
-```
-
-Backend development examples:
-
-```bash
-uv sync --extra dev --extra torch
-uv sync --extra dev --extra tensorflow
-uv sync --extra dev --extra classical
-uv sync --extra dev --extra all
-```
-
-### Verify your install
-
-After `uv sync --extra dev`, run a quick sanity check to confirm the package and core tests are in good shape:
-
-```bash
-uv run python -m compileall -q nilmtk_contrib tests
-uv run python -m pytest -q tests/test_imports.py tests/test_params.py tests/test_preprocessing_windows.py tests/test_preprocessing_alignment.py tests/test_preprocessing_classification.py tests/test_validation.py tests/test_checkpoints.py tests/test_random_logging.py tests/test_model_runtime.py
-```
-
-Before launching full experiments, smoke-test the backend you plan to use. Sync the matching extra and run the full test suite—for example, with PyTorch:
-
-```bash
-uv sync --extra dev --extra torch
-uv run python -m pytest -q
-```
+After the model PR merges, open a separate NILMbench PR for its adapter and
+search space. A model reaches the leaderboard only through a provenance-complete
+real-data result bundle.
 
 ## Docker
 
-The repository ships a reproducible container image based on Python 3.11. The image installs `nilmtk-contrib` with `uv`, pins the Python runtime, and bundles the system libraries needed for NumPy, SciPy, scikit-learn, TensorFlow, and PyTorch.
+This repository owns the one general NILMTK development Dockerfile. It contains
+core, metadata, and the selected contrib backend. Do not add an image per model.
+
+Build the image locally with Docker 24 or newer. Anonymous pulls from the GHCR
+package are not yet part of the supported path, so this README does not publish
+a `docker pull` command that may require organization access.
+
+NILMbench owns separate pinned CPU-smoke and CUDA benchmark images. Those images
+certify results; they are not general development images.
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) 24+ (Docker Desktop on Windows/macOS is fine).
-- Optional GPU support: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) if you plan to pass `--gpus all`.
-
-### Pull the pre-built image
-
-```bash
-docker pull ghcr.io/nilmtk/nilmtk-contrib:latest
-docker run --rm -it ghcr.io/nilmtk/nilmtk-contrib:latest bash
-```
-
-Backend-specific tags:
-
-```bash
-docker pull ghcr.io/nilmtk/nilmtk-contrib:torch
-docker pull ghcr.io/nilmtk/nilmtk-contrib:tensorflow
-docker pull ghcr.io/nilmtk/nilmtk-contrib:classical
-```
-
-GPU-enabled pre-built image:
-
-```bash
-docker run --rm -it --gpus all ghcr.io/nilmtk/nilmtk-contrib:latest bash
-```
+- [Docker](https://docs.docker.com/get-docker/) 24+.
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+  only when using `--gpus all` on Linux.
 
 ### Build locally
 
-Default all-backend image:
+The default build includes all backends:
 
 ```bash
 docker build -t nilmtk-contrib:all .
 ```
 
-Backend-specific images (smaller, faster builds):
+Prefer a narrower backend for faster development builds:
 
 ```bash
 docker build -t nilmtk-contrib:torch --build-arg INSTALL_EXTRA=torch .
@@ -172,7 +168,7 @@ docker build -t nilmtk-contrib:tensorflow --build-arg INSTALL_EXTRA=tensorflow .
 docker build -t nilmtk-contrib:classical --build-arg INSTALL_EXTRA=classical .
 ```
 
-Image with dev/test dependencies:
+Add tests and development tools only when needed:
 
 ```bash
 docker build -t nilmtk-contrib:dev --build-arg INSTALL_DEV=true .
@@ -184,13 +180,14 @@ docker build -t nilmtk-contrib:dev --build-arg INSTALL_DEV=true .
 docker run --rm -it nilmtk-contrib:all bash
 ```
 
-Mount a local dataset directory (read-only) at `/data`:
+Datasets are not included. Mount a licensed local dataset directory read-only:
 
 ```bash
 docker run --rm -it -v /path/to/datasets:/data:ro nilmtk-contrib:all bash
 ```
 
-On Windows PowerShell, use a drive path such as `-v C:/Users/you/datasets:/data:ro`.
+On Windows PowerShell, use a drive path such as
+`-v C:/Users/you/datasets:/data:ro`.
 
 GPU-enabled shell (requires NVIDIA Container Toolkit):
 
@@ -198,43 +195,22 @@ GPU-enabled shell (requires NVIDIA Container Toolkit):
 docker run --rm -it --gpus all nilmtk-contrib:all bash
 ```
 
-Inside the container, verify CUDA visibility for PyTorch:
-
-```bash
-python -c "import torch; print('cuda:', torch.cuda.is_available())"
-```
-
 ### Verify the image
 
-Quick package and backend checks:
+Check the package and selected backend after building:
 
 ```bash
 docker run --rm nilmtk-contrib:all python -c "import nilmtk_contrib; print(nilmtk_contrib.__version__)"
-docker run --rm nilmtk-contrib:all python -c "import nilmtk_contrib.disaggregate, nilmtk_contrib.torch; print('imports ok')"
-docker run --rm nilmtk-contrib:all python -c "import nilmtk, torch, tensorflow as tf; print('nilmtk ok'); print('torch', torch.__version__); print('tensorflow', tf.__version__)"
+docker run --rm nilmtk-contrib:all python -c \
+  "from nilmtk_contrib.torch import Seq2PointTorch; print('ready')"
 ```
 
-Compile and run the lightweight test subset (requires the dev image):
+The development image runs the same suite as the local environment:
 
 ```bash
 docker build -t nilmtk-contrib:dev --build-arg INSTALL_DEV=true .
 docker run --rm nilmtk-contrib:dev python -m compileall -q nilmtk_contrib tests
-docker run --rm nilmtk-contrib:dev python -m pytest -q \
-  tests/test_imports.py \
-  tests/test_params.py \
-  tests/test_preprocessing_windows.py \
-  tests/test_preprocessing_alignment.py \
-  tests/test_preprocessing_classification.py \
-  tests/test_validation.py \
-  tests/test_checkpoints.py \
-  tests/test_random_logging.py \
-  tests/test_model_runtime.py
-```
-
-One-shot smoke test after building the default image:
-
-```bash
-docker run --rm nilmtk-contrib:all bash -lc "python -c \"import nilmtk_contrib; import torch; import tensorflow as tf; print('nilmtk-contrib', nilmtk_contrib.__version__); print('torch', torch.__version__); print('tensorflow', tf.__version__)\""
+docker run --rm nilmtk-contrib:dev python -m pytest -q
 ```
 
 ### Docker build arguments
@@ -250,17 +226,6 @@ docker run --rm nilmtk-contrib:all bash -lc "python -c \"import nilmtk_contrib; 
 |---|---|
 | `Dockerfile` | Multi-backend image definition with build args |
 | `.dockerignore` | Keeps build context small and excludes local artifacts |
-
-## Dependency Extras
-
-| Extra | Intended use | Main dependencies |
-|---|---|---|
-| Minimal | Import package metadata and lightweight modules | No required runtime dependencies |
-| `tensorflow` | TensorFlow/Keras disaggregators | NILMTK, NumPy, pandas, scikit-learn, matplotlib, TensorFlow, `tensorflow-io-gcs-filesystem` |
-| `torch` | PyTorch disaggregators | NILMTK, NumPy, pandas, scikit-learn, matplotlib, PyTorch, tqdm |
-| `classical` | AFHMM, AFHMM_SAC, DSC | NILMTK, NumPy, pandas, matplotlib, scikit-learn, SciPy, cvxpy, hmmlearn |
-| `all` | All backends | Union of TensorFlow, PyTorch, classical, and NILMTK dependencies |
-| `dev` | Tests, formatting, and build checks | pytest, pytest-cov, black, ruff, build |
 
 ## Models
 
@@ -341,15 +306,17 @@ Reference repositories:
 - NILMFormer: https://github.com/adrienpetralia/NILMFormer.
 - TCN: https://github.com/locuslab/TCN.
 
-## Usage
+## Data, notebooks, and benchmark results
 
-The sample notebooks under [sample_notebooks](sample_notebooks) demonstrate the NILMTK rapid experimentation API used by NILMBench2026. Install the relevant backend extra and ensure datasets are available before running them.
+This package does not redistribute licensed datasets or publish leaderboard
+rows. Download each dataset from its official custodian and convert it with
+[NILMTK core](https://github.com/nilmtk/nilmtk).
 
-Supported experiment workflows include:
+The notebooks under [`sample_notebooks`](sample_notebooks) demonstrate the
+NILMTK rapid experimentation API for exploratory work across appliances,
+buildings, datasets, and sample rates. They are examples, not frozen benchmark
+protocols.
 
-- NILMBench2026 benchmark runs across accuracy, event-detection, efficiency, and generalization metrics.
-- Training and testing across multiple appliances.
-- Training and testing across multiple datasets for transfer learning.
-- Training and testing across multiple buildings.
-- Training and testing with artificial aggregate.
-- Training and testing with different sampling frequencies.
+For comparable real-data runs, pinned environments, provenance-complete result
+bundles, and the living leaderboard, use
+[NILMbench](https://github.com/nilmtk/nilmbench).
