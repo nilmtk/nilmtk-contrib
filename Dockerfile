@@ -1,4 +1,4 @@
-# NILMBench2026 / nilmtk-contrib container image.
+# General nilmtk-contrib development image.
 #
 # Build the default all-backend image:
 #   docker build -t nilmtk-contrib:all .
@@ -17,8 +17,8 @@ ARG INSTALL_EXTRA=all
 ARG INSTALL_DEV=false
 
 LABEL org.opencontainers.image.title="nilmtk-contrib"
-LABEL org.opencontainers.image.description="NILMBench2026 benchmark toolkit with NILMTK-compatible disaggregation models"
-LABEL org.opencontainers.image.source="https://github.com/sustainability-lab/nilmbench"
+LABEL org.opencontainers.image.description="NILMTK-compatible disaggregation models"
+LABEL org.opencontainers.image.source="https://github.com/nilmtk/nilmtk-contrib"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ENV DEBIAN_FRONTEND=noninteractive \

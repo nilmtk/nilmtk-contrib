@@ -35,8 +35,11 @@ jobs:
       - name: Validate lock file
         run: uv lock --check
 
+      - name: Check onboarding documentation
+        run: uv run python scripts/check_docs.py
+
       - name: Lint
-        run: uv run ruff check nilmtk_contrib tests
+        run: uv run ruff check nilmtk_contrib tests scripts
 
       - name: Run unit tests
         run: uv run python -m pytest -q

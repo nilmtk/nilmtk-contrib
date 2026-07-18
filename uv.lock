@@ -713,8 +713,8 @@ wheels = [
 
 [[package]]
 name = "nilm-metadata"
-version = "0.2.6.dev4+g9082f10c2"
-source = { git = "https://github.com/nilmtk/nilm_metadata.git#9082f10c20f0120b1ff80db2fc8556dc74ca6a80" }
+version = "0.2.6.dev6+g59c9990de"
+source = { git = "https://github.com/nilmtk/nilm_metadata.git?rev=59c9990de4836d77c0dcd807bd4293e39e0cc314#59c9990de4836d77c0dcd807bd4293e39e0cc314" }
 dependencies = [
     { name = "pandas" },
     { name = "pyyaml" },
@@ -723,7 +723,7 @@ dependencies = [
 [[package]]
 name = "nilmtk"
 version = "0.4.1"
-source = { git = "https://github.com/nilmtk/nilmtk.git#1d6abbd2438bb868bcdb6209a5d73da2b09ef15e" }
+source = { git = "https://github.com/nilmtk/nilmtk.git#af33e24f65c1319e75dffad093cb950da021a72c" }
 dependencies = [
     { name = "h5py" },
     { name = "hmmlearn" },
