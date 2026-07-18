@@ -247,6 +247,7 @@ def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root)
     known_runtime_methods = {
         "apply",
         "appliance_minmax_params",
+        "eval",
         "load_model",
         "modules",
         "named_parameters",
@@ -254,6 +255,7 @@ def test_model_self_method_calls_are_defined_or_known_runtime_methods(repo_root)
         "require_models",
         "save_model",
         "set_appliance_params",
+        "train",
         "_validated_appliance_stats",
         "_checked_model_output",
     }
