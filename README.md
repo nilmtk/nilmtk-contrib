@@ -239,6 +239,7 @@ The table below lists the public model surface. "Verification" describes how the
 | DAE | TensorFlow | `nilmtk_contrib.disaggregate.DAE` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
 | DAE | PyTorch | `nilmtk_contrib.torch.DAE` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
 | DLinear | PyTorch | `nilmtk_contrib.torch.DLinear` | DLinear-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Zeng et al., DLinear | PyTorch backend |
+| HSMM | PyTorch | `nilmtk_contrib.torch.HSMM` | Supervised single-appliance explicit-duration baseline; benchmark claims require NILMbench result bundles | Chiappa, explicit-duration Markov switching models | Exact PyTorch dynamic program; no external solver |
 | RNN | TensorFlow | `nilmtk_contrib.disaggregate.RNN` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
 | RNN | PyTorch | `nilmtk_contrib.torch.RNN` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
 | Seq2Point | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Point` | NILM paper implementation requiring dataset-specific validation | Zhang et al., Sequence-to-Point Learning | TensorFlow/Keras backend |
@@ -284,6 +285,8 @@ NILM-specific references:
 - Sudoso and Piccialli, "Non-Intrusive Load Monitoring with an Attention-based Deep Neural Network", arXiv:1912.00759, https://arxiv.org/abs/1912.00759.
 - MSDC, "Exploiting Multi-State Power Consumption in Non-intrusive Load Monitoring based on A Dual-CNN Model", arXiv:2302.05565, https://arxiv.org/abs/2302.05565.
 - Petralia et al., "NILMFormer: Non-Intrusive Load Monitoring that Accounts for Non-Stationarity", arXiv:2506.05880, https://arxiv.org/abs/2506.05880.
+- Chiappa, "Explicit-Duration Markov Switching Models", arXiv:1909.05800, https://arxiv.org/abs/1909.05800.
+- Wu et al., "A time-efficient factorial hidden Semi-Markov model for non-intrusive load monitoring", Electric Power Systems Research 2021, https://doi.org/10.1016/j.epsr.2021.107372.
 - Nie et al., "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers", arXiv:2211.14730, https://arxiv.org/abs/2211.14730.
 - Luo and Wang, "ModernTCN: A Modern Pure Convolution Structure for General Time Series Analysis", ICLR 2024, https://openreview.net/forum?id=vpJMJerXHU.
 - Zeng et al., "Are Transformers Effective for Time Series Forecasting?", AAAI 2023, https://arxiv.org/abs/2205.13504.

@@ -42,6 +42,7 @@ TORCH_MODEL_SPECS = (
     ModelSpec("torch", "nilmtk_contrib.torch", "ConvLSTM", "nilmtk_contrib.torch.conv_lstm"),
     ModelSpec("torch", "nilmtk_contrib.torch", "DAE", "nilmtk_contrib.torch.dae"),
     ModelSpec("torch", "nilmtk_contrib.torch", "DLinear", "nilmtk_contrib.torch.dlinear"),
+    ModelSpec("torch", "nilmtk_contrib.torch", "HSMM", "nilmtk_contrib.torch.hsmm", trainable=False),
     ModelSpec("torch", "nilmtk_contrib.torch", "MSDC", "nilmtk_contrib.torch.msdc", min_sequence_length=121),
     ModelSpec("torch", "nilmtk_contrib.torch", "MSDC", "nilmtk_contrib.torch.msdc_without_crf", min_sequence_length=121),
     ModelSpec("torch", "nilmtk_contrib.torch", "ModernTCN", "nilmtk_contrib.torch.moderntcn"),

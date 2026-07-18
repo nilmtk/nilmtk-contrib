@@ -11,6 +11,12 @@ import pytest
 from model_smoke_helpers import TORCH_MODEL_SPECS
 
 
+NEURAL_TORCH_MODEL_SPECS = tuple(spec for spec in TORCH_MODEL_SPECS if spec.trainable)
+STATE_SPACE_TORCH_MODEL_SPECS = tuple(
+    spec for spec in TORCH_MODEL_SPECS if not spec.trainable
+)
+
+
 @dataclass(frozen=True)
 class ExpectedDefaults:
     sequence_length: int
@@ -72,7 +78,7 @@ def _load_class(spec):
 
 @pytest.mark.parametrize(
     "spec",
-    TORCH_MODEL_SPECS,
+    NEURAL_TORCH_MODEL_SPECS,
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
 def test_every_torch_model_uses_shared_runtime_with_legacy_defaults(spec):
@@ -99,6 +105,34 @@ def test_every_torch_model_uses_shared_runtime_with_legacy_defaults(spec):
 
 @pytest.mark.parametrize(
     "spec",
+    STATE_SPACE_TORCH_MODEL_SPECS,
+    ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
+)
+def test_state_space_models_use_shared_runtime_without_fake_neural_options(spec):
+    from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
+
+    cls = _load_class(spec)
+    model = cls({"device": "cpu", "seed": 17, "verbose": True})
+
+    assert issubclass(cls, TorchStateSpaceDisaggregator)
+    assert model.seed == 17
+    assert model.verbose is True
+    assert model.chunk_wise_training is False
+    assert model.models == {}
+    assert str(model.device) == "cpu"
+    for irrelevant in (
+        "sequence_length",
+        "n_epochs",
+        "batch_size",
+        "mains_mean",
+        "mains_std",
+        "appliance_params",
+    ):
+        assert not hasattr(model, irrelevant)
+
+
+@pytest.mark.parametrize(
+    "spec",
     TORCH_MODEL_SPECS,
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
@@ -112,7 +146,7 @@ def test_every_torch_model_accepts_none_and_rejects_non_mapping_params(spec):
 
 @pytest.mark.parametrize(
     "spec",
-    TORCH_MODEL_SPECS,
+    NEURAL_TORCH_MODEL_SPECS,
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
 def test_every_torch_model_honors_validated_common_overrides(spec):
@@ -153,7 +187,7 @@ def test_every_torch_model_honors_validated_common_overrides(spec):
 
 @pytest.mark.parametrize(
     "spec",
-    TORCH_MODEL_SPECS,
+    NEURAL_TORCH_MODEL_SPECS,
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
 def test_every_torch_model_inherits_shared_statistics_policy(spec):
@@ -209,7 +243,7 @@ def test_torch_model_source_does_not_reintroduce_shared_boilerplate(spec):
 
 @pytest.mark.parametrize(
     "spec",
-    TORCH_MODEL_SPECS,
+    NEURAL_TORCH_MODEL_SPECS,
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
 def test_every_torch_disaggregation_path_validates_and_detaches_models(spec):
@@ -376,4 +410,6 @@ def test_model_specific_params_remain_owned_by_subclasses(
 
 
 def test_migration_contract_covers_every_registered_torch_model():
-    assert set(DEFAULTS_BY_MODULE) == {spec.module_name for spec in TORCH_MODEL_SPECS}
+    assert set(DEFAULTS_BY_MODULE) == {
+        spec.module_name for spec in NEURAL_TORCH_MODEL_SPECS
+    }
