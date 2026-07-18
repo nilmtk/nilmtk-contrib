@@ -241,6 +241,14 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
     def return_network(self):
         raise NotImplementedError
 
+    def configure_network(self, network, appliance_name):
+        """Configure a network with target-specific state before use.
+
+        Subclasses may override this idempotent hook when an architecture needs
+        the appliance normalization statistics during its forward pass.
+        """
+        del network, appliance_name
+
     def model_config(self):
         fields = self.MODEL_CONFIG_FIELDS
         if (
@@ -494,6 +502,7 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
         if network is None:
             network = self.return_network()
             self.models[appliance_name] = network
+        self.configure_network(network, appliance_name)
         loader = DataLoader(
             TensorDataset(
                 torch.from_numpy(split.X_train), torch.from_numpy(split.y_train)
@@ -610,6 +619,8 @@ class SequenceToPointTorchDisaggregator(TorchDisaggregator):
         raw_frames = list(test_main_list)
         if not raw_frames:
             return []
+        for appliance_name, network in models.items():
+            self.configure_network(network, appliance_name)
         if do_preprocessing:
             processed = self.call_preprocessing(raw_frames, method="test")
             indexes = [
