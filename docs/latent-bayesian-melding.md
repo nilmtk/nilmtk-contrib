@@ -53,12 +53,43 @@ cycle category is integral. Setting the melding weight to zero removes both
 the cycle constraint and all population terms, recovering the ordinary
 relaxed AFHMM state problem.
 
+## Training and provenance contract
+
+The private `nilmtk_contrib.torch._lbm_training` fitter consumes dense,
+equal-length population windows. Every window records the dataset and version,
+a stable data URI, SHA-256 fingerprint, building, timezone-aware half-open
+interval, and sample period. It rejects overlapping training windows so the
+same evidence cannot be counted twice.
+
+Evaluation buildings are disjoint by default: using any window from an
+evaluation building is treated as leakage even when the timestamps differ.
+A same-building temporal study must opt in explicitly, and overlapping times
+remain forbidden. This is stricter than merely retaining a path to the source
+file and makes the cross-building NILMbench boundary enforceable in code.
+
+Training is deterministic and PyTorch-only:
+
+- one-dimensional state means use deterministic Lloyd iterations;
+- initial and transition probabilities use explicit pseudocounts, and
+  transitions never cross source-window boundaries;
+- cycle probabilities and cycle-conditioned daily energy/duration summaries
+  use population windows only;
+- induced summary moments are computed exactly from the fitted Markov chain,
+  without Monte Carlo sampling;
+- sparse cycle categories, non-convex population/HMM ratios, and numerical
+  overflow are rejected rather than silently repaired.
+
+The resulting metadata is JSON-safe and includes every fitted probability,
+summary statistic, source window, and the appliance emission variance. Model
+artifact persistence remains part of the wrapper PR.
+
 ## What this first kernel does not claim
 
 The numerical kernel is intentionally private: it is neither exported as a
 disaggregator nor included in the model catalog. It does not yet:
 
-- learn appliance HMM and population parameters from NILMTK training chunks;
+- adapt real NILMTK chunks into provenance-complete population windows or
+  orchestrate multi-appliance fitting;
 - alternate the paper's closed-form variance updates;
 - infer the non-negative piecewise-smooth unknown-load signal;
 - return the paper's separate latent appliance signals rather than the
