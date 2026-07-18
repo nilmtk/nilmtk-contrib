@@ -48,6 +48,22 @@ multi-appliance inference or timing features of TE-FHSMM. Model persistence is
 fail-closed until the next artifact PR, and the class remains private until a
 real-data T0 run succeeds.
 
+## Neural scoring layer
+
+The private `nilmtk_contrib.torch._neural_semi_markov` layer supplies the
+matched modern variant. A compact length-preserving dilated TCN produces
+contextual per-sample state scores. Initial-state, off-diagonal transition, and
+explicit-duration scores are trainable and normalized in log space. Training
+uses the exact semi-Markov log-partition rather than token-wise cross entropy;
+decoding calls the same Viterbi core as the classical model.
+
+Classical fitted probabilities can initialize the neural structure. This makes
+the comparison controlled: the neural method can begin from the classical
+state/duration prior and differ primarily in its learned contextual emission
+model. The full NILMTK training wrapper remains a separate PR so optimizer,
+windowing, checkpointing, and real-data validation do not get hidden inside
+the numerical-kernel review.
+
 Persistence, public export, the neural model, and NILMbench entries remain
 separate PRs. Neither model enters the public catalog until its complete
 training/inference contract and real-data T0 have passed.
