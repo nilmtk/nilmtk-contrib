@@ -20,6 +20,7 @@ MODEL_CATALOG = (
     ModelCatalogEntry("ConvLSTM", "torch", "nilmtk_contrib.torch.conv_lstm", "ConvLSTM", "nilmtk_contrib.torch"),
     ModelCatalogEntry("DAE", "torch", "nilmtk_contrib.torch.dae", "DAE", "nilmtk_contrib.torch"),
     ModelCatalogEntry("DLinear", "torch", "nilmtk_contrib.torch.dlinear", "DLinear", "nilmtk_contrib.torch"),
+    ModelCatalogEntry("DSC", "torch", "nilmtk_contrib.torch.dsc", "DSC", "nilmtk_contrib.torch"),
     ModelCatalogEntry("HSMM", "torch", "nilmtk_contrib.torch.hsmm", "HSMM", "nilmtk_contrib.torch"),
     ModelCatalogEntry("MSDC", "torch", "nilmtk_contrib.torch.msdc", "MSDC", "nilmtk_contrib.torch"),
     ModelCatalogEntry("MSDC without CRF", "torch", "nilmtk_contrib.torch.msdc_without_crf", "MSDC", None),

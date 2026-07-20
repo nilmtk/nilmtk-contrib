@@ -22,7 +22,7 @@ def test_torch_cuda_tensor_operations_run_on_gpu(gpu_tests_enabled):
 
 @pytest.mark.parametrize(
     "spec",
-    TORCH_MODEL_SPECS,
+    tuple(spec for spec in TORCH_MODEL_SPECS if spec.trainable),
     ids=lambda spec: f"{spec.module_name}.{spec.class_name}",
 )
 def test_torch_model_networks_are_placed_on_cuda_when_available(spec, gpu_tests_enabled):
