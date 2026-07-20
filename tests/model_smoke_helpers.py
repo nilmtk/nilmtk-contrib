@@ -124,6 +124,41 @@ def assert_prediction_frames(predictions, appliance="fridge"):
         assert np.isfinite(values).all()
 
 
+def _bounded_power_series(meter, max_samples, **load_kwargs):
+    if (
+        not isinstance(max_samples, int)
+        or isinstance(max_samples, bool)
+        or max_samples <= 0
+    ):
+        raise ValueError("max_samples must be a positive integer")
+    chunks = []
+    remaining = max_samples
+    generator = meter.power_series(chunksize=max_samples, **load_kwargs)
+    try:
+        for chunk in generator:
+            values = chunk.dropna()
+            if values.empty:
+                continue
+            selected = values.iloc[:remaining]
+            chunks.append(selected)
+            remaining -= len(selected)
+            if remaining == 0:
+                break
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
+    if not chunks:
+        return pd.Series(dtype=np.float32)
+    result = pd.concat(chunks)
+    if not result.index.is_unique:
+        # Some NILMTK stores repeat samples at meter-group or chunk boundaries.
+        # A benchmark needs one deterministic power value per timestamp before
+        # mains and appliance series can be aligned.
+        result = result.groupby(level=0, sort=True).mean()
+    return result.iloc[:max_samples]
+
+
 def load_real_dataset_chunks(path, building, appliance, sequence_length, max_samples=512):
     nilmtk = pytest.importorskip("nilmtk")
     dataset_path = Path(path)
@@ -133,7 +168,7 @@ def load_real_dataset_chunks(path, building, appliance, sequence_length, max_sam
     data_set = nilmtk.DataSet(str(dataset_path))
     try:
         elec = data_set.buildings[building].elec
-        mains = elec.mains().power_series_all_data().dropna()
+        mains_meter = elec.mains()
         appliance_meter = None
         for meter in elec.submeters().meters:
             for meter_appliance in getattr(meter, "appliances", []):
@@ -145,7 +180,18 @@ def load_real_dataset_chunks(path, building, appliance, sequence_length, max_sam
         if appliance_meter is None:
             pytest.skip(f"appliance {appliance!r} not found in building {building}")
 
-        submeter = appliance_meter.power_series_all_data().dropna()
+        common_timeframe = mains_meter.get_timeframe().intersection(
+            appliance_meter.get_timeframe()
+        )
+        sample_period = max(
+            mains_meter.sample_period(), appliance_meter.sample_period()
+        )
+        load_kwargs = {
+            "sections": [common_timeframe],
+            "sample_period": sample_period,
+        }
+        mains = _bounded_power_series(mains_meter, max_samples, **load_kwargs)
+        submeter = _bounded_power_series(appliance_meter, max_samples, **load_kwargs)
         joined = pd.concat([mains, submeter], axis=1).dropna().iloc[:max_samples]
         if len(joined) < sequence_length:
             pytest.skip(
