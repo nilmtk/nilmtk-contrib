@@ -156,7 +156,7 @@ def _bounded_power_series(meter, max_samples, **load_kwargs):
         # A benchmark needs one deterministic power value per timestamp before
         # mains and appliance series can be aligned.
         result = result.groupby(level=0, sort=True).mean()
-    return result.iloc[:max_samples]
+    return result.iloc[:max_samples].astype(np.float32, copy=False)
 
 
 def load_real_dataset_chunks(path, building, appliance, sequence_length, max_samples=512):

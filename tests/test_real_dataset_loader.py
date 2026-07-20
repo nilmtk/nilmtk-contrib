@@ -108,6 +108,19 @@ def test_bounded_loader_coalesces_duplicate_timestamps_by_mean():
     assert result.index.is_monotonic_increasing
 
 
+def test_bounded_loader_normalizes_float64_meter_output_to_float32():
+    values = pd.Series(
+        [1.25, 2.5],
+        index=pd.date_range("2026-01-01", periods=2, freq="1min", tz="UTC"),
+        dtype=np.float64,
+    )
+
+    result = _bounded_power_series(_Meter([values]), 2)
+
+    assert result.dtype == np.float32
+    assert result.tolist() == pytest.approx([1.25, 2.5])
+
+
 def test_bounded_loader_closes_generator_when_iteration_fails():
     meter = _Meter([_series([1.0], "2026-01-01")], error=RuntimeError("broken"))
 
