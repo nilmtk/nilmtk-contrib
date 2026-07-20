@@ -1,39 +1,61 @@
-"""Lazy exports for TensorFlow and classical NILMTK disaggregators.
+"""Compatibility exports for historical and classical NILMTK disaggregators.
 
 These classes require optional backend dependencies. Importing this package does
-not import TensorFlow, cvxpy, hmmlearn, or NILMTK until a class is requested.
+not import PyTorch, cvxpy, hmmlearn, or NILMTK until a class is requested.
+
+Historical package-level neural exports resolve to the maintained PyTorch
+implementations. Direct TensorFlow module paths remain temporarily available for
+source compatibility while the TensorFlow backend is retired.
 """
 
+import warnings
 from importlib import import_module
 
 from nilmtk_contrib.utils.optional_imports import OptionalDependencyError
 
 _EXPORTS = {
-    "AFHMM": ("nilmtk_contrib.disaggregate.afhmm", "classical", "AFHMM"),
-    "AFHMM_SAC": ("nilmtk_contrib.disaggregate.afhmm_sac", "classical", "AFHMM_SAC"),
-    "BERT": ("nilmtk_contrib.disaggregate.bert", "tensorflow", "BERT"),
-    "DAE": ("nilmtk_contrib.disaggregate.dae", "tensorflow", "DAE"),
-    "DSC": ("nilmtk_contrib.disaggregate.dsc", "classical", "DSC"),
-    "RNN": ("nilmtk_contrib.disaggregate.rnn", "tensorflow", "RNN"),
+    "AFHMM": ("nilmtk_contrib.disaggregate.afhmm", "AFHMM", "classical"),
+    "AFHMM_SAC": (
+        "nilmtk_contrib.disaggregate.afhmm_sac",
+        "AFHMM_SAC",
+        "classical",
+    ),
+    "BERT": ("nilmtk_contrib.torch.bert", "BERT", "torch"),
+    "DAE": ("nilmtk_contrib.torch.dae", "DAE", "torch"),
+    "DSC": ("nilmtk_contrib.disaggregate.dsc", "DSC", "classical"),
+    "RNN": ("nilmtk_contrib.torch.rnn", "RNN", "torch"),
     "RNN_attention": (
-        "nilmtk_contrib.disaggregate.rnn_attention",
-        "tensorflow",
+        "nilmtk_contrib.torch.rnn_attention",
         "RNN_attention",
+        "torch",
     ),
     "RNN_attention_classification": (
-        "nilmtk_contrib.disaggregate.rnn_attention_classification",
-        "tensorflow",
+        "nilmtk_contrib.torch.rnn_attention_classification",
         "RNN_attention_classification",
+        "torch",
     ),
-    "ResNet": ("nilmtk_contrib.disaggregate.resnet", "tensorflow", "ResNet"),
+    "ResNet": ("nilmtk_contrib.torch.resnet", "ResNet", "torch"),
     "ResNet_classification": (
-        "nilmtk_contrib.disaggregate.resnet_classification",
-        "tensorflow",
+        "nilmtk_contrib.torch.resnet_classification",
         "ResNet_classification",
+        "torch",
     ),
-    "Seq2Point": ("nilmtk_contrib.disaggregate.seq2point", "tensorflow", "Seq2Point"),
-    "Seq2Seq": ("nilmtk_contrib.disaggregate.seq2seq", "tensorflow", "Seq2Seq"),
-    "WindowGRU": ("nilmtk_contrib.disaggregate.WindowGRU", "tensorflow", "WindowGRU"),
+    "Seq2Point": ("nilmtk_contrib.torch.seq2point", "Seq2PointTorch", "torch"),
+    "Seq2Seq": ("nilmtk_contrib.torch.seq2seq", "Seq2Seq", "torch"),
+    "WindowGRU": ("nilmtk_contrib.torch.WindowGRU", "WindowGRU", "torch"),
+}
+
+_TORCH_REDIRECTS = {
+    "BERT",
+    "DAE",
+    "RNN",
+    "RNN_attention",
+    "RNN_attention_classification",
+    "ResNet",
+    "ResNet_classification",
+    "Seq2Point",
+    "Seq2Seq",
+    "WindowGRU",
 }
 
 _DEPENDENCY_EXTRAS = {
@@ -41,7 +63,8 @@ _DEPENDENCY_EXTRAS = {
     "hmmlearn": "classical",
     "nilmtk": "nilm",
     "sklearn": "classical",
-    "tensorflow": "tensorflow",
+    "torch": "torch",
+    "tqdm": "torch",
 }
 
 __all__ = sorted([*_EXPORTS, "Disaggregator"])
@@ -64,18 +87,26 @@ def __getattr__(name):
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-    module_name, extra_name, purpose = _EXPORTS[name]
+    module_name, class_name, extra_name = _EXPORTS[name]
+    if name in _TORCH_REDIRECTS:
+        warnings.warn(
+            f"nilmtk_contrib.disaggregate.{name} now resolves to its maintained "
+            f"PyTorch implementation; import {class_name} from "
+            "nilmtk_contrib.torch.",
+            FutureWarning,
+            stacklevel=2,
+        )
     try:
         module = import_module(module_name)
     except ModuleNotFoundError as exc:
         missing_package = exc.name or "required dependency"
         install_extra = _DEPENDENCY_EXTRAS.get(missing_package, extra_name)
         message = (
-            f"{purpose} requires '{missing_package}'. "
+            f"{name} requires '{missing_package}'. "
             f"Install nilmtk-contrib[{install_extra}]."
         )
         raise OptionalDependencyError(message) from exc
 
-    value = getattr(module, name)
+    value = getattr(module, class_name)
     globals()[name] = value
     return value
