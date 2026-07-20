@@ -5,7 +5,13 @@ import numpy as np
 import pandas as pd
 
 from nilmtk_contrib.torch._base import TorchDisaggregator, torch_defaults
-from nilmtk_contrib.utils.model import legacy_print, module_logger, checkpoint_path
+from nilmtk_contrib.utils.checkpoints import (
+    load_torch_state,
+    save_torch_state,
+    temporary_checkpoint,
+)
+from nilmtk_contrib.utils.model import legacy_print, module_logger
+from nilmtk_contrib.utils.validation import train_validation_split
 
 logger = module_logger(__name__)
 _log_print = legacy_print(logger)
@@ -195,65 +201,85 @@ class WindowGRU(TorchDisaggregator):
             model = self.models[app_name]
             mains = train_main.reshape((-1, self.sequence_length, 1))
             app_reading = app_df.reshape((-1, 1))
-            
-            filepath = checkpoint_path(".pt")
-            
+
             # Convert to PyTorch tensors
             mains_tensor = torch.tensor(mains, dtype=torch.float32).permute(0, 2, 1)  # [B, 1, seq]
-            app_tensor = torch.tensor(app_reading, dtype=torch.float32).squeeze()     # [B]
-            
-            # Use validation split like TF (last 15% instead of random split)
-            # This follows the legacy TF validation split fraction.
-            n_total = len(mains_tensor)
-            val_size = max(1, int(0.15 * n_total)) if n_total > 1 else 0
-            train_size = n_total - val_size
-            
-            train_x = mains_tensor[:train_size].to(self.device)
-            val_x = mains_tensor[train_size:].to(self.device)
-            train_y = app_tensor[:train_size].to(self.device)
-            val_y = app_tensor[train_size:].to(self.device)
-            
+            app_tensor = torch.tensor(app_reading, dtype=torch.float32).reshape(-1)
+            split = train_validation_split(
+                mains_tensor,
+                app_tensor,
+                validation_fraction=0.15,
+                strategy="tail",
+                min_train=1,
+                min_val=1,
+                allow_no_validation=True,
+                rounding="floor",
+            )
+            if not split.metadata.should_train:
+                continue
+
+            train_x = split.X_train.to(self.device)
+            train_y = split.y_train.to(self.device)
+            val_x = (
+                split.X_val.to(self.device)
+                if split.metadata.validation_enabled
+                else None
+            )
+            val_y = (
+                split.y_val.to(self.device)
+                if split.metadata.validation_enabled
+                else None
+            )
+
             # Use Adam with TensorFlow-style default parameters.
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-07, weight_decay=0.0)
             criterion = nn.MSELoss()
-            
-            best_val_loss = float('inf')
-            
+
             # Create DataLoader for training data with shuffle=True (like TF)
             train_dataset = TensorDataset(train_x, train_y)
             train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-            
-            for epoch in range(self.n_epochs):
-                # Training phase
-                model.train()
-                train_loss = 0.0
-                num_batches = 0
-                
-                for batch_x, batch_y in train_loader:
-                    optimizer.zero_grad()
-                    outputs = model(batch_x).squeeze(-1)  # Ensure output shape matches target
-                    loss = criterion(outputs, batch_y)
-                    loss.backward()
-                    optimizer.step()
-                    train_loss += loss.item()
-                    num_batches += 1
-                
-                train_loss /= num_batches
-                
-                # Validation phase (evaluate on full validation set at once)
-                model.eval()
-                with torch.no_grad():
-                    val_outputs = model(val_x).squeeze(-1)
-                    val_loss = criterion(val_outputs, val_y).item()
-                
-                # Save best model (like ModelCheckpoint in TF with verbose=1)
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    torch.save(model.state_dict(), filepath)
-                    _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
-                
-            # Load best weights (like TF version)
-            model.load_state_dict(torch.load(filepath))
+
+            best_val_loss = float('inf')
+            with temporary_checkpoint(".pt") as filepath:
+                for epoch in range(self.n_epochs):
+                    # Training phase
+                    model.train()
+                    train_loss = 0.0
+                    num_batches = 0
+
+                    for batch_x, batch_y in train_loader:
+                        optimizer.zero_grad()
+                        outputs = model(batch_x).squeeze(-1)  # Ensure output shape matches target
+                        loss = criterion(outputs, batch_y)
+                        loss.backward()
+                        optimizer.step()
+                        train_loss += loss.item()
+                        num_batches += 1
+
+                    train_loss /= num_batches
+
+                    if val_x is None:
+                        save_torch_state(model, filepath)
+                        _log_print(
+                            f'Epoch {epoch+1}/{self.n_epochs} - '
+                            f'loss: {train_loss:.4f}'
+                        )
+                        continue
+
+                    # Validation phase (evaluate on full validation set at once)
+                    model.eval()
+                    with torch.no_grad():
+                        val_outputs = model(val_x).squeeze(-1)
+                        val_loss = criterion(val_outputs, val_y).item()
+
+                    # Save best model (like ModelCheckpoint in TF with verbose=1)
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        save_torch_state(model, filepath)
+                        _log_print(f'Epoch {epoch+1}/{self.n_epochs} - loss: {train_loss:.4f} - val_loss: {val_loss:.4f}')
+
+                if filepath.exists():
+                    load_torch_state(model, filepath, self.device)
     def disaggregate_chunk(self, test_main_list, model=None, do_preprocessing=True):
         self.require_models(model)
 

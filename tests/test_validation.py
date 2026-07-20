@@ -40,6 +40,25 @@ def test_tail_split_guarantees_validation_sample():
     assert split.y_val.tolist() == [109]
 
 
+def test_split_can_preserve_legacy_floor_rounding():
+    nearest = train_validation_split(
+        np.arange(10),
+        np.arange(10),
+        validation_fraction=0.15,
+    )
+    floored = train_validation_split(
+        np.arange(10),
+        np.arange(10),
+        validation_fraction=0.15,
+        rounding="floor",
+    )
+
+    assert nearest.metadata.validation_size == 2
+    assert floored.metadata.validation_size == 1
+    assert floored.X_train.tolist() == list(range(9))
+    assert floored.X_val.tolist() == [9]
+
+
 def test_tiny_dataset_skips_when_validation_is_required():
     split = train_validation_split(
         np.asarray([1]),
@@ -140,6 +159,7 @@ def test_split_rejects_invalid_arguments():
         {"validation_fraction": 1},
         {"min_train": 0},
         {"min_val": 0},
+        {"rounding": "ceiling"},
     ]
 
     for kwargs in invalid_cases:
