@@ -85,6 +85,7 @@ def train_validation_split(
     min_train=1,
     min_val=1,
     allow_no_validation=False,
+    rounding="nearest",
 ):
     """Split arrays safely, avoiding empty train or validation sets."""
     if strategy not in {"tail", "random"}:
@@ -95,6 +96,8 @@ def train_validation_split(
         raise ValueError("min_train must be at least 1.")
     if min_val < 1:
         raise ValueError("min_val must be at least 1.")
+    if rounding not in {"nearest", "floor"}:
+        raise ValueError("rounding must be one of 'nearest' or 'floor'.")
 
     num_samples = _length(X)
     if _length(y) != num_samples:
@@ -147,7 +150,13 @@ def train_validation_split(
             metadata,
         )
 
-    validation_size = max(min_val, int(round(num_samples * validation_fraction)))
+    scaled_validation_size = num_samples * validation_fraction
+    validation_size = (
+        int(scaled_validation_size)
+        if rounding == "floor"
+        else int(round(scaled_validation_size))
+    )
+    validation_size = max(min_val, validation_size)
     validation_size = min(validation_size, num_samples - min_train)
     train_size = num_samples - validation_size
 
