@@ -143,8 +143,8 @@ class WindowFeatureExtractor(nn.Module):
         centered = values - mean
         differences = values.diff(dim=1)
         absolute_differences = differences.abs()
-        quartiles = torch.quantile(
-            values, values.new_tensor([0.25, 0.75]), dim=1
+        quantiles = torch.quantile(
+            values, values.new_tensor([0.25, 0.5, 0.75]), dim=1
         ).transpose(0, 1)
 
         time = torch.linspace(
@@ -187,8 +187,8 @@ class WindowFeatureExtractor(nn.Module):
                 values.std(dim=1, unbiased=False, keepdim=True),
                 values.amin(dim=1, keepdim=True),
                 values.amax(dim=1, keepdim=True),
-                values.median(dim=1, keepdim=True).values,
-                quartiles[:, 1:] - quartiles[:, :1],
+                quantiles[:, 1:2],
+                quantiles[:, 2:] - quantiles[:, :1],
                 torch.linalg.vector_norm(values, dim=1, keepdim=True)
                 / math.sqrt(self.sequence_length),
                 centered.abs().mean(dim=1, keepdim=True),
