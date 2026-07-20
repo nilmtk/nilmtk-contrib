@@ -3,14 +3,14 @@
 This repository contains maintained NILMTK-compatible disaggregation models.
 Use it to run, test, or contribute an algorithm.
 
-## Which repository should I use?
+## Ecosystem repositories
 
-| Task | Repository |
+| Research task | Repository |
 | --- | --- |
-| Convert or inspect data; work with meters, preprocessing, or metrics | [NILMTK core](https://github.com/nilmtk/nilmtk) |
-| Define appliance names, synonyms, meter relationships, or dataset schema | [NILM Metadata](https://github.com/nilmtk/nilm_metadata) |
-| Run or contribute a disaggregation model | **nilmtk-contrib — this repository** |
-| Run T1/T2/T3 protocols or publish a leaderboard result | [NILMbench](https://github.com/nilmtk/nilmbench) |
+| Dataset conversion, meter access, preprocessing, and metrics | [NILMTK core](https://github.com/nilmtk/nilmtk) |
+| Appliance taxonomy, synonyms, meter relationships, and dataset schema | [NILM Metadata](https://github.com/nilmtk/nilm_metadata) |
+| Disaggregation model implementation and testing | **nilmtk-contrib — this repository** |
+| Fixed T1/T2/T3 evaluation and published result bundles | [NILMbench](https://github.com/nilmtk/nilmbench) |
 
 The [NILMTK start page](https://nilmtk.github.io/) gives the supported install,
 Docker, citation, and contribution routes for the whole ecosystem.

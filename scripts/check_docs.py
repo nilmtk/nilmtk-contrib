@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 
 REQUIRED_TEXT = (
+    "Dataset conversion, meter access, preprocessing, and metrics",
+    "Appliance taxonomy, synonyms, meter relationships, and dataset schema",
+    "Disaggregation model implementation and testing",
+    "Fixed T1/T2/T3 evaluation and published result bundles",
     "https://nilmtk.github.io/",
     "https://github.com/nilmtk/nilmtk",
     "https://github.com/nilmtk/nilm_metadata",
