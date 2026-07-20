@@ -34,6 +34,7 @@ class _AFHMMParameters:
     state_means: tuple[float, ...]
     initial_probabilities: tuple[float, ...]
     transition_probabilities: tuple[tuple[float, ...], ...]
+    background_mean: float
     fit_loss_history: tuple[float, ...]
     fit_iterations: int
     fit_converged: bool
@@ -53,7 +54,7 @@ class TorchAFHMMInferenceDiagnostics:
 
 
 _ARTIFACT_FILENAME = "torch_afhmm.json"
-_ARTIFACT_SCHEMA_VERSION = 1
+_ARTIFACT_SCHEMA_VERSION = 2
 _CONFIG_FIELDS = (
     "num_states",
     "pseudocount",
@@ -113,6 +114,7 @@ def _validate_fitted_model(model, *, num_states):
         left >= right for left, right in zip(model.state_means, model.state_means[1:])
     ):
         raise ValueError("state_means must be finite, nonnegative, and increasing.")
+    _finite_number("background_mean", model.background_mean, positive=False)
     if (
         not isinstance(model.fit_converged, bool)
         or isinstance(model.fit_iterations, bool)
@@ -154,6 +156,7 @@ def _parameters_from_payload(payload, *, num_states):
             transition_probabilities=tuple(
                 tuple(row) for row in payload["transition_probabilities"]
             ),
+            background_mean=payload["background_mean"],
             fit_loss_history=tuple(payload["fit_loss_history"]),
             fit_iterations=payload["fit_iterations"],
             fit_converged=payload["fit_converged"],
@@ -166,7 +169,7 @@ def _parameters_from_payload(payload, *, num_states):
     return parameters
 
 
-def _fitted_record(fit, *, num_samples, num_chunks):
+def _fitted_record(fit, *, background_mean, num_samples, num_chunks):
     parameters = fit.parameters
     record = _AFHMMParameters(
         state_means=tuple(float(value) for value in parameters.state_means),
@@ -177,6 +180,7 @@ def _fitted_record(fit, *, num_samples, num_chunks):
             tuple(float(value) for value in row)
             for row in parameters.transition_probabilities
         ),
+        background_mean=background_mean,
         fit_loss_history=fit.loss_history,
         fit_iterations=fit.iterations,
         fit_converged=fit.converged,
@@ -185,6 +189,20 @@ def _fitted_record(fit, *, num_samples, num_chunks):
     )
     _validate_fitted_model(record, num_states=len(record.state_means))
     return record
+
+
+def _background_mean(mains, training_frames):
+    appliance_names = tuple(sorted(training_frames))
+    residuals = []
+    for chunk_index, main in enumerate(mains):
+        modeled = torch.stack(
+            [training_frames[name][chunk_index] for name in appliance_names]
+        ).sum(dim=0)
+        residuals.append(main - modeled)
+    mean = float(torch.cat(residuals).mean())
+    if not math.isfinite(mean):
+        raise ValueError("Training residual background mean must be finite.")
+    return max(0.0, mean)
 
 
 class TorchAFHMM(TorchStateSpaceDisaggregator):
@@ -344,6 +362,7 @@ class TorchAFHMM(TorchStateSpaceDisaggregator):
             raise ValueError("Training requires at least one appliance.")
 
         training_frames = {}
+        aligned_mains = None
         for entry in appliance_entries:
             try:
                 appliance_name, frames = entry
@@ -363,11 +382,14 @@ class TorchAFHMM(TorchStateSpaceDisaggregator):
                 raise TypeError(
                     f"Training frames for {appliance_name!r} must be a sequence."
                 )
-            _mains, targets = aligned_power_windows(
+            mains, targets = aligned_power_windows(
                 main_frames, list(frames), appliance_name
             )
+            if aligned_mains is None:
+                aligned_mains = mains
             training_frames[appliance_name] = targets
 
+        background_mean = _background_mean(aligned_mains, training_frames)
         fitted = OrderedDict()
         for appliance_name in sorted(training_frames):
             targets = tuple(
@@ -382,6 +404,7 @@ class TorchAFHMM(TorchStateSpaceDisaggregator):
             )
             fitted[appliance_name] = _fitted_record(
                 fit,
+                background_mean=background_mean,
                 num_samples=sum(values.numel() for values in targets),
                 num_chunks=len(targets),
             )
@@ -400,6 +423,19 @@ class TorchAFHMM(TorchStateSpaceDisaggregator):
             raise ValueError("do_preprocessing must be a boolean.")
         models = self.require_models(model)
         appliance_names = tuple(sorted(models))
+        background_mean = models[appliance_names[0]].background_mean
+        if any(
+            not math.isclose(
+                models[name].background_mean,
+                background_mean,
+                rel_tol=1e-12,
+                abs_tol=1e-9,
+            )
+            for name in appliance_names[1:]
+        ):
+            raise ValueError(
+                "TorchAFHMM appliance models must share one background_mean."
+            )
         state_means = tuple(
             torch.tensor(
                 models[name].state_means, dtype=torch.float64, device=self.device
@@ -451,8 +487,9 @@ class TorchAFHMM(TorchStateSpaceDisaggregator):
                     )
                 )
                 continue
-            observations = torch.as_tensor(
-                values, dtype=torch.float64, device=self.device
+            observations = (
+                torch.as_tensor(values, dtype=torch.float64, device=self.device)
+                - background_mean
             )
             decoded = factorial_hmm_coordinate_viterbi(
                 observations,
