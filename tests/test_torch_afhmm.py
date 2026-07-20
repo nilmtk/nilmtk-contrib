@@ -1,4 +1,5 @@
 import inspect
+from dataclasses import replace
 from itertools import pairwise
 import json
 from pathlib import Path
@@ -66,6 +67,7 @@ def test_fit_learns_ordered_normalized_hmms_and_preserves_chunk_boundaries():
     assert model.models["fridge"].state_means == pytest.approx((0.0, 80.0))
     assert model.models["kettle"].state_means == pytest.approx((0.0, 30.0))
     for fitted in model.models.values():
+        assert fitted.background_mean == 0.0
         assert sum(fitted.initial_probabilities) == pytest.approx(1.0)
         assert all(
             sum(row) == pytest.approx(1.0) for row in fitted.transition_probabilities
@@ -105,6 +107,42 @@ def test_joint_inference_recovers_both_appliances_with_diagnostics():
         assert diagnostics.iterations == len(diagnostics.score_history) - 1
         assert diagnostics.score == diagnostics.score_history[-1]
         assert all(right >= left for left, right in pairwise(diagnostics.score_history))
+
+
+def test_shared_residual_background_is_learned_and_removed_before_decoding():
+    mains, appliances = _training_chunks()
+    background = 250.0
+    offset_mains = [frame.assign(power=frame["power"] + background) for frame in mains]
+    model = TorchAFHMM(_params())
+
+    model.partial_fit(offset_mains, appliances)
+    predictions = model.disaggregate_chunk(offset_mains)
+
+    assert {fitted.background_mean for fitted in model.models.values()} == {background}
+    expected_by_name = {name: frames for name, frames in appliances}
+    for chunk_index, prediction in enumerate(predictions):
+        for name in prediction:
+            assert prediction[name].to_numpy() == pytest.approx(
+                expected_by_name[name][chunk_index]["power"].to_numpy()
+            )
+
+
+def test_negative_mean_residual_is_clamped_to_physical_zero():
+    mains, appliances = _training_chunks()
+    understated_mains = [frame.assign(power=0.0) for frame in mains]
+    model = TorchAFHMM(_params())
+
+    model.partial_fit(understated_mains, appliances)
+
+    assert {fitted.background_mean for fitted in model.models.values()} == {0.0}
+
+
+def test_background_fit_rejects_overflow_in_combined_targets():
+    mains = (torch.zeros(2, dtype=torch.float64),)
+    huge = (torch.full((2,), 1e308, dtype=torch.float64),)
+
+    with pytest.raises(ValueError, match="background mean must be finite"):
+        afhmm_module._background_mean(mains, {"a": huge, "b": huge})
 
 
 def test_inference_decodes_each_full_chunk_without_artificial_resets(monkeypatch):
@@ -311,6 +349,14 @@ def test_external_model_mapping_is_validated_sorted_and_detached():
     external["new"] = trained.models["fridge"]
     assert "new" not in fresh.models
 
+    inconsistent = dict(trained.models)
+    inconsistent["kettle"] = replace(
+        inconsistent["kettle"],
+        background_mean=inconsistent["kettle"].background_mean + 1.0,
+    )
+    with pytest.raises(ValueError, match="share one background_mean"):
+        fresh.disaggregate_chunk([mains[0]], model=inconsistent)
+
 
 def test_iteration_limit_can_warn_or_fail_on_unconfirmed_convergence():
     mains, appliances = _training_chunks()
@@ -413,6 +459,10 @@ def test_persistence_contracts_require_trained_model_and_directory(tmp_path):
             "transition_probabilities",
         ),
         (
+            lambda payload: payload["models"]["fridge"].update(background_mean=-1.0),
+            "background_mean",
+        ),
+        (
             lambda payload: payload["models"]["fridge"].update(state_means=[80.0, 0.0]),
             "increasing",
         ),
@@ -498,8 +548,8 @@ def test_strict_json_loader_rejects_duplicate_keys_nan_and_bad_syntax(tmp_path):
     valid = artifact.read_text(encoding="utf-8")
     corruptions = [
         valid.replace(
-            '"schema_version": 1',
-            '"schema_version": 1, "schema_version": 1',
+            '"schema_version": 2',
+            '"schema_version": 2, "schema_version": 2',
             1,
         ),
         valid.replace('"noise_std": 1.0', '"noise_std": NaN', 1),
