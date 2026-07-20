@@ -23,7 +23,7 @@ class ModelSpec:
 DISAGGREGATE_MODEL_SPECS = (
     ModelSpec("classical", "nilmtk_contrib.disaggregate", "AFHMM", "nilmtk_contrib.disaggregate.afhmm", trainable=False),
     ModelSpec("classical", "nilmtk_contrib.disaggregate", "AFHMM_SAC", "nilmtk_contrib.disaggregate.afhmm_sac", trainable=False),
-    ModelSpec("classical", "nilmtk_contrib.disaggregate", "DSC", "nilmtk_contrib.disaggregate.dsc", trainable=False),
+    ModelSpec("torch", "nilmtk_contrib.disaggregate", "DSC", "nilmtk_contrib.disaggregate.dsc", min_sequence_length=120, trainable=False),
 )
 
 
@@ -75,6 +75,14 @@ def import_or_skip(spec):
     return getattr(module, spec.class_name)
 
 
+def instantiate_for_smoke(spec, params):
+    cls = import_or_skip(spec)
+    if spec.module_name == "nilmtk_contrib.disaggregate.dsc":
+        with pytest.warns(FutureWarning, match="maintained PyTorch implementation"):
+            return cls(params)
+    return cls(params)
+
+
 def synthetic_nilmtk_chunks(sequence_length, num_windows=4):
     total_length = sequence_length * num_windows
     t = np.arange(total_length, dtype=np.float32)
@@ -89,7 +97,7 @@ def synthetic_nilmtk_chunks(sequence_length, num_windows=4):
 
 def smoke_params(spec, epochs):
     sequence_length = spec.min_sequence_length
-    return {
+    params = {
         "sequence_length": sequence_length,
         "n_epochs": epochs,
         "batch_size": 32,
@@ -111,6 +119,25 @@ def smoke_params(spec, epochs):
         "classification_weight": 1.0,
         "regression_weight": 1.0,
     }
+    if spec.backend == "classical":
+        params.update(
+            {
+                "time_period": 20,
+                "default_num_states": 2,
+                "max_workers": 1,
+            }
+        )
+    if spec.module_name == "nilmtk_contrib.disaggregate.dsc":
+        params.update(
+            {
+                "shape": 20,
+                "discriminative_iterations": 1,
+                "n_components": 2,
+                "discriminative_learning_rate": 1e-9,
+                "sparsity_coefficient": 0.1,
+            }
+        )
+    return params
 
 
 def assert_prediction_frames(predictions, appliance="fridge"):

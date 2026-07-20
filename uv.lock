@@ -630,7 +630,6 @@ torch = [
     { name = "nilmtk" },
     { name = "numpy" },
     { name = "pandas" },
-    { name = "scikit-learn" },
     { name = "torch" },
     { name = "tqdm" },
 ]
@@ -674,7 +673,6 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.0.280" },
     { name = "scikit-learn", marker = "extra == 'all'" },
     { name = "scikit-learn", marker = "extra == 'classical'" },
-    { name = "scikit-learn", marker = "extra == 'torch'" },
     { name = "scipy", marker = "extra == 'all'" },
     { name = "scipy", marker = "extra == 'classical'" },
     { name = "torch", marker = "extra == 'all'", specifier = ">=2.0,<2.7" },

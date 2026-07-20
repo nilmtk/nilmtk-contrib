@@ -3,7 +3,7 @@ import pytest
 from model_smoke_helpers import (
     ALL_MODEL_SPECS,
     assert_prediction_frames,
-    import_or_skip,
+    instantiate_for_smoke,
     load_real_dataset_chunks,
     smoke_params,
 )
@@ -28,7 +28,6 @@ def _skip_if_real_smoke_unavailable(config, spec):
 def test_model_contract_on_real_dataset(spec, model_smoke_config):
     _skip_if_real_smoke_unavailable(model_smoke_config, spec)
     appliance = model_smoke_config["real_dataset_appliance"]
-    cls = import_or_skip(spec)
     params = smoke_params(spec, model_smoke_config["epochs"])
     params["appliance_params"] = {
         appliance: {
@@ -40,27 +39,13 @@ def test_model_contract_on_real_dataset(spec, model_smoke_config):
             "threshold": 40.0,
         }
     }
-    if spec.backend == "classical":
-        params.update(
-            {
-                "time_period": 20,
-                "default_num_states": 2,
-                "max_workers": 1,
-                "shape": 20,
-                "iterations": 1,
-                "n_components": 2,
-                "learning_rate": 1e-9,
-                "sparsity_coef": 0.1,
-            }
-        )
-
     mains, appliances = load_real_dataset_chunks(
         model_smoke_config["real_dataset_path"],
         model_smoke_config["real_dataset_building"],
         appliance,
         spec.min_sequence_length,
     )
-    model = cls(params)
+    model = instantiate_for_smoke(spec, params)
     model.partial_fit(mains, appliances)
     predictions = model.disaggregate_chunk(mains)
     assert_prediction_frames(predictions, appliance=appliance)

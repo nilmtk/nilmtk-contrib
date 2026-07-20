@@ -22,7 +22,7 @@ _EXPORTS = {
     ),
     "BERT": ("nilmtk_contrib.torch.bert", "BERT", "torch"),
     "DAE": ("nilmtk_contrib.torch.dae", "DAE", "torch"),
-    "DSC": ("nilmtk_contrib.disaggregate.dsc", "DSC", "classical"),
+    "DSC": ("nilmtk_contrib.disaggregate.dsc", "DSC", "torch"),
     "RNN": ("nilmtk_contrib.torch.rnn", "RNN", "torch"),
     "RNN_attention": (
         "nilmtk_contrib.torch.rnn_attention",
