@@ -33,6 +33,7 @@ DEFAULTS_BY_MODULE = {
     "nilmtk_contrib.torch.conv_lstm": ExpectedDefaults(99, 10, 512, 1800, 600),
     "nilmtk_contrib.torch.dae": ExpectedDefaults(99, 10, 512, 1000, 600),
     "nilmtk_contrib.torch.dlinear": ExpectedDefaults(299, 10, 128, 1800, 600),
+    "nilmtk_contrib.torch.feature_mlp": ExpectedDefaults(299, 10, 128, 1800, 600),
     "nilmtk_contrib.torch.msdc": ExpectedDefaults(99, 50, 256, 1800, 600),
     "nilmtk_contrib.torch.msdc_without_crf": ExpectedDefaults(99, 50, 256, 1800, 600),
     "nilmtk_contrib.torch.moderntcn": ExpectedDefaults(299, 10, 128, 1800, 600),

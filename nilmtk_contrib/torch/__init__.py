@@ -10,6 +10,7 @@ _EXPORTS = {
     "DAE": ("nilmtk_contrib.torch.dae", "DAE"),
     "DLinear": ("nilmtk_contrib.torch.dlinear", "DLinear"),
     "DSC": ("nilmtk_contrib.torch.dsc", "DSC"),
+    "FeatureMLP": ("nilmtk_contrib.torch.feature_mlp", "FeatureMLP"),
     "HSMM": ("nilmtk_contrib.torch.hsmm", "HSMM"),
     "MSDC": ("nilmtk_contrib.torch.msdc", "MSDC"),
     "ModernTCN": ("nilmtk_contrib.torch.moderntcn", "ModernTCN"),
