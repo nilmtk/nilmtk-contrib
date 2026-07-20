@@ -307,40 +307,70 @@ def _fit_discriminative_dictionary(
 ) -> tuple[torch.Tensor, float]:
     dictionary = reconstruction_dictionary.clone()
     fallback = dictionary.mean(dim=1)
+    validation_windows = int(aggregate.shape[1] * 0.2)
+    if validation_windows:
+        train_aggregate = aggregate[:, :-validation_windows]
+        validation_aggregate = aggregate[:, -validation_windows:]
+        train_target_codes = target_codes[:, :-validation_windows]
+        validation_target_codes = target_codes[:, -validation_windows:]
+    else:
+        train_aggregate = validation_aggregate = aggregate
+        train_target_codes = validation_target_codes = target_codes
     predicted = nonnegative_sparse_code(
         dictionary,
-        aggregate,
+        train_aggregate,
         sparsity_coefficient=sparsity_coefficient,
         max_iterations=sparse_code_iterations,
         tolerance=tolerance,
     )
-    best_error = float(torch.mean(torch.abs(predicted.codes - target_codes)))
+    validation_prediction = predicted
+    if validation_windows:
+        validation_prediction = nonnegative_sparse_code(
+            dictionary,
+            validation_aggregate,
+            sparsity_coefficient=sparsity_coefficient,
+            max_iterations=sparse_code_iterations,
+            tolerance=tolerance,
+        )
+    best_error = float(
+        torch.mean(torch.abs(validation_prediction.codes - validation_target_codes))
+    )
     best_dictionary = dictionary.clone()
 
     for _ in range(discriminative_iterations):
         predicted_codes = predicted.codes
-        predicted_residual = aggregate - dictionary @ predicted_codes
-        target_residual = aggregate - dictionary @ target_codes
-        gradient = (
-            predicted_residual @ predicted_codes.T - target_residual @ target_codes.T
+        candidate = _discriminative_dictionary_step(
+            train_aggregate,
+            dictionary,
+            predicted_codes,
+            train_target_codes,
+            learning_rate=learning_rate,
+            fallback=fallback,
         )
-        curvature = torch.square(torch.linalg.matrix_norm(predicted_codes, ord=2))
-        curvature += torch.square(torch.linalg.matrix_norm(target_codes, ord=2))
-        if float(curvature) <= torch.finfo(dictionary.dtype).eps:
+        if candidate is None:
             break
-        candidate = dictionary - learning_rate * gradient / curvature
-        candidate = _normalize_dictionary(candidate, fallback)
         change = torch.linalg.vector_norm(candidate - dictionary)
         scale = 1.0 + torch.linalg.vector_norm(dictionary)
         dictionary = candidate
         predicted = nonnegative_sparse_code(
             dictionary,
-            aggregate,
+            train_aggregate,
             sparsity_coefficient=sparsity_coefficient,
             max_iterations=sparse_code_iterations,
             tolerance=tolerance,
         )
-        activation_error = float(torch.mean(torch.abs(predicted.codes - target_codes)))
+        validation_prediction = predicted
+        if validation_windows:
+            validation_prediction = nonnegative_sparse_code(
+                dictionary,
+                validation_aggregate,
+                sparsity_coefficient=sparsity_coefficient,
+                max_iterations=sparse_code_iterations,
+                tolerance=tolerance,
+            )
+        activation_error = float(
+            torch.mean(torch.abs(validation_prediction.codes - validation_target_codes))
+        )
         if activation_error < best_error:
             best_error = activation_error
             best_dictionary = dictionary.clone()
@@ -348,6 +378,24 @@ def _fit_discriminative_dictionary(
             break
 
     return best_dictionary, best_error
+
+
+def _discriminative_dictionary_step(
+    aggregate: torch.Tensor,
+    dictionary: torch.Tensor,
+    predicted_codes: torch.Tensor,
+    target_codes: torch.Tensor,
+    *,
+    learning_rate: float,
+    fallback: torch.Tensor,
+) -> torch.Tensor | None:
+    """Apply the DSC ``T1 - T2`` basis update used by the legacy implementation."""
+    predicted_residual = aggregate - dictionary @ predicted_codes
+    target_residual = aggregate - dictionary @ target_codes
+    gradient = predicted_residual @ predicted_codes.T - target_residual @ target_codes.T
+    if float(torch.linalg.vector_norm(gradient)) <= torch.finfo(dictionary.dtype).eps:
+        return None
+    return _normalize_dictionary(dictionary - learning_rate * gradient, fallback)
 
 
 def _as_power_tensor(frame, label, *, device, allow_empty=False) -> torch.Tensor:
@@ -539,7 +587,12 @@ class DSC(TorchStateSpaceDisaggregator):
         )
         self.discriminative_iterations = _non_negative_integer(
             "discriminative_iterations",
-            get_param(params, "discriminative_iterations", 20),
+            get_param(
+                params,
+                "discriminative_iterations",
+                20,
+                aliases=("iterations",),
+            ),
         )
         self.sparse_code_iterations = _positive_integer(
             "sparse_code_iterations",
@@ -550,7 +603,12 @@ class DSC(TorchStateSpaceDisaggregator):
         )
         self.discriminative_learning_rate = _positive_finite(
             "discriminative_learning_rate",
-            get_param(params, "discriminative_learning_rate", 1.0),
+            get_param(
+                params,
+                "discriminative_learning_rate",
+                1e-9,
+                aliases=("learning_rate",),
+            ),
         )
         self.enforce_aggregate = get_param(params, "enforce_aggregate", True)
         if not isinstance(self.enforce_aggregate, bool):
@@ -561,6 +619,33 @@ class DSC(TorchStateSpaceDisaggregator):
             raise ValueError("DSC does not support chunk_wise_training.")
         if self.load_model_path:
             self.load_model(self.load_model_path)
+
+    @property
+    def iterations(self):
+        """Legacy name for the discriminative update count."""
+        return self.discriminative_iterations
+
+    @iterations.setter
+    def iterations(self, value):
+        self.discriminative_iterations = _non_negative_integer("iterations", value)
+
+    @property
+    def learning_rate(self):
+        """Legacy name for the discriminative update step size."""
+        return self.discriminative_learning_rate
+
+    @learning_rate.setter
+    def learning_rate(self, value):
+        self.discriminative_learning_rate = _positive_finite("learning_rate", value)
+
+    @property
+    def sparsity_coef(self):
+        """Legacy name for the non-negative LASSO coefficient."""
+        return self.sparsity_coefficient
+
+    @sparsity_coef.setter
+    def sparsity_coef(self, value):
+        self.sparsity_coefficient = _non_negative_finite("sparsity_coef", value)
 
     def _validate_model_record(self, appliance_name, model):
         del appliance_name
