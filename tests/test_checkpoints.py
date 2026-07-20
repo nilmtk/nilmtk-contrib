@@ -7,6 +7,7 @@ from nilmtk_contrib.utils.checkpoints import (
     SCHEMA_VERSION,
     build_metadata,
     collect_dependencies,
+    load_json_strict,
     load_metadata,
     load_torch_state,
     managed_checkpoint_path,
@@ -85,6 +86,37 @@ def test_atomic_json_is_deterministic_host_readable_and_rejects_nan(tmp_path):
     with pytest.raises(ValueError, match="Out of range float values"):
         save_json_atomic(path, {"invalid": float("nan")})
     assert path.read_bytes() == first
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ('{"key": 1, "key": 2}', "Duplicate JSON key"),
+        ('{"value": NaN}', "Invalid JSON constant"),
+        ('{"missing":', "Expecting value"),
+    ],
+)
+def test_strict_json_loader_rejects_ambiguous_or_invalid_artifacts(
+    tmp_path, content, message
+):
+    path = tmp_path / "artifact.json"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="valid test artifact") as error:
+        load_json_strict(path, description="test artifact")
+
+    assert message in str(error.value)
+
+
+def test_strict_json_loader_returns_valid_content_and_wraps_io_errors(tmp_path):
+    path = tmp_path / "artifact.json"
+    path.write_text('{"value": 3}', encoding="utf-8")
+
+    assert load_json_strict(path) == {"value": 3}
+    with pytest.raises(ValueError, match="valid missing artifact"):
+        load_json_strict(
+            tmp_path / "missing.json", description="missing artifact"
+        )
 
 
 def test_load_metadata_rejects_missing_fields(tmp_path):

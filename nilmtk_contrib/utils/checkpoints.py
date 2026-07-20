@@ -142,6 +142,33 @@ def save_json_atomic(path, payload):
             temporary.unlink(missing_ok=True)
 
 
+def _reject_json_constant(value):
+    raise ValueError(f"Invalid JSON constant {value!r}.")
+
+
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key {key!r}.")
+        result[key] = value
+    return result
+
+
+def load_json_strict(path, *, description="JSON artifact"):
+    """Load JSON while rejecting duplicate keys and non-standard constants."""
+
+    try:
+        with Path(path).open(encoding="utf-8") as handle:
+            return json.load(
+                handle,
+                parse_constant=_reject_json_constant,
+                object_pairs_hook=_unique_json_object,
+            )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"Could not load a valid {description}: {exc}") from exc
+
+
 def load_metadata(path, *, expected_model_class=None, expected_backend=None):
     """Load and validate persistence metadata."""
     metadata_path = Path(path) / METADATA_FILENAME

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, fields
-import json
 from numbers import Integral, Real
 import math
 from pathlib import Path
@@ -17,8 +16,12 @@ import torch
 from nilmtk_contrib.torch._base import TorchStateSpaceDisaggregator
 from nilmtk_contrib.torch._data import power_vector
 from nilmtk_contrib.torch._semi_markov import semi_markov_viterbi
+from nilmtk_contrib.torch._state_space_data import (
+    aligned_power_windows,
+    frame_index,
+)
 from nilmtk_contrib.torch._state_fitting import assign_states, fit_state_means
-from nilmtk_contrib.utils.checkpoints import save_json_atomic
+from nilmtk_contrib.utils.checkpoints import load_json_strict, save_json_atomic
 from nilmtk_contrib.utils.params import get_param, validate_positive_int
 
 
@@ -245,63 +248,6 @@ def _parameters_from_payload(payload, *, num_states, max_duration):
     return parameters
 
 
-def _reject_json_constant(value):
-    raise ValueError(f"Invalid JSON constant {value!r}.")
-
-
-def _unique_json_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"Duplicate JSON key {key!r}.")
-        result[key] = value
-    return result
-
-
-def _as_power_tensor(frame, label) -> torch.Tensor:
-    values = power_vector(frame, label)
-    if bool((values < 0).any()):
-        raise ValueError(f"{label} must be non-negative.")
-    return torch.as_tensor(values, dtype=torch.float64, device="cpu").clone()
-
-
-def _frame_index(frame, length):
-    index = getattr(frame, "index", None)
-    return index if index is not None else pd.RangeIndex(length)
-
-
-def _aligned_windows(main_frames, target_frames, appliance_name):
-    if len(main_frames) != len(target_frames):
-        raise ValueError(
-            f"{appliance_name!r} has {len(target_frames)} chunks but mains has "
-            f"{len(main_frames)}."
-        )
-    mains = []
-    targets = []
-    for index, (main_frame, target_frame) in enumerate(zip(main_frames, target_frames)):
-        main = _as_power_tensor(main_frame, f"mains chunk {index}")
-        target = _as_power_tensor(
-            target_frame, f"{appliance_name!r} target chunk {index}"
-        )
-        if main.numel() != target.numel():
-            raise ValueError(
-                f"{appliance_name!r} target chunk {index} length does not match mains."
-            )
-        main_index = getattr(main_frame, "index", None)
-        target_index = getattr(target_frame, "index", None)
-        if (
-            main_index is not None
-            and target_index is not None
-            and not main_index.equals(target_index)
-        ):
-            raise ValueError(
-                f"{appliance_name!r} target chunk {index} index does not match mains."
-            )
-        mains.append(main)
-        targets.append(target)
-    return tuple(mains), tuple(targets)
-
-
 def _runs(states: torch.Tensor) -> tuple[tuple[int, int], ...]:
     labels = states.tolist()
     runs = []
@@ -506,15 +452,7 @@ class HSMM(TorchStateSpaceDisaggregator):
         if source is None:
             raise ValueError("HSMM load_model requires a checkpoint directory.")
         artifact_path = Path(source) / _ARTIFACT_FILENAME
-        try:
-            with artifact_path.open(encoding="utf-8") as handle:
-                payload = json.load(
-                    handle,
-                    parse_constant=_reject_json_constant,
-                    object_pairs_hook=_unique_json_object,
-                )
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"Could not load a valid HSMM artifact: {exc}") from exc
+        payload = load_json_strict(artifact_path, description="HSMM artifact")
         if not isinstance(payload, Mapping) or set(payload) != {
             "schema_version",
             "model_class",
@@ -610,7 +548,9 @@ class HSMM(TorchStateSpaceDisaggregator):
                 raise TypeError(
                     f"Training frames for {appliance_name!r} must be a sequence."
                 )
-            mains, targets = _aligned_windows(main_frames, list(frames), appliance_name)
+            mains, targets = aligned_power_windows(
+                main_frames, list(frames), appliance_name
+            )
             fitted[appliance_name] = _fit_hsmm(
                 mains,
                 targets,
@@ -638,7 +578,7 @@ class HSMM(TorchStateSpaceDisaggregator):
             values = power_vector(frame, f"mains chunk {chunk_index}", allow_empty=True)
             if bool((values < 0).any()):
                 raise ValueError(f"mains chunk {chunk_index} must be non-negative.")
-            output_index = _frame_index(frame, len(values))
+            output_index = frame_index(frame, len(values))
             columns = OrderedDict()
             for appliance_name, fitted in models.items():
                 prediction = (
