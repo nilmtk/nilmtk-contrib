@@ -342,3 +342,23 @@ def test_cpu_and_cuda_feature_extraction_agree():
     assert torch.allclose(cpu, cuda, atol=1e-5, rtol=1e-5)
     with pytest.raises(ValueError, match="model is on cpu"):
         FeatureMLPNetwork(9)(inputs.cuda())
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_feature_extraction_obeys_strict_determinism():
+    inputs = torch.tensor(
+        [[[4.0, 1.0, 4.0, 2.0, 4.0, 3.0, 2.0, 1.0, 4.0]]],
+        device="cuda",
+    )
+    was_enabled = torch.are_deterministic_algorithms_enabled()
+    was_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    try:
+        torch.use_deterministic_algorithms(True)
+        first = WindowFeatureExtractor(9).cuda()(inputs)
+        second = WindowFeatureExtractor(9).cuda()(inputs)
+    finally:
+        torch.use_deterministic_algorithms(was_enabled, warn_only=was_warn_only)
+
+    assert torch.equal(first, second)
+    median = PREDICTION_FEATURE_NAMES.index("median")
+    assert first[0, median] == 3.0
