@@ -18,6 +18,7 @@ from model_smoke_helpers import (
 def test_disaggregate_registry_matches_comprehensive_model_specs():
     package = importlib.import_module("nilmtk_contrib.disaggregate")
     expected = {spec.class_name for spec in DISAGGREGATE_MODEL_SPECS}
+    expected.update(package._TORCH_REDIRECTS)
     actual = set(package._EXPORTS)
     assert actual == expected
     assert set(package.__all__) == expected | {"Disaggregator"}

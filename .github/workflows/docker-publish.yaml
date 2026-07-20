@@ -13,7 +13,6 @@ on:
         options:
           - all
           - torch
-          - tensorflow
           - classical
 
 permissions:
@@ -44,7 +43,7 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             extras="[\"${INPUT_EXTRA}\"]"
           elif [[ "$GIT_REF" == refs/tags/v* ]]; then
-            extras='["all","torch","tensorflow","classical"]'
+            extras='["all","torch","classical"]'
           else
             extras='["all"]'
           fi

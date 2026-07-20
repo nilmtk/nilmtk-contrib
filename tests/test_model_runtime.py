@@ -38,7 +38,7 @@ def test_initialize_runtime_preserves_real_persistence_methods():
     assert model.load_model() == "loaded"
 
 
-def test_checkpoint_path_returns_string_for_keras_compatibility():
+def test_checkpoint_path_returns_string_for_model_api_compatibility():
     path = checkpoint_path(".h5")
 
     assert isinstance(path, str)

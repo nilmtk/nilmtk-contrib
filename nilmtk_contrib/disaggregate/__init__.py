@@ -4,8 +4,8 @@ These classes require optional backend dependencies. Importing this package does
 not import PyTorch, cvxpy, hmmlearn, or NILMTK until a class is requested.
 
 Historical package-level neural exports resolve to the maintained PyTorch
-implementations. Direct TensorFlow module paths remain temporarily available for
-source compatibility while the TensorFlow backend is retired.
+implementations. The former TensorFlow implementation modules have been
+retired.
 """
 
 import warnings

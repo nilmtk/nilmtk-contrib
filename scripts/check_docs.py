@@ -92,7 +92,7 @@ def main() -> int:
         errors.append("model table is missing the public MSDC no-CRF module")
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    for extra in ("torch", "tensorflow", "classical", "all", "nilm"):
+    for extra in ("torch", "classical", "all", "nilm"):
         if f"{extra} = [" not in pyproject:
             errors.append(f"documented dependency extra is not defined: {extra}")
 

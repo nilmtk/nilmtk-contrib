@@ -19,7 +19,7 @@ def pytest_addoption(parser):
     group.addoption(
         "--model-smoke-backend",
         action="append",
-        choices=("classical", "tensorflow", "torch"),
+        choices=("classical", "torch"),
         default=[],
         help=(
             "Limit --run-model-smoke to one or more backends. "
@@ -66,7 +66,7 @@ def model_smoke_config(pytestconfig):
     backends = set(pytestconfig.getoption("--model-smoke-backend") or [])
     return {
         "enabled": pytestconfig.getoption("--run-model-smoke"),
-        "backends": backends or {"classical", "tensorflow", "torch"},
+        "backends": backends or {"classical", "torch"},
         "epochs": pytestconfig.getoption("--model-smoke-epochs"),
         "real_dataset_path": pytestconfig.getoption("--real-dataset-path"),
         "real_dataset_building": pytestconfig.getoption("--real-dataset-building"),

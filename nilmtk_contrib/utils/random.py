@@ -2,20 +2,28 @@
 
 import random
 
+_SUPPORTED_BACKENDS = frozenset({"python", "numpy", "torch"})
 
-def set_random_seed(seed, backends=("python", "numpy", "torch", "tensorflow")):
+
+def set_random_seed(seed, backends=("python", "numpy", "torch")):
     """Set random seeds for selected backends when they are installed.
 
     This does not force deterministic backend modes because those can have
     significant performance and operator-availability tradeoffs.
     """
+    requested_backends = tuple(backends)
+    unsupported = set(requested_backends).difference(_SUPPORTED_BACKENDS)
+    if unsupported:
+        names = ", ".join(sorted(str(name) for name in unsupported))
+        raise ValueError(f"Unsupported random-seed backend(s): {names}.")
+
     if seed is None:
         return
 
-    if "python" in backends:
+    if "python" in requested_backends:
         random.seed(seed)
 
-    if "numpy" in backends:
+    if "numpy" in requested_backends:
         try:
             import numpy as np
         except ModuleNotFoundError:
@@ -23,7 +31,7 @@ def set_random_seed(seed, backends=("python", "numpy", "torch", "tensorflow")):
         else:
             np.random.seed(seed)
 
-    if "torch" in backends:
+    if "torch" in requested_backends:
         try:
             import torch
         except ModuleNotFoundError:
@@ -32,11 +40,3 @@ def set_random_seed(seed, backends=("python", "numpy", "torch", "tensorflow")):
             torch.manual_seed(seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
-
-    if "tensorflow" in backends:
-        try:
-            import tensorflow as tf
-        except ModuleNotFoundError:
-            pass
-        else:
-            tf.random.set_seed(seed)

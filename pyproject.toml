@@ -29,15 +29,6 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-tensorflow = [
-  "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
-  "numpy>=1.26.0,<2",
-  "pandas",
-  "scikit-learn",
-  "matplotlib",
-  "tensorflow>=2.12.0,<2.16.0",
-  "tensorflow-io-gcs-filesystem==0.31.0"
-]
 torch = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
   "numpy>=1.26.0,<2",
@@ -67,8 +58,6 @@ all = [
   "scikit-learn",
   "scipy",
   "matplotlib",
-  "tensorflow>=2.12.0,<2.16.0",
-  "tensorflow-io-gcs-filesystem==0.31.0",
   "torch>=2.0,<2.7",
   "tqdm>=4.66",
   "cvxpy>=1.0.0,<1.8.0",

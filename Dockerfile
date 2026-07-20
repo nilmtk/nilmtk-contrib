@@ -5,7 +5,6 @@
 #
 # Build a narrower backend image:
 #   docker build -t nilmtk-contrib:torch --build-arg INSTALL_EXTRA=torch .
-#   docker build -t nilmtk-contrib:tensorflow --build-arg INSTALL_EXTRA=tensorflow .
 #   docker build -t nilmtk-contrib:classical --build-arg INSTALL_EXTRA=classical .
 #
 # Include dev/test dependencies:
