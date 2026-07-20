@@ -1,9 +1,8 @@
-"""Exact factorial-HMM primitives for small models and correctness tests.
+"""Exact factorial-HMM construction over the shared exact HMM decoder.
 
-This private module is an oracle for the forthcoming PyTorch AFHMM port.  It
-uses exact joint-state Viterbi decoding, so callers must explicitly bound the
-Cartesian state space.  Transition matrices use the conventional
-``[source_state, destination_state]`` orientation.
+This private module is an oracle for a forthcoming PyTorch AFHMM port. It
+constructs the Cartesian product of appliance states and delegates all path
+inference to :mod:`nilmtk_contrib.torch._hmm`.
 """
 
 from __future__ import annotations
@@ -14,8 +13,14 @@ from typing import Sequence
 
 import torch
 
+from nilmtk_contrib.torch._hmm import (
+    canonicalize_gaussian_hmm,
+    gaussian_log_emissions,
+    hmm_path_score,
+    hmm_viterbi,
+)
 
-_FLOAT_DTYPES = frozenset({torch.float32, torch.float64})
+
 _INTEGER_DTYPES = frozenset(
     {torch.int8, torch.int16, torch.int32, torch.int64, torch.uint8}
 )
@@ -40,47 +45,12 @@ class FactorialHMMViterbiResult:
     score: float
 
 
-def _floating_tensor(name: str, value) -> torch.Tensor:
-    if not isinstance(value, torch.Tensor):
-        raise TypeError(f"{name} must be a torch.Tensor.")
-    if value.dtype not in _FLOAT_DTYPES or value.is_complex():
-        raise TypeError(f"{name} must use torch.float32 or torch.float64.")
-    if not bool(torch.isfinite(value).all()):
-        raise ValueError(f"{name} must contain only finite values.")
-    return value
-
-
-def _validate_probability_vector(name: str, value: torch.Tensor) -> None:
-    if bool((value < 0).any()):
-        raise ValueError(f"{name} must be nonnegative.")
-    tolerance = 1e-6 if value.dtype == torch.float32 else 1e-12
-    if not bool(
-        torch.isclose(value.sum(), value.new_tensor(1.0), atol=tolerance, rtol=0)
-    ):
-        raise ValueError(f"{name} must sum to one.")
-
-
-def _validate_transition_matrix(
-    name: str,
-    value: torch.Tensor,
-    states: int,
-) -> None:
-    if tuple(value.shape) != (states, states):
-        raise ValueError(f"{name} must have shape ({states}, {states}).")
-    if bool((value < 0).any()):
-        raise ValueError(f"{name} must be nonnegative.")
-    tolerance = 1e-6 if value.dtype == torch.float32 else 1e-12
-    expected = torch.ones(states, dtype=value.dtype, device=value.device)
-    if not bool(torch.allclose(value.sum(dim=1), expected, atol=tolerance, rtol=0)):
-        raise ValueError(f"Every row of {name} must sum to one.")
-
-
 def canonicalize_factorial_hmm(
     state_means: Sequence[torch.Tensor],
     initial_probabilities: Sequence[torch.Tensor],
     transition_probabilities: Sequence[torch.Tensor],
 ) -> FactorialHMMParameters:
-    """Validate parameters and sort every appliance state by increasing power."""
+    """Validate appliance HMMs and sort their states by increasing power."""
 
     if not isinstance(state_means, (tuple, list)) or not state_means:
         raise ValueError("state_means must contain at least one appliance.")
@@ -90,67 +60,38 @@ def canonicalize_factorial_hmm(
     if len(transition_probabilities) != appliance_count:
         raise ValueError("transition_probabilities must have one entry per appliance.")
 
-    canonical_means = []
-    canonical_initial = []
-    canonical_transition = []
+    canonical = []
     reference = None
-    for appliance, (means_value, initial_value, transition_value) in enumerate(
+    for appliance, values in enumerate(
         zip(state_means, initial_probabilities, transition_probabilities, strict=True)
     ):
-        means = _floating_tensor(f"state_means[{appliance}]", means_value)
-        initial = _floating_tensor(f"initial_probabilities[{appliance}]", initial_value)
-        transition = _floating_tensor(
-            f"transition_probabilities[{appliance}]", transition_value
-        )
-        if means.ndim != 1 or means.numel() < 2:
-            raise ValueError(
-                f"state_means[{appliance}] must contain at least two states."
-            )
-        if bool((means < 0).any()):
+        try:
+            parameters = canonicalize_gaussian_hmm(*values)
+        except (TypeError, ValueError) as exc:
+            raise type(exc)(f"appliance {appliance}: {exc}") from exc
+        if bool((parameters.state_means < 0).any()):
             raise ValueError(f"state_means[{appliance}] must be nonnegative.")
         if reference is None:
-            reference = means
-        for name, value in (
-            (f"initial_probabilities[{appliance}]", initial),
-            (f"transition_probabilities[{appliance}]", transition),
+            reference = parameters.state_means
+        elif (
+            parameters.state_means.dtype != reference.dtype
+            or parameters.state_means.device != reference.device
         ):
-            if value.dtype != reference.dtype or value.device != reference.device:
-                raise ValueError(
-                    f"{name} must use dtype {reference.dtype} and device "
-                    f"{reference.device}."
-                )
-        if means.dtype != reference.dtype or means.device != reference.device:
             raise ValueError(
                 f"state_means[{appliance}] must use dtype {reference.dtype} and "
                 f"device {reference.device}."
             )
-        states = int(means.numel())
-        if tuple(initial.shape) != (states,):
-            raise ValueError(
-                f"initial_probabilities[{appliance}] must have shape ({states},)."
-            )
-        _validate_probability_vector(f"initial_probabilities[{appliance}]", initial)
-        _validate_transition_matrix(
-            f"transition_probabilities[{appliance}]", transition, states
-        )
-
-        order = torch.argsort(means, stable=True)
-        canonical_means.append(means[order])
-        canonical_initial.append(initial[order])
-        canonical_transition.append(transition[order][:, order])
-
+        canonical.append(parameters)
     return FactorialHMMParameters(
-        state_means=tuple(canonical_means),
-        initial_probabilities=tuple(canonical_initial),
-        transition_probabilities=tuple(canonical_transition),
+        state_means=tuple(item.state_means for item in canonical),
+        initial_probabilities=tuple(item.initial_probabilities for item in canonical),
+        transition_probabilities=tuple(
+            item.transition_probabilities for item in canonical
+        ),
     )
 
 
-def _joint_model(
-    parameters: FactorialHMMParameters,
-    *,
-    max_joint_states: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _joint_model(parameters, *, max_joint_states):
     if isinstance(max_joint_states, bool) or not isinstance(max_joint_states, int):
         raise TypeError("max_joint_states must be an integer.")
     if max_joint_states < 1:
@@ -169,8 +110,8 @@ def _joint_model(
     ]
     joint_states = torch.cartesian_prod(*ranges).reshape(joint_count, -1)
     joint_means = reference.new_zeros(joint_count)
-    joint_initial = reference.new_zeros(joint_count)
-    joint_transition = reference.new_zeros((joint_count, joint_count))
+    initial_scores = reference.new_zeros(joint_count)
+    transition_scores = reference.new_zeros((joint_count, joint_count))
     for appliance, (means, initial, transition) in enumerate(
         zip(
             parameters.state_means,
@@ -181,43 +122,30 @@ def _joint_model(
     ):
         states = joint_states[:, appliance]
         joint_means = joint_means + means[states]
-        joint_initial = joint_initial + torch.log(initial[states])
-        joint_transition = joint_transition + torch.log(
+        initial_scores = initial_scores + torch.log(initial[states])
+        transition_scores = transition_scores + torch.log(
             transition[states[:, None], states[None, :]]
         )
-    return joint_states, joint_means, joint_initial, joint_transition
+    return joint_states, joint_means, initial_scores, transition_scores
 
 
-def _validate_observations(
-    observations,
-    parameters: FactorialHMMParameters,
-    noise_std: float,
-) -> torch.Tensor:
-    values = _floating_tensor("observations", observations)
-    if values.ndim != 1 or values.numel() < 1:
-        raise ValueError("observations must be a nonempty one-dimensional tensor.")
-    reference = parameters.state_means[0]
-    if values.dtype != reference.dtype or values.device != reference.device:
-        raise ValueError(
-            f"observations must use dtype {reference.dtype} and device "
-            f"{reference.device}."
-        )
-    if isinstance(noise_std, bool) or not isinstance(noise_std, (int, float)):
-        raise TypeError("noise_std must be a positive finite number.")
-    if not math.isfinite(noise_std) or noise_std <= 0:
-        raise ValueError("noise_std must be a positive finite number.")
-    return values
-
-
-def _emission_scores(
-    observations: torch.Tensor,
-    joint_means: torch.Tensor,
-    noise_std: float,
-) -> torch.Tensor:
-    scale = observations.new_tensor(noise_std)
-    residual = (observations[:, None] - joint_means[None, :]) / scale
-    normalizer = torch.log(scale) + 0.5 * math.log(2.0 * math.pi)
-    return -0.5 * residual.square() - normalizer
+def _validate_state_indices(state_indices, observations, parameters):
+    if not isinstance(state_indices, torch.Tensor):
+        raise TypeError("state_indices must be a torch.Tensor.")
+    if state_indices.dtype not in _INTEGER_DTYPES or state_indices.ndim != 2:
+        raise TypeError("state_indices must be a two-dimensional integer tensor.")
+    expected_shape = (observations.numel(), len(parameters.state_means))
+    if tuple(state_indices.shape) != expected_shape:
+        raise ValueError(f"state_indices must have shape {expected_shape}.")
+    if state_indices.device != observations.device:
+        raise ValueError(f"state_indices must be on {observations.device}.")
+    for appliance, means in enumerate(parameters.state_means):
+        states = state_indices[:, appliance]
+        if bool(((states < 0) | (states >= means.numel())).any()):
+            raise ValueError(
+                f"state_indices for appliance {appliance} must be between 0 and "
+                f"{means.numel() - 1}."
+            )
 
 
 @torch.no_grad()
@@ -230,39 +158,17 @@ def factorial_hmm_viterbi(
     noise_std: float,
     max_joint_states: int = 512,
 ) -> FactorialHMMViterbiResult:
-    """Decode the exact maximum-probability joint appliance state path."""
+    """Construct the joint HMM and decode its exact maximum-probability path."""
 
     parameters = canonicalize_factorial_hmm(
         state_means, initial_probabilities, transition_probabilities
     )
-    values = _validate_observations(observations, parameters, noise_std)
     joint_states, joint_means, initial, transition = _joint_model(
         parameters, max_joint_states=max_joint_states
     )
-    emissions = _emission_scores(values, joint_means, noise_std)
-
-    time_points, joint_count = emissions.shape
-    scores = emissions.new_empty((time_points, joint_count))
-    backpointers = torch.zeros(
-        (time_points, joint_count), dtype=torch.int64, device=values.device
-    )
-    scores[0] = initial + emissions[0]
-    for time in range(1, time_points):
-        candidates = scores[time - 1][:, None] + transition
-        best_scores, best_sources = torch.max(candidates, dim=0)
-        scores[time] = best_scores + emissions[time]
-        backpointers[time] = best_sources
-
-    final_joint_state = int(torch.argmax(scores[-1]))
-    final_score = scores[-1, final_joint_state]
-    if not bool(torch.isfinite(final_score)):
-        raise ValueError("No valid factorial-HMM path reaches the sequence end.")
-    decoded_joint = torch.empty(time_points, dtype=torch.int64, device=values.device)
-    decoded_joint[-1] = final_joint_state
-    for time in range(time_points - 1, 0, -1):
-        decoded_joint[time - 1] = backpointers[time, decoded_joint[time]]
-
-    state_indices = joint_states[decoded_joint]
+    emissions = gaussian_log_emissions(observations, joint_means, noise_std=noise_std)
+    decoded = hmm_viterbi(emissions, initial, transition)
+    state_indices = joint_states[decoded.states]
     appliance_power = torch.stack(
         [
             means[state_indices[:, appliance]]
@@ -270,12 +176,11 @@ def factorial_hmm_viterbi(
         ],
         dim=1,
     )
-    aggregate_power = appliance_power.sum(dim=1)
     return FactorialHMMViterbiResult(
         state_indices=state_indices,
         appliance_power=appliance_power,
-        aggregate_power=aggregate_power,
-        score=float(final_score),
+        aggregate_power=appliance_power.sum(dim=1),
+        score=decoded.score,
     )
 
 
@@ -287,56 +192,31 @@ def factorial_hmm_path_score(
     transition_probabilities: Sequence[torch.Tensor],
     *,
     noise_std: float,
+    max_joint_states: int = 512,
 ) -> torch.Tensor:
-    """Return the log score of one labeled per-appliance state path."""
+    """Score a labeled appliance path through the constructed joint HMM."""
 
     parameters = canonicalize_factorial_hmm(
         state_means, initial_probabilities, transition_probabilities
     )
-    values = _validate_observations(observations, parameters, noise_std)
-    if not isinstance(state_indices, torch.Tensor):
-        raise TypeError("state_indices must be a torch.Tensor.")
-    if state_indices.dtype not in _INTEGER_DTYPES or state_indices.ndim != 2:
-        raise TypeError("state_indices must be a two-dimensional integer tensor.")
-    expected_shape = (values.numel(), len(parameters.state_means))
-    if tuple(state_indices.shape) != expected_shape:
-        raise ValueError(f"state_indices must have shape {expected_shape}.")
-    if state_indices.device != values.device:
-        raise ValueError(f"state_indices must be on {values.device}.")
-    for appliance, means in enumerate(parameters.state_means):
-        states = state_indices[:, appliance]
-        if bool(((states < 0) | (states >= means.numel())).any()):
-            raise ValueError(
-                f"state_indices for appliance {appliance} must be between 0 and "
-                f"{means.numel() - 1}."
-            )
-
-    appliance_power = torch.stack(
-        [
-            means[state_indices[:, appliance]]
-            for appliance, means in enumerate(parameters.state_means)
-        ],
-        dim=1,
+    _joint_states, joint_means, initial, transition = _joint_model(
+        parameters, max_joint_states=max_joint_states
     )
-    scale = values.new_tensor(noise_std)
-    residual = (values - appliance_power.sum(dim=1)) / scale
-    score = (
-        -0.5 * residual.square() - torch.log(scale) - 0.5 * math.log(2.0 * math.pi)
-    ).sum()
-    for appliance, (initial, transition) in enumerate(
-        zip(
-            parameters.initial_probabilities,
-            parameters.transition_probabilities,
-            strict=True,
-        )
-    ):
-        states = state_indices[:, appliance]
-        score = score + torch.log(initial[states[0]])
-        if values.numel() > 1:
-            score = score + torch.log(transition[states[:-1], states[1:]]).sum()
-    if not bool(torch.isfinite(score)):
-        raise ValueError("state_indices describe a path forbidden by the model.")
-    return score
+    emissions = gaussian_log_emissions(observations, joint_means, noise_std=noise_std)
+    _validate_state_indices(state_indices, observations, parameters)
+    strides = [
+        math.prod(means.numel() for means in parameters.state_means[index + 1 :])
+        for index in range(len(parameters.state_means))
+    ]
+    joint_path = sum(
+        state_indices[:, appliance] * stride for appliance, stride in enumerate(strides)
+    )
+    try:
+        return hmm_path_score(joint_path, emissions, initial, transition)
+    except ValueError as exc:
+        raise ValueError(
+            "state_indices describe a path forbidden by the model."
+        ) from exc
 
 
 __all__ = [
