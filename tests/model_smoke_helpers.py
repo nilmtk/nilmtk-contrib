@@ -28,6 +28,7 @@ DISAGGREGATE_MODEL_SPECS = (
 
 
 TORCH_MODEL_SPECS = (
+    ModelSpec("torch", "nilmtk_contrib.torch", "TorchAFHMM", "nilmtk_contrib.torch.afhmm", trainable=False),
     ModelSpec("torch", "nilmtk_contrib.torch", "BERT", "nilmtk_contrib.torch.bert"),
     ModelSpec("torch", "nilmtk_contrib.torch", "ConvLSTM", "nilmtk_contrib.torch.conv_lstm"),
     ModelSpec("torch", "nilmtk_contrib.torch", "DAE", "nilmtk_contrib.torch.dae"),

@@ -15,6 +15,7 @@ class ModelCatalogEntry:
 MODEL_CATALOG = (
     ModelCatalogEntry("AFHMM", "classical", "nilmtk_contrib.disaggregate.afhmm", "AFHMM", "nilmtk_contrib.disaggregate"),
     ModelCatalogEntry("AFHMM_SAC", "classical", "nilmtk_contrib.disaggregate.afhmm_sac", "AFHMM_SAC", "nilmtk_contrib.disaggregate"),
+    ModelCatalogEntry("TorchAFHMM", "torch", "nilmtk_contrib.torch.afhmm", "TorchAFHMM", "nilmtk_contrib.torch"),
     ModelCatalogEntry("DSC compatibility", "torch", "nilmtk_contrib.disaggregate.dsc", "DSC", "nilmtk_contrib.disaggregate"),
     ModelCatalogEntry("BERT", "torch", "nilmtk_contrib.torch.bert", "BERT", "nilmtk_contrib.torch"),
     ModelCatalogEntry("ConvLSTM", "torch", "nilmtk_contrib.torch.conv_lstm", "ConvLSTM", "nilmtk_contrib.torch"),

@@ -5,6 +5,7 @@ from importlib import import_module
 from nilmtk_contrib.utils.optional_imports import OptionalDependencyError
 
 _EXPORTS = {
+    "TorchAFHMM": ("nilmtk_contrib.torch.afhmm", "TorchAFHMM"),
     "BERT": ("nilmtk_contrib.torch.bert", "BERT"),
     "ConvLSTM": ("nilmtk_contrib.torch.conv_lstm", "ConvLSTM"),
     "DAE": ("nilmtk_contrib.torch.dae", "DAE"),
