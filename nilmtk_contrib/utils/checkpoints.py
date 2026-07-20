@@ -203,17 +203,6 @@ def load_torch_payload(path, device, weights_only=True):
     return torch.load(path, **load_kwargs)
 
 
-def save_keras_weights(model, path):
-    """Save Keras model weights."""
-    model.save_weights(path)
-
-
-def load_keras_weights(model, path):
-    """Load Keras model weights."""
-    model.load_weights(path)
-    return model
-
-
 def unsupported_persistence(model_name):
     """Raise a standard unsupported persistence error."""
     raise NotImplementedError(f"{model_name} does not implement model persistence.")

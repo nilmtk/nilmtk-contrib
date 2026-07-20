@@ -8,10 +8,8 @@ from nilmtk_contrib.utils.checkpoints import (
     build_metadata,
     collect_dependencies,
     load_metadata,
-    load_keras_weights,
     load_torch_state,
     managed_checkpoint_path,
-    save_keras_weights,
     save_metadata,
     save_metadata_atomic,
     save_json_atomic,
@@ -192,26 +190,6 @@ def test_torch_state_wrappers_save_and_load_state_dict(monkeypatch, tmp_path):
             "weights_only": False,
         }
     ]
-
-
-def test_keras_weight_wrappers_delegate_to_model_methods(tmp_path):
-    calls = []
-
-    class FakeKerasModel:
-        def save_weights(self, path):
-            calls.append(("save", path))
-
-        def load_weights(self, path):
-            calls.append(("load", path))
-
-    model = FakeKerasModel()
-    path = tmp_path / "model.weights.h5"
-
-    save_keras_weights(model, path)
-    loaded_model = load_keras_weights(model, path)
-
-    assert loaded_model is model
-    assert calls == [("save", path), ("load", path)]
 
 
 def test_unsupported_persistence_raises_with_model_name():

@@ -24,16 +24,6 @@ DISAGGREGATE_MODEL_SPECS = (
     ModelSpec("classical", "nilmtk_contrib.disaggregate", "AFHMM", "nilmtk_contrib.disaggregate.afhmm", trainable=False),
     ModelSpec("classical", "nilmtk_contrib.disaggregate", "AFHMM_SAC", "nilmtk_contrib.disaggregate.afhmm_sac", trainable=False),
     ModelSpec("classical", "nilmtk_contrib.disaggregate", "DSC", "nilmtk_contrib.disaggregate.dsc", trainable=False),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "BERT", "nilmtk_contrib.disaggregate.bert"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "DAE", "nilmtk_contrib.disaggregate.dae"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "RNN", "nilmtk_contrib.disaggregate.rnn"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "RNN_attention", "nilmtk_contrib.disaggregate.rnn_attention"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "RNN_attention_classification", "nilmtk_contrib.disaggregate.rnn_attention_classification"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "ResNet", "nilmtk_contrib.disaggregate.resnet"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "ResNet_classification", "nilmtk_contrib.disaggregate.resnet_classification"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "Seq2Point", "nilmtk_contrib.disaggregate.seq2point"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "Seq2Seq", "nilmtk_contrib.disaggregate.seq2seq"),
-    ModelSpec("tensorflow", "nilmtk_contrib.disaggregate", "WindowGRU", "nilmtk_contrib.disaggregate.WindowGRU"),
 )
 
 
@@ -72,7 +62,6 @@ ALL_MODEL_SPECS = DISAGGREGATE_MODEL_SPECS + TORCH_MODEL_SPECS
 def import_or_skip(spec):
     required = {
         "classical": ("nilmtk", "cvxpy", "hmmlearn", "sklearn"),
-        "tensorflow": ("nilmtk", "tensorflow"),
         "torch": ("nilmtk", "torch", "tqdm"),
     }[spec.backend]
     missing = [name for name in required if importlib.util.find_spec(name) is None]

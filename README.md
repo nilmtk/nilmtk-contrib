@@ -65,9 +65,8 @@ Choose a different extra only when you need that backend:
 | Extra | Use it for |
 | --- | --- |
 | `torch` | PyTorch models, including current time-series and MoE models |
-| `tensorflow` | TensorFlow/Keras models |
 | `classical` | AFHMM, AFHMM-SAC, and DSC |
-| `all` | All three backends; largest install |
+| `all` | PyTorch and classical models; largest install |
 | `nilm` | NILMTK integration without a model backend |
 
 Replace `torch` in the install command with the required extra. A bare install
@@ -79,11 +78,25 @@ backend model.
 PyTorch is the maintained neural-model backend. Historical package-level imports
 such as `nilmtk_contrib.disaggregate.DAE` now resolve to the corresponding
 PyTorch class and emit a `FutureWarning`; new code should import from
-`nilmtk_contrib.torch`. Direct TensorFlow module paths remain available during
-the migration and will be removed after their compatibility imports and
-benchmark coverage have moved to PyTorch. Classical implementations remain
+`nilmtk_contrib.torch`. The duplicated TensorFlow implementations and their
+direct module paths have been removed. Classical implementations remain
 available until equivalent Torch implementations pass numerical and real-data
 comparison tests.
+
+Historical neural imports map as follows:
+
+| Compatibility import | Maintained import |
+| --- | --- |
+| `nilmtk_contrib.disaggregate.BERT` | `nilmtk_contrib.torch.BERT` |
+| `nilmtk_contrib.disaggregate.DAE` | `nilmtk_contrib.torch.DAE` |
+| `nilmtk_contrib.disaggregate.RNN` | `nilmtk_contrib.torch.RNN` |
+| `nilmtk_contrib.disaggregate.RNN_attention` | `nilmtk_contrib.torch.RNN_attention` |
+| `nilmtk_contrib.disaggregate.RNN_attention_classification` | `nilmtk_contrib.torch.RNN_attention_classification` |
+| `nilmtk_contrib.disaggregate.ResNet` | `nilmtk_contrib.torch.ResNet` |
+| `nilmtk_contrib.disaggregate.ResNet_classification` | `nilmtk_contrib.torch.ResNet_classification` |
+| `nilmtk_contrib.disaggregate.Seq2Point` | `nilmtk_contrib.torch.Seq2PointTorch` |
+| `nilmtk_contrib.disaggregate.Seq2Seq` | `nilmtk_contrib.torch.Seq2Seq` |
+| `nilmtk_contrib.disaggregate.WindowGRU` | `nilmtk_contrib.torch.WindowGRU` |
 
 ## Run a model
 
@@ -165,7 +178,7 @@ certify results; they are not general development images.
 
 ### Build locally
 
-The default build includes all backends:
+The default build includes the PyTorch and classical backends:
 
 ```bash
 docker build -t nilmtk-contrib:all .
@@ -175,7 +188,6 @@ Prefer a narrower backend for faster development builds:
 
 ```bash
 docker build -t nilmtk-contrib:torch --build-arg INSTALL_EXTRA=torch .
-docker build -t nilmtk-contrib:tensorflow --build-arg INSTALL_EXTRA=tensorflow .
 docker build -t nilmtk-contrib:classical --build-arg INSTALL_EXTRA=classical .
 ```
 
@@ -228,7 +240,7 @@ docker run --rm nilmtk-contrib:dev python -m pytest -q
 
 | Argument | Default | Allowed values | Purpose |
 |---|---|---|---|
-| `INSTALL_EXTRA` | `all` | `all`, `torch`, `tensorflow`, `classical` | Optional dependency extra to install |
+| `INSTALL_EXTRA` | `all` | `all`, `torch`, `classical` | Optional dependency extra to install |
 | `INSTALL_DEV` | `false` | `true`, `false` | Also install `.[dev]` for pytest and tooling |
 
 ### Files
@@ -247,27 +259,17 @@ The table below lists the public model surface. "Verification" describes how the
 | AFHMM | Classical | `nilmtk_contrib.disaggregate.AFHMM` | NILM paper implementation, not independently benchmark-certified in this package state | Kolter and Jaakkola, AFHMM for energy disaggregation | Requires `classical` extra |
 | AFHMM_SAC | Classical | `nilmtk_contrib.disaggregate.AFHMM_SAC` | NILM paper implementation, not independently benchmark-certified in this package state | Zhong, Goddard, and Sutton, signal aggregate constraints in AFHMMs | Requires `classical` extra |
 | DSC | Classical | `nilmtk_contrib.disaggregate.DSC` | NILM paper implementation, not independently benchmark-certified in this package state | Kolter, Batra, and Ng, discriminative sparse coding | Requires `classical` extra |
-| DAE | TensorFlow | `nilmtk_contrib.disaggregate.DAE` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
 | DAE | PyTorch | `nilmtk_contrib.torch.DAE` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
 | DLinear | PyTorch | `nilmtk_contrib.torch.DLinear` | DLinear-inspired sequence-to-point adaptation; benchmark claims require NILMbench result bundles | Zeng et al., DLinear | PyTorch backend |
 | HSMM | PyTorch | `nilmtk_contrib.torch.HSMM` | Supervised single-appliance explicit-duration baseline; benchmark claims require NILMbench result bundles | Chiappa, explicit-duration Markov switching models | Exact PyTorch dynamic program; no external solver |
-| RNN | TensorFlow | `nilmtk_contrib.disaggregate.RNN` | Neural NILM implementation requiring experiment validation for new claims | Kelly and Knottenbelt, Neural NILM | TensorFlow/Keras backend |
 | RNN | PyTorch | `nilmtk_contrib.torch.RNN` | PyTorch implementation requiring parity validation for new claims | Kelly and Knottenbelt, Neural NILM | PyTorch backend |
-| Seq2Point | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Point` | NILM paper implementation requiring dataset-specific validation | Zhang et al., Sequence-to-Point Learning | TensorFlow/Keras backend |
 | Seq2PointTorch | PyTorch | `nilmtk_contrib.torch.Seq2PointTorch` | PyTorch implementation requiring parity validation for new claims | Zhang et al., Sequence-to-Point Learning | PyTorch backend |
-| Seq2Seq | TensorFlow | `nilmtk_contrib.disaggregate.Seq2Seq` | Legacy NILM baseline adapted from a generic sequence model | Sutskever, Vinyals, and Le, sequence-to-sequence learning | Generic architecture citation |
 | Seq2Seq | PyTorch | `nilmtk_contrib.torch.Seq2Seq` | Legacy NILM baseline adapted from a generic sequence model | Sutskever, Vinyals, and Le, sequence-to-sequence learning | Generic architecture citation |
-| WindowGRU | TensorFlow | `nilmtk_contrib.disaggregate.WindowGRU` | NILM paper implementation requiring experiment validation for new claims | Krystalakos, Nalmpantis, and Vrakas, sliding-window GRU | TensorFlow/Keras backend |
 | WindowGRU | PyTorch | `nilmtk_contrib.torch.WindowGRU` | PyTorch implementation requiring parity validation for new claims | Krystalakos, Nalmpantis, and Vrakas, sliding-window GRU | PyTorch backend |
-| RNN_attention | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention` | Attention-based NILM implementation | Sudoso and Piccialli, attention-based NILM | TensorFlow/Keras backend |
 | RNN_attention | PyTorch | `nilmtk_contrib.torch.RNN_attention` | PyTorch attention-based NILM implementation | Attention-based NILM literature | PyTorch backend |
-| RNN_attention_classification | TensorFlow | `nilmtk_contrib.disaggregate.RNN_attention_classification` | Attention-based NILM implementation with classification branch | Sudoso and Piccialli, attention-based NILM | Explicit on/off threshold parameters are supported |
 | RNN_attention_classification | PyTorch | `nilmtk_contrib.torch.RNN_attention_classification` | PyTorch attention-based NILM implementation with classification branch | Attention-based NILM literature | Explicit on/off threshold parameters are supported |
-| ResNet | TensorFlow | `nilmtk_contrib.disaggregate.ResNet` | 1D residual NILM adaptation of a generic architecture | He et al., Deep Residual Learning | Generic computer-vision architecture adapted to NILM |
 | ResNet | PyTorch | `nilmtk_contrib.torch.ResNet` | 1D residual NILM adaptation of a generic architecture | He et al., Deep Residual Learning | Generic computer-vision architecture adapted to NILM |
-| ResNet_classification | TensorFlow | `nilmtk_contrib.disaggregate.ResNet_classification` | Residual NILM model with classification branch | Residual and NILM classification literature | Explicit threshold and loss-weight parameters are supported |
 | ResNet_classification | PyTorch | `nilmtk_contrib.torch.ResNet_classification` | Residual NILM model with classification branch | Residual and NILM classification literature | Explicit threshold and loss-weight parameters are supported |
-| BERT | TensorFlow | `nilmtk_contrib.disaggregate.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
 | BERT | PyTorch | `nilmtk_contrib.torch.BERT` | Transformer/BERT-inspired NILM adaptation | Devlin et al., BERT | Does not claim NLP-style pretraining |
 | ConvLSTM | PyTorch | `nilmtk_contrib.torch.ConvLSTM` | ConvLSTM-inspired NILM adaptation | Shi et al., ConvLSTM | Generic spatiotemporal architecture adapted to NILM |
 | TCN | PyTorch | `nilmtk_contrib.torch.TCN` | Generic TCN sequence-modeling baseline adapted to NILM | Bai, Kolter, and Koltun, TCN | PyTorch backend |

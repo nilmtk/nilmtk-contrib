@@ -2,6 +2,7 @@ import logging
 import random
 
 import numpy as np
+import pytest
 
 from nilmtk_contrib.utils.logging import configure_logging, get_logger
 from nilmtk_contrib.utils.random import set_random_seed
@@ -22,6 +23,11 @@ def test_set_random_seed_controls_python_and_numpy():
 
 def test_set_random_seed_ignores_none_seed():
     set_random_seed(None, backends=("python", "numpy"))
+
+
+def test_set_random_seed_rejects_retired_or_unknown_backends():
+    with pytest.raises(ValueError, match="Unsupported random-seed backend.*tensorflow"):
+        set_random_seed(123, backends=("tensorflow",))
 
 
 def test_get_logger_returns_named_logger():
