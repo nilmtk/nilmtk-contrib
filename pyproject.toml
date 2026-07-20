@@ -34,7 +34,7 @@ torch = [
   "numpy>=1.26.0,<2",
   "pandas",
   "matplotlib",
-  "torch>=2.0,<2.7",
+  "torch>=2.13.0,<2.14",
   "tqdm>=4.66"
 ]
 classical = [
@@ -57,7 +57,7 @@ all = [
   "scikit-learn",
   "scipy",
   "matplotlib",
-  "torch>=2.0,<2.7",
+  "torch>=2.13.0,<2.14",
   "tqdm>=4.66",
   "cvxpy>=1.0.0,<1.8.0",
   "hmmlearn"
