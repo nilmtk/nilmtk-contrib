@@ -1,5 +1,6 @@
 from collections import OrderedDict
-from types import SimpleNamespace
+import inspect
+from pathlib import Path
 import warnings
 
 import numpy as np
@@ -11,9 +12,8 @@ from model_smoke_helpers import load_real_dataset_chunks
 
 torch = pytest.importorskip("torch")
 sklearn_decomposition = pytest.importorskip("sklearn.decomposition")
-ConvergenceWarning = pytest.importorskip("sklearn.exceptions").ConvergenceWarning
 
-from nilmtk_contrib.disaggregate.dsc import DSC as LegacyDSC  # noqa: E402
+from nilmtk_contrib.disaggregate.dsc import DSC as CompatibilityDSC  # noqa: E402
 from nilmtk_contrib.torch._dsc import (  # noqa: E402
     DSC as TorchDSC,
     _DSCParameters,
@@ -23,13 +23,17 @@ from nilmtk_contrib.torch._dsc import (  # noqa: E402
 )
 
 
-def _legacy_params(**overrides):
+def _compatibility_params(**overrides):
     return {
+        "device": "cpu",
         "shape": 12,
         "n_components": 2,
         "sparsity_coef": 0.1,
         "iterations": 2,
         "learning_rate": 1e-9,
+        "dictionary_iterations": 20,
+        "sparse_code_iterations": 500,
+        "tolerance": 1e-7,
         "seed": 4,
         "verbose": False,
     } | overrides
@@ -53,6 +57,19 @@ def _torch_params(**overrides):
 def _normalized_columns(values):
     values = np.asarray(values, dtype=np.float64)
     return values / np.linalg.norm(values, axis=0)
+
+
+def _fitted_parameters(dictionary, column):
+    matrix = tuple((float(value),) for value in dictionary[:, column])
+    return _DSCParameters(
+        reconstruction_dictionary=matrix,
+        discriminative_dictionary=matrix,
+        training_windows=3,
+        reconstruction_objective=0.0,
+        reconstruction_iterations=1,
+        reconstruction_converged=True,
+        activation_error=0.0,
+    )
 
 
 def _synthetic_train_test(seed=1):
@@ -99,18 +116,67 @@ def _synthetic_train_test(seed=1):
 
 
 def _fit_predictions(train, test):
-    legacy = LegacyDSC(_legacy_params())
-    modern = TorchDSC(_torch_params())
-    appliances = [("first", [train[1]]), ("second", [train[2]])]
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ConvergenceWarning)
-        legacy.partial_fit([train[0]], appliances)
-        legacy_prediction = legacy.disaggregate_chunk([test[0]])[0]
+        warnings.simplefilter("ignore")
+        compatibility = CompatibilityDSC(_compatibility_params())
+    appliances = [("first", [train[1]]), ("second", [train[2]])]
+    compatibility.partial_fit([train[0]], appliances)
+    compatibility_prediction = compatibility.disaggregate_chunk([test[0]])[0]
+    modern = TorchDSC(_torch_params())
     modern.partial_fit([train[0]], appliances)
     return (
-        legacy_prediction,
+        compatibility_prediction,
         modern.disaggregate_chunk([test[0]])[0],
     )
+
+
+def test_compatibility_wrapper_uses_torch_with_historical_defaults():
+    with pytest.warns(FutureWarning, match="maintained PyTorch implementation"):
+        model = CompatibilityDSC({"device": "cpu"})
+
+    assert isinstance(model, TorchDSC)
+    assert model.shape == 120
+    assert model.n_components == 10
+    assert model.sparsity_coef == 20.0
+    assert model.iterations == model.n_epochs == 3_000
+    assert model.learning_rate == 1e-9
+    model.iterations = 7
+    assert model.iterations == model.n_epochs == 7
+    source = Path(inspect.getsourcefile(CompatibilityDSC)).read_text(encoding="utf-8")
+    for dependency in ("numpy", "pandas", "sklearn", "scipy"):
+        assert dependency not in source
+
+
+def test_compatibility_wrapper_rejects_non_mapping_parameters():
+    with pytest.warns(FutureWarning):
+        with pytest.raises(TypeError, match="mapping or None"):
+            CompatibilityDSC([])
+
+
+def test_compatibility_wrapper_accepts_none_with_historical_defaults():
+    with pytest.warns(FutureWarning):
+        model = CompatibilityDSC()
+
+    assert model.iterations == model.n_epochs == 3_000
+
+
+def test_package_level_dsc_export_resolves_to_the_compatibility_wrapper():
+    import nilmtk_contrib.disaggregate as historical_models
+
+    historical_models.__dict__.pop("DSC", None)
+    exported = historical_models.DSC
+
+    assert exported is CompatibilityDSC
+    assert historical_models._EXPORTS["DSC"] == (
+        "nilmtk_contrib.disaggregate.dsc",
+        "DSC",
+        "torch",
+    )
+    with pytest.warns(FutureWarning, match="maintained PyTorch implementation"):
+        assert isinstance(
+            exported({"device": "cpu", "discriminative_iterations": 0}),
+            TorchDSC,
+        )
 
 
 def test_legacy_parameter_names_preserve_configuration_with_warnings():
@@ -288,7 +354,7 @@ def test_discriminative_fit_uses_all_windows_when_twenty_percent_rounds_to_zero(
     assert np.isfinite(error)
 
 
-def test_fixed_dictionary_partial_inference_matches_legacy_sklearn_path():
+def test_fixed_dictionary_partial_inference_matches_canonical_torch_path():
     shape = 4
     coefficient = 0.05
     joint_dictionary = _normalized_columns(
@@ -299,41 +365,19 @@ def test_fixed_dictionary_partial_inference_matches_legacy_sklearn_path():
     index = pd.date_range("2026-03-01", periods=10, freq="1min", tz="UTC")
     mains = pd.DataFrame({"power": mains_values}, index=index)
 
-    legacy = LegacyDSC(
-        _legacy_params(
-            shape=shape,
-            n_components=1,
-            sparsity_coef=coefficient,
-            iterations=0,
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        compatibility = CompatibilityDSC(
+            _compatibility_params(
+                device="cpu",
+                shape=shape,
+                n_components=1,
+                sparsity_coef=coefficient,
+                iterations=0,
+                sparse_code_iterations=2_000,
+                tolerance=1e-9,
+            )
         )
-    )
-    legacy.disggregation_model = sklearn_decomposition.SparseCoder(
-        dictionary=joint_dictionary.T,
-        transform_algorithm="lasso_cd",
-        transform_alpha=coefficient,
-        positive_code=True,
-    )
-    legacy.reconstruction_bases = joint_dictionary
-    legacy.power = OrderedDict((("first", None), ("second", None)))
-    legacy.dictionaries = OrderedDict(
-        (
-            ("first", SimpleNamespace(n_components=1)),
-            ("second", SimpleNamespace(n_components=1)),
-        )
-    )
-
-    def fitted(column):
-        matrix = tuple((float(value),) for value in joint_dictionary[:, column])
-        return _DSCParameters(
-            reconstruction_dictionary=matrix,
-            discriminative_dictionary=matrix,
-            training_windows=3,
-            reconstruction_objective=0.0,
-            reconstruction_iterations=1,
-            reconstruction_converged=True,
-            activation_error=0.0,
-        )
-
     modern = TorchDSC(
         _torch_params(
             shape=shape,
@@ -343,39 +387,74 @@ def test_fixed_dictionary_partial_inference_matches_legacy_sklearn_path():
             tolerance=1e-9,
         )
     )
-    models = OrderedDict((("first", fitted(0)), ("second", fitted(1))))
 
-    legacy_prediction = legacy.disaggregate_chunk([mains])[0]
+    models = OrderedDict(
+        (
+            ("first", _fitted_parameters(joint_dictionary, 0)),
+            ("second", _fitted_parameters(joint_dictionary, 1)),
+        )
+    )
+
+    compatibility_prediction = compatibility.disaggregate_chunk(
+        [mains], model=models
+    )[0]
     modern_prediction = modern.disaggregate_chunk([mains], model=models)[0]
 
-    np.testing.assert_allclose(
-        modern_prediction.to_numpy(),
-        legacy_prediction.to_numpy(),
-        rtol=2e-5,
-        atol=2e-5,
+    np.testing.assert_array_equal(
+        modern_prediction.to_numpy(), compatibility_prediction.to_numpy()
     )
     assert modern_prediction.index.equals(index)
-    assert isinstance(legacy_prediction.index, pd.RangeIndex)
+    assert compatibility_prediction.index.equals(index)
+
+
+def test_compatibility_load_keeps_legacy_epoch_alias_in_sync(tmp_path):
+    dictionary = _normalized_columns([[1.0], [0.5], [0.2], [0.1]])
+    canonical = TorchDSC(
+        _torch_params(
+            shape=4,
+            n_components=1,
+            discriminative_iterations=3,
+        )
+    )
+    canonical.models = OrderedDict(
+        (("fridge", _fitted_parameters(dictionary, 0)),)
+    )
+    canonical.save_model(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        compatibility = CompatibilityDSC(
+            _compatibility_params(
+                shape=4,
+                n_components=1,
+                iterations=7,
+            )
+        )
+
+    compatibility.load_model(tmp_path)
+
+    assert compatibility.iterations == compatibility.n_epochs == 3
 
 
 @pytest.mark.parametrize("fixture_seed", [1, 7, 19])
-def test_trained_torch_dsc_is_non_inferior_on_deterministic_nilm_fixture(
+def test_compatibility_and_canonical_dsc_match_on_deterministic_nilm_fixture(
     fixture_seed,
 ):
     train, test = _synthetic_train_test(seed=fixture_seed)
-    legacy_prediction, modern_prediction = _fit_predictions(train, test)
+    compatibility_prediction, modern_prediction = _fit_predictions(train, test)
     truth = np.column_stack((test[1]["power"], test[2]["power"]))
     baseline = np.broadcast_to(np.mean(truth, axis=0), truth.shape)
-    legacy_mae = float(np.mean(np.abs(legacy_prediction.to_numpy() - truth)))
     modern_mae = float(np.mean(np.abs(modern_prediction.to_numpy() - truth)))
     baseline_mae = float(np.mean(np.abs(baseline - truth)))
 
-    assert np.isfinite([legacy_mae, modern_mae, baseline_mae]).all()
+    assert np.isfinite([modern_mae, baseline_mae]).all()
+    np.testing.assert_array_equal(
+        compatibility_prediction.to_numpy(), modern_prediction.to_numpy()
+    )
+    assert compatibility_prediction.index.equals(modern_prediction.index)
     assert modern_mae <= baseline_mae
-    assert modern_mae <= 1.1 * legacy_mae
 
 
-def test_trained_torch_dsc_real_data_non_inferiority_when_dataset_is_supplied(
+def test_compatibility_and_canonical_dsc_match_on_supplied_real_dataset(
     model_smoke_config,
 ):
     if not model_smoke_config["enabled"]:
@@ -404,7 +483,20 @@ def test_trained_torch_dsc_real_data_non_inferiority_when_dataset_is_supplied(
         target.iloc[split : split + test_length],
     )
 
-    legacy = LegacyDSC(_legacy_params(shape=20, n_components=2, iterations=2))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        compatibility = CompatibilityDSC(
+            _compatibility_params(
+                shape=20,
+                n_components=2,
+                iterations=2,
+                dictionary_iterations=8,
+            )
+        )
+    compatibility.partial_fit([train[0]], [(appliance, [train[1]])])
+    compatibility_values = compatibility.disaggregate_chunk([test[0]])[0][
+        appliance
+    ].to_numpy()
     modern = TorchDSC(
         _torch_params(
             shape=20,
@@ -413,17 +505,12 @@ def test_trained_torch_dsc_real_data_non_inferiority_when_dataset_is_supplied(
             discriminative_iterations=2,
         )
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ConvergenceWarning)
-        legacy.partial_fit([train[0]], [(appliance, [train[1]])])
-        legacy_values = legacy.disaggregate_chunk([test[0]])[0][
-            appliance
-        ].to_numpy()
     modern.partial_fit([train[0]], [(appliance, [train[1]])])
     modern_values = modern.disaggregate_chunk([test[0]])[0][appliance].to_numpy()
     truth = test[1]["power"].to_numpy()
-    legacy_mae = float(np.mean(np.abs(legacy_values - truth)))
+    compatibility_mae = float(np.mean(np.abs(compatibility_values - truth)))
     modern_mae = float(np.mean(np.abs(modern_values - truth)))
 
-    assert np.isfinite([legacy_mae, modern_mae]).all()
-    assert modern_mae <= max(1.05 * legacy_mae, legacy_mae + 2.0)
+    assert np.isfinite([compatibility_mae, modern_mae]).all()
+    np.testing.assert_array_equal(compatibility_values, modern_values)
+    assert compatibility_mae == modern_mae

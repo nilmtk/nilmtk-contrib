@@ -33,7 +33,6 @@ torch = [
   "nilmtk @ git+https://github.com/nilmtk/nilmtk.git",
   "numpy>=1.26.0,<2",
   "pandas",
-  "scikit-learn",
   "matplotlib",
   "torch>=2.0,<2.7",
   "tqdm>=4.66"
