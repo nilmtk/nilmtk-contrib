@@ -14,6 +14,25 @@ from nilmtk_contrib.utils.optional_imports import OptionalDependencyError, requi
 
 BACKEND_MODULES = {"tensorflow", "torch", "cvxpy", "hmmlearn", "nilmtk", "pandas"}
 
+TORCH_REDIRECTS = {
+    "BERT": ("nilmtk_contrib.torch.bert", "BERT"),
+    "DAE": ("nilmtk_contrib.torch.dae", "DAE"),
+    "RNN": ("nilmtk_contrib.torch.rnn", "RNN"),
+    "RNN_attention": ("nilmtk_contrib.torch.rnn_attention", "RNN_attention"),
+    "RNN_attention_classification": (
+        "nilmtk_contrib.torch.rnn_attention_classification",
+        "RNN_attention_classification",
+    ),
+    "ResNet": ("nilmtk_contrib.torch.resnet", "ResNet"),
+    "ResNet_classification": (
+        "nilmtk_contrib.torch.resnet_classification",
+        "ResNet_classification",
+    ),
+    "Seq2Point": ("nilmtk_contrib.torch.seq2point", "Seq2PointTorch"),
+    "Seq2Seq": ("nilmtk_contrib.torch.seq2seq", "Seq2Seq"),
+    "WindowGRU": ("nilmtk_contrib.torch.WindowGRU", "WindowGRU"),
+}
+
 
 def _imported_modules_after(statement):
     code = (
@@ -43,6 +62,28 @@ def test_torch_package_import_is_lightweight():
 def test_mains_stats_import_does_not_import_nilmtk():
     imported = _imported_modules_after("import nilmtk_contrib.mains_stats")
     assert imported == set()
+
+
+def test_historical_neural_exports_target_only_torch_modules():
+    for public_name in TORCH_REDIRECTS:
+        module_name, _class_name, extra_name = disaggregate_exports._EXPORTS[
+            public_name
+        ]
+        assert module_name.startswith("nilmtk_contrib.torch.")
+        assert "tensorflow" not in module_name
+        assert extra_name == "torch"
+
+
+@pytest.mark.parametrize("name", sorted(TORCH_REDIRECTS))
+def test_historical_neural_exports_resolve_to_canonical_torch_classes(name):
+    module_name, class_name = TORCH_REDIRECTS[name]
+    disaggregate_exports.__dict__.pop(name, None)
+    canonical = getattr(importlib.import_module(module_name), class_name)
+
+    with pytest.warns(FutureWarning, match="maintained PyTorch implementation"):
+        redirected = getattr(disaggregate_exports, name)
+
+    assert redirected is canonical
 
 
 def test_require_optional_error_message():

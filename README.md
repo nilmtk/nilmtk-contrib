@@ -74,6 +74,17 @@ Replace `torch` in the install command with the required extra. A bare install
 contains package metadata and dependency-light utilities; it cannot train a
 backend model.
 
+### Backend policy
+
+PyTorch is the maintained neural-model backend. Historical package-level imports
+such as `nilmtk_contrib.disaggregate.DAE` now resolve to the corresponding
+PyTorch class and emit a `FutureWarning`; new code should import from
+`nilmtk_contrib.torch`. Direct TensorFlow module paths remain available during
+the migration and will be removed after their compatibility imports and
+benchmark coverage have moved to PyTorch. Classical implementations remain
+available until equivalent Torch implementations pass numerical and real-data
+comparison tests.
+
 ## Run a model
 
 Public model imports are listed in the [model table](#models). For example:

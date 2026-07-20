@@ -1,6 +1,7 @@
 import ast
 import importlib
 import importlib.util
+import warnings
 
 import pytest
 
@@ -81,13 +82,20 @@ def test_model_class_access_succeeds_or_reports_optional_dependency(spec):
             cls = getattr(module, spec.class_name)
         else:
             package.__dict__.pop(spec.class_name, None)
-            cls = getattr(package, spec.class_name)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
+                cls = getattr(package, spec.class_name)
     except OptionalDependencyError as exc:
         message = str(exc)
         assert "requires '" in message
         assert "Install nilmtk-contrib[" in message
     else:
-        assert cls.__name__ == spec.class_name
+        expected_class_name = (
+            package._EXPORTS[spec.class_name][1]
+            if spec.package == "nilmtk_contrib.disaggregate"
+            else spec.class_name
+        )
+        assert cls.__name__ == expected_class_name
 
 
 @pytest.mark.parametrize(
