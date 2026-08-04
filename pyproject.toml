@@ -67,7 +67,7 @@ dev = [
   "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
-  "black>=23.0.0",
+  "black>=26.3.1",
   "ruff>=0.0.280",
   "build>=1.0.0"
 ]
@@ -81,7 +81,7 @@ dev = [
   "pandas",
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
-  "black>=23.0.0",
+  "black>=26.3.1",
   "ruff>=0.0.280",
   "build>=1.0.0"
 ]
